@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: telegram-bot-control-center
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: DASHBOARD_USERNAME
+        value: owner
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: Z28_HEALTH_URL
+        value: https://z28-telegram-attendance-bot-pcs8.onrender.com/api/healthz
+      - key: ADMIN_BOT_HEALTH_URL
+        value: https://admin-bot-uvy8.onrender.com/healthz
+      - key: M58_HEALTH_URL
+        value: https://m58-telegram-attendance-bot.onrender.com/api/healthz
+      - key: HEALTH_CHECK_TIMEOUT
+        value: "8"
