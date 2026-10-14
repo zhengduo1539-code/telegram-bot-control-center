@@ -51,7 +51,7 @@ def require_dashboard_login(
     return provided_user
 
 
-@app.get("/healthz")
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
