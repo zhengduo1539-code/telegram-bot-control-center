@@ -33,7 +33,7 @@ def test_management_features_proxy_is_authenticated(client: TestClient) -> None:
 
 def test_activity_limit_writes_are_authenticated_and_forwarded(client: TestClient) -> None:
     response = client.put(
-        "/api/manage/m58/activity-limits",
+        "/api/manage/z28/activity-limits",
         auth=("owner", "test-password-long-enough"),
         json={"kind": "wc", "minutes": 10},
     )
