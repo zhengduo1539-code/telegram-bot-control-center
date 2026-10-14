@@ -1,10 +1,9 @@
 # Telegram Bot Control Center
 
-A private monitoring dashboard with separate, backend-backed feature workspaces for three Telegram bots:
+A private monitoring dashboard with separate, backend-backed feature workspaces for two Telegram bots:
 
 - Z28 Attendance Bot (Node.js)
 - Admin Bot (Python)
-- M58 Attendance Bot (Node.js)
 
 The dashboard checks each configured HTTP health endpoint and shows status, latency, and links to Render and GitHub.
 
@@ -17,7 +16,7 @@ The dashboard checks each configured HTTP health endpoint and shows status, late
 - Export the latest health snapshot as CSV for offline review.
 - Browser-local history is bounded and can be cleared; no monitoring samples are written to a server database.
 - Public /healthz endpoint for Render's own health check.
-- Separate feature-management workspace per bot; only existing backend features are exposed. Supported writes are Z28/M58 activity duration limits and Z28 activity reminders. Admin Bot remains read-only because it has no persistent calculator settings.
+- Separate feature-management workspace per bot; only existing backend features are exposed. Supported writes are Z28 activity duration limits and activity reminders. Admin Bot remains read-only because it has no persistent calculator settings.
 - No restart, deploy, environment-variable, database, or other infrastructure controls.
 - Feature-management APIs use a shared server-side CONTROL_CENTER_API_TOKEN; see docs/feature-management.md before enabling the integration.
 
@@ -45,7 +44,7 @@ Then open http://127.0.0.1:8000. Do not commit real credentials to GitHub.
 
 1. Create a new Web Service from this repository, or use render.yaml.
 2. Set DASHBOARD_PASSWORD in Render environment settings to a strong, unique secret.
-3. Confirm the username and all three health endpoint URLs.
+3. Confirm the username and both health endpoint URLs.
 4. Deploy and open the generated HTTPS URL.
 5. Verify /healthz returns {"status":"ok"} and sign in to confirm the dashboard loads.
 
@@ -59,12 +58,10 @@ Render free services may spin down when idle, so the first request can take long
 | DASHBOARD_PASSWORD | Required secret; app fails closed if missing |
 | Z28_HEALTH_URL | Z28 health endpoint |
 | ADMIN_BOT_HEALTH_URL | Admin Bot health endpoint |
-| M58_HEALTH_URL | M58 health endpoint |
 | HEALTH_CHECK_TIMEOUT | Per-endpoint timeout in seconds (1–20) |
-| CONTROL_CENTER_API_TOKEN | Same high-entropy secret on the Control Center and all three bot services |
+| CONTROL_CENTER_API_TOKEN | Same high-entropy secret on the Control Center, Z28, and Admin Bot services |
 | Z28_CONTROL_CENTER_URL | Optional override for Z28's feature API base URL |
 | ADMIN_BOT_CONTROL_CENTER_URL | Optional override for Admin Bot's feature API base URL |
-| M58_CONTROL_CENTER_URL | Optional override for M58's feature API base URL |
 
 ## Security notes
 
