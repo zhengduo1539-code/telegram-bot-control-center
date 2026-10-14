@@ -117,7 +117,8 @@ async def github_viewer(bot_id: str,
     prefix = "https://github.com/"
     if not bot["repo_url"].startswith(prefix):
         raise HTTPException(status_code=400, detail="Repository URL is not allowed.")
-    parts = bot["repo_url"][len(prefix):].strip("/").split("/")    if len(parts) != 2 or any(part in ("", ".", "..") for part in parts):
+    parts = bot["repo_url"][len(prefix):].strip("/").split("/")
+    if len(parts) != 2 or any(part in ("", ".", "..") for part in parts):
         raise HTTPException(status_code=400, detail="Repository configuration is invalid.")
     owner, repo = parts
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
