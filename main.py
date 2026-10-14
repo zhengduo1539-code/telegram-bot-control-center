@@ -22,17 +22,23 @@ BOTS = (
      "health_url_env": "Z28_HEALTH_URL",
      "default_url": "https://z28-telegram-attendance-bot-pcs8.onrender.com/api/healthz",
      "service_url": "https://z28-telegram-attendance-bot-pcs8.onrender.com",
-     "repo_url": "https://github.com/zhengduo1539-code/Z28-Telegram-Attendance-Bot"},
+     "repo_url": "https://github.com/zhengduo1539-code/Z28-Telegram-Attendance-Bot",
+     "management_url_env": "Z28_CONTROL_CENTER_URL",
+     "management_url": "https://z28-telegram-attendance-bot-pcs8.onrender.com/api/control-center"},
     {"id": "admin-bot", "name": "Admin Bot", "runtime": "Python",
      "health_url_env": "ADMIN_BOT_HEALTH_URL",
      "default_url": "https://admin-bot-uvy8.onrender.com/healthz",
      "service_url": "https://admin-bot-uvy8.onrender.com",
-     "repo_url": "https://github.com/zhengduo1539-code/admin_bot"},
+     "repo_url": "https://github.com/zhengduo1539-code/admin_bot",
+     "management_url_env": "ADMIN_BOT_CONTROL_CENTER_URL",
+     "management_url": "https://admin-bot-uvy8.onrender.com/control-center"},
     {"id": "m58", "name": "M58 Attendance Bot", "runtime": "Node.js",
      "health_url_env": "M58_HEALTH_URL",
      "default_url": "https://m58-telegram-attendance-bot.onrender.com/api/healthz",
      "service_url": "https://m58-telegram-attendance-bot.onrender.com",
-     "repo_url": "https://github.com/zhengduo1539-code/M58-Telegram-Attendance-Bot"},
+     "repo_url": "https://github.com/zhengduo1539-code/M58-Telegram-Attendance-Bot",
+     "management_url_env": "M58_CONTROL_CENTER_URL",
+     "management_url": "https://m58-telegram-attendance-bot.onrender.com/api/control-center"},
 )
 
 
@@ -171,6 +177,52 @@ async def health_viewer(bot_id: str,
         raise HTTPException(status_code=502, detail="Could not fetch this health endpoint.")
 
 
+
+async def proxy_management(bot_id: str, method: str = "GET", endpoint: str = "features", payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    bot = get_bot(bot_id)
+    base_url = os.getenv(bot["management_url_env"], bot["management_url"]).strip().rstrip("/")
+    token = os.getenv("CONTROL_CENTER_API_TOKEN", "").strip()
+    if not token:
+        raise HTTPException(status_code=503, detail="Control Center API token is not configured on this service.")
+    allowed = {"features": {"GET"}, "activity-limits": {"PUT"}, "activity-reminders": {"PUT"}}
+    if endpoint not in allowed or method not in allowed[endpoint]:
+        raise HTTPException(status_code=404, detail="Unsupported management operation.")
+    if bot_id == "admin-bot" and endpoint != "features":
+        raise HTTPException(status_code=400, detail="This bot has no writable calculator settings.")
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.request(method, base_url + "/" + endpoint,
+                headers={"x-control-center-token": token, "Cache-Control": "no-store"}, json=payload)
+        try:
+            data = response.json()
+        except ValueError:
+            data = {"error": "Bot API returned a non-JSON response."}
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Could not reach this bot's feature API.")
+    if response.status_code >= 400:
+        detail = data.get("detail") or data.get("error") or f"Bot feature API returned HTTP {response.status_code}."
+        code = response.status_code if response.status_code in (400, 401, 403, 404, 503) else 502
+        raise HTTPException(status_code=code, detail=detail)
+    return data
+
+
+@app.get("/api/manage/{bot_id}/features")
+async def management_features(bot_id: str, _: Annotated[str, Depends(require_dashboard_login)]) -> dict[str, Any]:
+    return await proxy_management(bot_id)
+
+
+@app.put("/api/manage/{bot_id}/activity-limits")
+async def management_activity_limits(bot_id: str, payload: dict[str, Any],
+    _: Annotated[str, Depends(require_dashboard_login)]) -> dict[str, Any]:
+    return await proxy_management(bot_id, "PUT", "activity-limits", payload)
+
+
+@app.put("/api/manage/{bot_id}/activity-reminders")
+async def management_activity_reminders(bot_id: str, payload: dict[str, Any],
+    _: Annotated[str, Depends(require_dashboard_login)]) -> dict[str, Any]:
+    return await proxy_management(bot_id, "PUT", "activity-reminders", payload)
+
+
 DASHBOARD_HTML = r"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -203,7 +255,7 @@ function showLogin(){$('app').classList.add('hidden');$('login').classList.remov
 function showApp(){$('login').classList.add('hidden');$('app').classList.remove('hidden')}
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function statusLabel(s){return({online:'Online',degraded:'Degraded',unavailable:'Unavailable',unknown:'Unknown'})[s]||'Unknown'}
-function card(b){const symbol=b.id==='z28'?'Z':b.id==='m58'?'M':'A';const latency=b.response_time_ms==null?'—':b.response_time_ms+' ms';const http=b.http_status==null?'No response':'HTTP '+b.http_status;return '<article class="card"><div class="cardhead"><div class="botidentity"><div class="boticon">'+symbol+'</div><div><div class="botname">'+escapeHtml(b.name)+'</div><div class="runtime">'+escapeHtml(b.runtime)+' · Render</div></div></div><span class="pill '+escapeHtml(b.status)+'">'+statusLabel(b.status)+'</span></div><div class="details"><span class="muted">Response time</span><span class="latency">'+latency+'</span></div><div class="details"><span class="muted">HTTP response</span><span class="latency">'+http+'</span></div><span class="endpoint">Health check: '+escapeHtml(b.health_url)+'</span><p class="message">'+escapeHtml(b.message)+'</p><div class="links"><a href="'+escapeHtml(b.service_url)+'" data-viewer-kind="service" data-bot-id="'+escapeHtml(b.id)+'" data-viewer-title="'+escapeHtml(b.name)+' · Service">Open service</a><a class="health-link" href="'+escapeHtml(b.health_url)+'" data-viewer-kind="health" data-bot-id="'+escapeHtml(b.id)+'" data-viewer-title="'+escapeHtml(b.name)+' · Health endpoint">Health endpoint</a><a href="'+escapeHtml(b.repo_url)+'" data-viewer-kind="github" data-bot-id="'+escapeHtml(b.id)+'" data-viewer-title="'+escapeHtml(b.name)+' · GitHub repository">GitHub repo</a></div></article>';}
+function card(b){const symbol=b.id==='z28'?'Z':b.id==='m58'?'M':'A';const latency=b.response_time_ms==null?'—':b.response_time_ms+' ms';const http=b.http_status==null?'No response':'HTTP '+b.http_status;return '<article class="card"><div class="cardhead"><div class="botidentity"><div class="boticon">'+symbol+'</div><div><div class="botname">'+escapeHtml(b.name)+'</div><div class="runtime">'+escapeHtml(b.runtime)+' · Render</div></div></div><span class="pill '+escapeHtml(b.status)+'">'+statusLabel(b.status)+'</span></div><div class="details"><span class="muted">Response time</span><span class="latency">'+latency+'</span></div><div class="details"><span class="muted">HTTP response</span><span class="latency">'+http+'</span></div><span class="endpoint">Health check: '+escapeHtml(b.health_url)+'</span><p class="message">'+escapeHtml(b.message)+'</p><div class="links"><a href="'+escapeHtml(b.service_url)+'" data-viewer-kind="service" data-bot-id="'+escapeHtml(b.id)+'" data-viewer-title="'+escapeHtml(b.name)+' · Service">Open service</a><a class="health-link" href="'+escapeHtml(b.health_url)+'" data-viewer-kind="health" data-bot-id="'+escapeHtml(b.id)+'" data-viewer-title="'+escapeHtml(b.name)+' · Health endpoint">Health endpoint</a><a href="#" data-viewer-kind="manage" data-bot-id="'+escapeHtml(b.id)+'" data-viewer-title="'+escapeHtml(b.name)+' · Feature management">Manage features</a><a href="'+escapeHtml(b.repo_url)+'" data-viewer-kind="github" data-bot-id="'+escapeHtml(b.id)+'" data-viewer-title="'+escapeHtml(b.name)+' · GitHub repository">GitHub repo</a></div></article>';}
 function readHistory(){try{const raw=localStorage.getItem(HISTORY_KEY);if(!raw)return {samples:{},events:[]};const parsed=JSON.parse(raw);return {samples:parsed.samples&&typeof parsed.samples==='object'?parsed.samples:{},events:Array.isArray(parsed.events)?parsed.events:[]};}catch(_){return {samples:{},events:[]};}}
 function writeHistory(h){try{localStorage.setItem(HISTORY_KEY,JSON.stringify(h));}catch(_){/* Local history is optional; dashboard monitoring must keep working. */}}
 function recordHistory(bots,checkedAt){const h=readHistory(),stamp=Date.parse(checkedAt)||Date.now();for(const b of bots){const list=Array.isArray(h.samples[b.id])?h.samples[b.id]:[];const previous=list.length?list[list.length-1]:null;list.push({t:stamp,s:b.status,ms:Number.isFinite(b.response_time_ms)?b.response_time_ms:null});h.samples[b.id]=list.slice(-MAX_SAMPLES);if(previous&&previous.s!==b.status){h.events.unshift({t:stamp,id:b.id,name:b.name,from:previous.s,to:b.status});}}h.events=h.events.slice(0,MAX_EVENTS);writeHistory(h);}
@@ -217,7 +269,36 @@ let viewerBotId='';
 function closeViewer(){$('viewer').classList.add('hidden');$('viewerContent').innerHTML='';document.body.style.overflow='';}
 function viewerError(m){$('viewerContent').innerHTML='<div class="viewer-message">'+escapeHtml(m)+'</div>';}
 async function loadGithubPath(path=''){ $('viewerContent').innerHTML='<div class="viewer-message">Loading repository…</div>';try{const r=await fetch('/api/viewer/github/'+encodeURIComponent(viewerBotId)+'?path='+encodeURIComponent(path),{headers:{Authorization:'Basic '+auth},cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.detail||'Could not load repository.');if(d.kind==='directory'){const parent=path.includes('/')?path.slice(0,path.lastIndexOf('/')):'';let h='<div class="viewer-toolbar">'+(path?'<button data-github-path="'+escapeHtml(parent)+'">← Back</button>':'')+'<span class="viewer-breadcrumb">'+escapeHtml(d.repository)+' / '+escapeHtml(path)+'</span></div><div class="viewer-list">';for(const x of d.entries)h+='<button class="viewer-entry" data-github-path="'+escapeHtml(x.path)+'"><span>'+(x.type==='dir'?'📁 ':'📄 ')+escapeHtml(x.name)+'</span><small>'+(x.type==='dir'?'Folder':Number(x.size||0).toLocaleString()+' bytes')+'</small></button>';h+='</div>';$('viewerContent').innerHTML=h;}else $('viewerContent').innerHTML='<div class="viewer-toolbar"><button data-github-path="'+escapeHtml(path.includes('/')?path.slice(0,path.lastIndexOf('/')):'')+'">← Back to files</button><span class="viewer-breadcrumb">'+escapeHtml(d.path)+'</span></div><pre class="viewer-code">'+escapeHtml(d.content)+(d.truncated?'\n[Preview truncated at 200 KB.]':'')+'</pre>';}catch(e){viewerError(e.message||'Repository request failed.');}}
-async function openViewer(kind,id,title){viewerBotId=id;$('viewerTitle').textContent=title;$('viewer').classList.remove('hidden');document.body.style.overflow='hidden';$('viewerContent').innerHTML='<div class="viewer-message">Loading…</div>';if(kind==='github'){await loadGithubPath('');return;}const b=latestBots.find(x=>x.id===id);if(!b){viewerError('Refresh the dashboard and try again.');return;}if(kind==='service'){$('viewerContent').innerHTML='<div class="viewer-toolbar"><span class="pill '+escapeHtml(b.status)+'">'+statusLabel(b.status)+'</span><span class="viewer-breadcrumb">'+escapeHtml(b.service_url)+'</span></div><div class="viewer-message">External service pages can block embedding. This internal view displays the service monitoring information instead.<br><br>HTTP: '+escapeHtml(b.http_status??'No response')+'<br>Response time: '+escapeHtml(b.response_time_ms==null?'—':b.response_time_ms+' ms')+'<br>Last check: '+escapeHtml(new Date(b.checked_at).toLocaleString())+'<br>'+escapeHtml(b.message)+'</div>';return;}try{const r=await fetch('/api/viewer/health/'+encodeURIComponent(id),{headers:{Authorization:'Basic '+auth},cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.detail||'Could not fetch endpoint.');$('viewerContent').innerHTML='<div class="viewer-toolbar"><span class="pill '+(d.http_status>=200&&d.http_status<300?'online':'unavailable')+'">HTTP '+escapeHtml(d.http_status)+'</span><span class="viewer-breadcrumb">'+escapeHtml(d.url)+' · '+escapeHtml(d.content_type)+'</span></div><pre class="viewer-code">'+escapeHtml(d.body)+(d.truncated?'\n[Response truncated at 100 KB.]':'')+'</pre>';}catch(e){viewerError(e.message||'Health endpoint request failed.');}}
+
+async function loadManagement(id){
+  $('viewerContent').innerHTML='<div class="viewer-message">Loading live bot settings…</div>';
+  try{
+    const r=await fetch('/api/manage/'+encodeURIComponent(id)+'/features',{headers:{Authorization:'Basic '+auth},cache:'no-store'});
+    const d=await r.json();if(!r.ok)throw Error(d.detail||'Feature settings are not available.');
+    let h='<div class="viewer-message">Settings are read from the bot backend. Changes are saved to bot storage, not this browser.</div>';
+    if(d.activityLimits){
+      h+='<section class="card" style="margin-top:14px"><h3 style="margin:0 0 8px">Activity time limits</h3><p class="muted" style="font-size:12px">Set the duration in minutes (1–1440). Saved values apply to the existing attendance logic.</p><div class="viewer-list">';
+      for(const kind of ['eat','wc','smoke','wcd'])h+='<div class="activity-row"><label for="limit-'+kind+'">'+kind.toUpperCase()+'</label><input id="limit-'+kind+'" type="number" min="1" max="1440" step="1" value="'+escapeHtml(d.activityLimits[kind]??'')+'" style="width:110px;background:#0c1017;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px"><button data-save-limit="'+kind+'" data-bot-id="'+escapeHtml(id)+'">Save</button></div>';
+      h+='</div></section>';
+    }
+    if(typeof d.remindersEnabled==='boolean')h+='<section class="card" style="margin-top:14px"><h3 style="margin:0 0 8px">Activity reminders</h3><p class="muted" style="font-size:12px">Current state: '+(d.remindersEnabled?'Enabled':'Disabled')+'</p><button data-reminders="'+(!d.remindersEnabled)+'" data-bot-id="'+escapeHtml(id)+'">'+(d.remindersEnabled?'Disable reminders':'Enable reminders')+'</button></section>';
+    if(d.statistics){h+='<section class="card" style="margin-top:14px"><h3 style="margin:0 0 8px">Calculator bot statistics</h3><pre class="viewer-code">'+escapeHtml(JSON.stringify(d.statistics,null,2))+'</pre><p class="muted" style="font-size:12px">Read-only: this bot currently has no persistent calculator settings to edit.</p><p class="muted" style="font-size:12px">Database: '+escapeHtml(d.mongodb||'unknown')+'</p></section>';}
+    if(d.management_note)h+='<p class="muted" style="margin-top:12px">'+escapeHtml(d.management_note)+'</p>';
+    $('viewerContent').innerHTML=h;
+  }catch(e){viewerError((e.message||'Could not load bot features.')+' Check that the bot’s protected Control Center API and shared token are configured.');}
+}
+async function saveManagement(path,payload,button){
+  button.disabled=true;const old=button.textContent;button.textContent='Saving…';
+  try{const r=await fetch('/api/manage/'+encodeURIComponent(viewerBotId)+'/'+path,{method:'PUT',headers:{Authorization:'Basic '+auth,'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.detail||'Save failed.');await loadManagement(viewerBotId);}
+  catch(e){viewerError(e.message||'Could not save the setting.');button.disabled=false;button.textContent=old;}
+}
+document.addEventListener('click',e=>{
+  const limit=e.target.closest('[data-save-limit]');
+  if(limit){const kind=limit.dataset.saveLimit,input=$('limit-'+kind),minutes=Number(input?.value);if(!Number.isSafeInteger(minutes)||minutes<1||minutes>1440){viewerError('Enter a whole number between 1 and 1440 minutes.');return;}saveManagement('activity-limits',{kind,minutes},limit);return;}
+  const reminders=e.target.closest('[data-reminders]');
+  if(reminders)saveManagement('activity-reminders',{enabled:reminders.dataset.reminders==='true'},reminders);
+});
+async function openViewer(kind,id,title){viewerBotId=id;$('viewerTitle').textContent=title;$('viewer').classList.remove('hidden');document.body.style.overflow='hidden';$('viewerContent').innerHTML='<div class="viewer-message">Loading…</div>';if(kind==='github'){await loadGithubPath('');return;}if(kind==='manage'){await loadManagement(id);return;}const b=latestBots.find(x=>x.id===id);if(!b){viewerError('Refresh the dashboard and try again.');return;}if(kind==='service'){$('viewerContent').innerHTML='<div class="viewer-toolbar"><span class="pill '+escapeHtml(b.status)+'">'+statusLabel(b.status)+'</span><span class="viewer-breadcrumb">'+escapeHtml(b.service_url)+'</span></div><div class="viewer-message">External service pages can block embedding. This internal view displays the service monitoring information instead.<br><br>HTTP: '+escapeHtml(b.http_status??'No response')+'<br>Response time: '+escapeHtml(b.response_time_ms==null?'—':b.response_time_ms+' ms')+'<br>Last check: '+escapeHtml(new Date(b.checked_at).toLocaleString())+'<br>'+escapeHtml(b.message)+'</div>';return;}try{const r=await fetch('/api/viewer/health/'+encodeURIComponent(id),{headers:{Authorization:'Basic '+auth},cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.detail||'Could not fetch endpoint.');$('viewerContent').innerHTML='<div class="viewer-toolbar"><span class="pill '+(d.http_status>=200&&d.http_status<300?'online':'unavailable')+'">HTTP '+escapeHtml(d.http_status)+'</span><span class="viewer-breadcrumb">'+escapeHtml(d.url)+' · '+escapeHtml(d.content_type)+'</span></div><pre class="viewer-code">'+escapeHtml(d.body)+(d.truncated?'\n[Response truncated at 100 KB.]':'')+'</pre>';}catch(e){viewerError(e.message||'Health endpoint request failed.');}}
 document.addEventListener('click',e=>{const f=e.target.closest('[data-github-path]');if(f&&!$('viewer').classList.contains('hidden')){loadGithubPath(f.dataset.githubPath||'');return;}const a=e.target.closest('#cards .links a');if(!a)return;e.preventDefault();openViewer(a.dataset.viewerKind,a.dataset.botId,a.dataset.viewerTitle||a.textContent.trim());});
 $('viewerClose').addEventListener('click',closeViewer);$('viewer').addEventListener('click',e=>{if(e.target===$('viewer'))closeViewer()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('viewer').classList.contains('hidden'))closeViewer()});
 $('serviceSearch').addEventListener('input',renderCards);$('statusFilter').addEventListener('change',renderCards);$('refresh').addEventListener('click',loadStatus);$('autoRefresh').addEventListener('click',()=>{autoRefresh=!autoRefresh;$('autoRefresh').textContent='Auto-refresh: '+(autoRefresh?'On':'Off');$('autoRefresh').setAttribute('aria-pressed',String(autoRefresh));$('liveLabel').innerHTML='<span class="dot"></span> '+(autoRefresh?'Monitoring':'Paused');});$('clearHistory').addEventListener('click',()=>{if(confirm('Clear locally stored health samples and status-change history for this browser?')){try{localStorage.removeItem(HISTORY_KEY)}catch(_){}renderCards();}});$('exportReport').addEventListener('click',()=>{const rows=[['service_id','service_name','status','http_status','response_time_ms','checked_at','health_url'],...latestBots.map(b=>[b.id,b.name,b.status,b.http_status??'',b.response_time_ms??'',b.checked_at,b.health_url])];const csv=rows.map(row=>row.map(v=>{let s=String(v??'');if(/^[=+@\-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}).join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='bot-control-center-report-'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);});$('logout').addEventListener('click',()=>{auth='';sessionStorage.removeItem('bcc_auth');$('password').value='';showLogin()});
