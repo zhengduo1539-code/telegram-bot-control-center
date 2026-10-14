@@ -12,6 +12,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("DASHBOARD_PASSWORD", "test-password-long-enough")
 
     async def fake_proxy(bot_id: str, method: str = "GET", endpoint: str = "features", payload=None):
+        main.get_bot(bot_id)
         return {"bot": bot_id, "method": method, "endpoint": endpoint, "payload": payload}
 
     monkeypatch.setattr(main, "proxy_management", fake_proxy)
