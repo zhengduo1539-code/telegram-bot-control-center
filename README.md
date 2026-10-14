@@ -12,7 +12,10 @@ The dashboard checks each configured HTTP health endpoint and shows status, late
 
 - Private dashboard with username/password authentication over HTTPS.
 - Concurrent health checks with bounded timeouts.
-- Responsive dark interface, manual refresh, and 60-second polling.
+- Responsive dark interface, manual refresh, and pausable 60-second auto-refresh.
+- Browser-local response-time trend lines, observed availability estimates, and a recent status-change timeline.
+- Export the latest health snapshot as CSV for offline review.
+- Browser-local history is bounded and can be cleared; no monitoring samples are written to a server database.
 - Public /healthz endpoint for Render's own health check.
 - Monitoring only: no restart, deploy, environment-variable, database, or bot actions.
 
