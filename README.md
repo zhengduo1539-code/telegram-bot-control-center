@@ -1,6 +1,6 @@
 # Telegram Bot Control Center
 
-A private, read-only monitoring dashboard for three services:
+A private monitoring dashboard with separate, backend-backed feature workspaces for three Telegram bots:
 
 - Z28 Attendance Bot (Node.js)
 - Admin Bot (Python)
@@ -8,7 +8,7 @@ A private, read-only monitoring dashboard for three services:
 
 The dashboard checks each configured HTTP health endpoint and shows status, latency, and links to Render and GitHub.
 
-## Scope of v0.1
+## Scope
 
 - Private dashboard with username/password authentication over HTTPS.
 - Concurrent health checks with bounded timeouts.
@@ -17,7 +17,9 @@ The dashboard checks each configured HTTP health endpoint and shows status, late
 - Export the latest health snapshot as CSV for offline review.
 - Browser-local history is bounded and can be cleared; no monitoring samples are written to a server database.
 - Public /healthz endpoint for Render's own health check.
-- Monitoring only: no restart, deploy, environment-variable, database, or bot actions.
+- Separate feature-management workspace per bot; only existing backend features are exposed. Supported writes are Z28/M58 activity duration limits and Z28 activity reminders. Admin Bot remains read-only because it has no persistent calculator settings.
+- No restart, deploy, environment-variable, database, or other infrastructure controls.
+- Feature-management APIs use a shared server-side CONTROL_CENTER_API_TOKEN; see docs/feature-management.md before enabling the integration.
 
 A successful health endpoint means that endpoint returned HTTP 2xx; it does not prove every bot feature is functioning correctly.
 
@@ -59,6 +61,10 @@ Render free services may spin down when idle, so the first request can take long
 | ADMIN_BOT_HEALTH_URL | Admin Bot health endpoint |
 | M58_HEALTH_URL | M58 health endpoint |
 | HEALTH_CHECK_TIMEOUT | Per-endpoint timeout in seconds (1–20) |
+| CONTROL_CENTER_API_TOKEN | Same high-entropy secret on the Control Center and all three bot services |
+| Z28_CONTROL_CENTER_URL | Optional override for Z28's feature API base URL |
+| ADMIN_BOT_CONTROL_CENTER_URL | Optional override for Admin Bot's feature API base URL |
+| M58_CONTROL_CENTER_URL | Optional override for M58's feature API base URL |
 
 ## Security notes
 
