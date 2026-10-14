@@ -113,8 +113,8 @@ def get_bot(bot_id: str) -> dict[str, str]:
 
 
 @app.get("/api/viewer/github/{bot_id}")
-async def github_viewer(bot_id: str, path: str = "",
-    _: Annotated[str, Depends(require_dashboard_login)] = "") -> dict[str, Any]:
+async def github_viewer(bot_id: str,
+    _: Annotated[str, Depends(require_dashboard_login)], path: str = "") -> dict[str, Any]:
     bot = get_bot(bot_id)
     prefix = "https://github.com/"
     if not bot["repo_url"].startswith(prefix):
@@ -158,7 +158,7 @@ async def github_viewer(bot_id: str, path: str = "",
 
 @app.get("/api/viewer/health/{bot_id}")
 async def health_viewer(bot_id: str,
-    _: Annotated[str, Depends(require_dashboard_login)] = "") -> dict[str, Any]:
+    _: Annotated[str, Depends(require_dashboard_login)]) -> dict[str, Any]:
     bot = get_bot(bot_id)
     url = os.getenv(bot["health_url_env"], bot["default_url"]).strip()
     try:
