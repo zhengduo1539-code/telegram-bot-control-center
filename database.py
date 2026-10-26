@@ -259,7 +259,7 @@ class UsageStore:
             # Concurrent first-time requests can race on the unique (u, d)
             # index. Read the winner and retry only while quota remains.
             existing = self.usage.find_one({"u": user_key, "d": day_value}, {"n": 1})
-            if not existing or int(existing.get("n", 0)) >= DAILY_LIMIT:
+            if not existing or int(existing.get("n", 0)) >= maximum:
                 return None
             document = self.usage.find_one_and_update(
                 query, update, upsert=False, return_document=ReturnDocument.AFTER
