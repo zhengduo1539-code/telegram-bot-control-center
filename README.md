@@ -13,6 +13,7 @@ A Telegram bot that turns a short text line into a coordinated pack of three ani
 - Safe, idempotent migration from the previous long-field schema to the compact schema at startup.
 - Application-level user ID checks and bounded quota values; strict MongoDB schema validation is installed when permissions allow.
 - /health is the readiness endpoint for UptimeRobot; /healthz remains available for Render's existing health check.
+- HTTP client INFO logs are disabled for `httpx` and `httpcore` because Telegram Bot API request URLs contain the bot token.
 - One Render Free Web Service runs the FastAPI health server and Telegram long polling in the same process.
 
 ## MongoDB storage format
