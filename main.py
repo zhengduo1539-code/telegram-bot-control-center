@@ -505,8 +505,7 @@ class BotService:
                 pass
 
     async def _create_pack(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        query = update.callback_query
-        user = update.effective_user
+        query, user = update.callback_query, update.effective_user
         if not query or not user:
             return
         style = self.sessions.get(user.id)
@@ -516,39 +515,72 @@ class BotService:
         if not self.store or self.status != "running":
             await query.answer("The bot is not fully configured. Please try again later.", show_alert=True)
             return
+
         lock = self.locks.setdefault(user.id, asyncio.Lock())
         if lock.locked():
-            await query.answer("Your pack is already being created.", show_alert=False)
+            await query.answer("Your pack is already being created.")
             return
+
         async with lock:
-            # Use the same timestamp for reservation and rollback. If generation
-            # crosses UTC midnight and fails, the previous day's quota is restored.
             quota_time = datetime.now(timezone.utc)
-            count = await asyncio.to_thread(self.store.reserve, user.id, quota_time)
+            account = await asyncio.to_thread(self.store.get_account, user.id, quota_time)
+            is_pro = bool(account["is_pro"])
+            bonus_used = False
+            if is_pro:
+                count = await asyncio.to_thread(
+                    self.store.reserve, user.id, quota_time, allow_over_limit=True
+                )
+            else:
+                count = await asyncio.to_thread(self.store.reserve, user.id, quota_time)
+
+            if count is None and not is_pro:
+                bonus_used = await asyncio.to_thread(self.store.consume_bonus, user.id)
+                if bonus_used:
+                    count = await asyncio.to_thread(
+                        self.store.reserve, user.id, quota_time, allow_over_limit=True
+                    )
+                    if count is None:
+                        await asyncio.to_thread(self.store.add_bonus, user.id)
+                        bonus_used = False
+
             if count is None:
-                await query.answer("Daily free limit reached: 3 packs per UTC day. Try again tomorrow.", show_alert=True)
+                await query.answer("Daily free limit reached.", show_alert=True)
+                if query.message:
+                    await query.message.reply_text(
+                        self._limit_message(user.id, quota_time),
+                        reply_markup=self._account_keyboard(user.id, include_invite=True),
+                    )
                 return
+
             pack_created = False
             try:
-                await query.answer("Creating your animated emoji pack…", show_alert=False)
-                bot_username = self.bot_username or (context.bot.username or "bot")
-                bot_username = re.sub(r"[^A-Za-z0-9_]", "", bot_username).lower() or "bot"
-                pack_name = f"tc_{user.id % 100000}_{int(time.time()) % 1000000}_{secrets.token_hex(2)}_by_{bot_username}"
-                title = (style.text.strip()[:45] + " · Animated Emoji")[:64]
+                await query.answer("Creating your animated emoji pack…")
+                bot_username = re.sub(
+                    r"[^A-Za-z0-9_]", "",
+                    self.bot_username or context.bot.username or "EmojiTitleBot",
+                ) or "EmojiTitleBot"
+                pack_name = (
+                    f"et_{user.id % 100000}_{int(time.time()) % 1000000}_"
+                    f"{secrets.token_hex(4)}_by_{bot_username.lower()}"
+                )
+                pack_title = style.text.strip()[:64] if is_pro else f"Created in 👉 @{bot_username}"[:64]
                 webm_files = await asyncio.to_thread(render_pack_webm, style)
-                native_emojis = ("✨", "💫", "🌟")
+                if len(webm_files) != len(PACK_EMOJIS):
+                    raise RuntimeError(
+                        f"renderer returned {len(webm_files)} files; expected {len(PACK_EMOJIS)}"
+                    )
                 stickers = [
                     InputSticker(
-                        sticker=InputFile(data, filename=f"animated_emoji_{index + 1}.webm"),
-                        emoji_list=[native_emojis[index]],
+                        sticker=InputFile(data, filename=f"emoji_{index + 1}.webm"),
+                        emoji_list=[emoji],
                         format="video",
                     )
-                    for index, data in enumerate(webm_files)
+                    for index, (data, emoji) in enumerate(zip(webm_files, PACK_EMOJIS, strict=True))
                 ]
                 await context.bot.create_new_sticker_set(
                     user_id=user.id,
                     name=pack_name,
-                    title=title,
+                    title=pack_title,
                     stickers=stickers,
                     sticker_type="custom_emoji",
                 )
@@ -556,32 +588,50 @@ class BotService:
                 pack_url = f"https://t.me/addemoji/{pack_name}"
                 self.sessions.pop(user.id, None)
                 self.session_message_ids.pop(user.id, None)
-                try:
-                    import html
-                    await query.message.reply_text(
-                        "🎉 <b>Your animated emoji pack is ready!</b>\n\n"
-                        f"Text: <code>{html.escape(style.text)}</code>\n"
-                        "Pack contents: 3 animated custom emoji\n"
-                        f"Free packs used today: {count}/{DAILY_LIMIT} (UTC)\n\n"
-                        "Open the pack to add it to Telegram. Telegram Premium may be required to add and use custom emoji sets.",
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✨ Open Emoji Pack", url=pack_url)]]),
+
+                if is_pro:
+                    pro_note = "💎 PRO subscription active: unlimited pack creation and custom pack titles."
+                else:
+                    pro_note = (
+                        "With 💎 PRO subscription:\n"
+                        "• Unlimited pack creation\n"
+                        "• Your text as the pack title instead of bot link"
                     )
-                except TelegramError:
-                    logger.exception("Pack was created, but the confirmation message failed for user_id=%s", user.id)
-                logger.info("Created custom emoji pack for user_id=%s; daily_count=%s", user.id, count)
+                confirmation = (
+                    "Your Emojipack has been created!\n"
+                    "You can now use it in any chat. Don't forget to add it to your collection to avoid losing it.\n"
+                    f"{pack_url}\n\n"
+                    f"Used: {count} of {DAILY_LIMIT} free packs today\n"
+                    f"{pro_note}\n\n"
+                    "Emojipack with 6 emoji for Telegram Premium subscribers."
+                )
+                if query.message:
+                    await query.message.reply_text(
+                        confirmation,
+                        reply_markup=self._account_keyboard(user.id),
+                    )
+                logger.info(
+                    "Created custom emoji pack for user_id=%s; daily_count=%s; pro=%s",
+                    user.id, count, is_pro,
+                )
             except Exception as exc:
                 if not pack_created:
                     await asyncio.to_thread(self.store.release, user.id, quota_time)
+                    if bonus_used:
+                        await asyncio.to_thread(self.store.add_bonus, user.id)
                 logger.exception("Pack creation failed for user_id=%s", user.id)
-                error_hint = "Telegram rejected the generated pack or the animation could not be encoded."
-                if isinstance(exc, TelegramError):
-                    error_hint = "Telegram could not accept this pack. Please try another text or design."
+                error_hint = (
+                    "Telegram could not accept this pack. Please try another text or design."
+                    if isinstance(exc, TelegramError)
+                    else "The animation could not be encoded. Please try again with shorter text."
+                )
                 try:
-                    await query.message.reply_text(f"⚠️ {error_hint}\nYour daily free credit has been restored if the pack was not created. Please try again.")
+                    if query.message:
+                        await query.message.reply_text(
+                            f"⚠️ {error_hint}\nYour free credit has been restored if the pack was not created. Please try again."
+                        )
                 except TelegramError:
                     logger.warning("Could not send pack failure notice to user_id=%s", user.id)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
