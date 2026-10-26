@@ -69,7 +69,10 @@ def test_preview_is_wide_white_looping_gif_with_full_width_artwork():
             x for x in range(image.width)
             if any(pixels[x, y] != (255, 255, 255) for y in range(50, 171))
         ]
-        assert colored_x and max(colored_x) - min(colored_x) > 260
+        artwork_width = max(colored_x) - min(colored_x) if colored_x else 0
+        # The original red-orange pill is compact: approximately a quarter
+        # of the wide preview, not a full-width banner or a tiny square inset.
+        assert 140 <= artwork_width <= 240
 
 
 def test_video_pack_has_six_telegram_compatible_webm_files():
