@@ -14,10 +14,11 @@ from sticker_engine import (
 )
 
 
-def test_reference_default_style_uses_monaco_gold_and_wave():
+def test_reference_default_style_uses_raleway_orange_pill_and_wave():
     style = Style(text="Hello").normalized()
-    assert style.font == "Monaco"
-    assert style.color == "Gold"
+    assert style.font == "Raleway italic"
+    assert style.color == "Orange"
+    assert style.shape == "Pill"
     assert style.animation == "Wave"
 
 
@@ -54,8 +55,8 @@ def test_preview_is_png():
     assert content.startswith(b"\x89PNG\r\n\x1a\n")
 
 
-def test_preview_is_wide_white_looping_gif():
-    content = render_preview_gif(Style(text="Hello", color="Orange", shape="Heart", animation="Bounce"))
+def test_preview_is_wide_white_looping_gif_with_full_width_artwork():
+    content = render_preview_gif(Style(text="Hello", color="Orange", shape="Pill", animation="Wave"))
     assert content.startswith((b"GIF87a", b"GIF89a"))
     assert len(content) > 100
     with Image.open(BytesIO(content)) as image:
@@ -63,6 +64,12 @@ def test_preview_is_wide_white_looping_gif():
         assert image.height == 220
         image_rgb = image.convert("RGB")
         assert image_rgb.getpixel((0, 0)) == (255, 255, 255)
+        pixels = image_rgb.load()
+        colored_x = [
+            x for x in range(image.width)
+            if any(pixels[x, y] != (255, 255, 255) for y in range(50, 171))
+        ]
+        assert colored_x and max(colored_x) - min(colored_x) > 260
 
 
 def test_video_pack_has_six_telegram_compatible_webm_files():
