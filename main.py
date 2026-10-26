@@ -25,6 +25,13 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+# httpx logs full request URLs at INFO. Telegram Bot API URLs contain the bot
+# token in the path, so keep HTTP client request logs above INFO to avoid
+# writing credentials into Render logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 logger = logging.getLogger("animated_text_creator")
 SERVICE_NAME = "Telegram Animated Text Creator"
 
