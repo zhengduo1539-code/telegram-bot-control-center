@@ -569,10 +569,10 @@ class BotService:
                     )
                 return
 
-            used_count = await asyncio.to_thread(self.store.get_count, user.id, quota_time)
             pack_created = False
             try:
                 await query.answer("Creating your animated emoji pack…")
+                used_count = await asyncio.to_thread(self.store.get_count, user.id, quota_time)
                 bot_username = re.sub(
                     r"[^A-Za-z0-9_]", "",
                     self.bot_username or context.bot.username or "EmojiTitleBot",
