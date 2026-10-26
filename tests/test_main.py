@@ -87,7 +87,7 @@ def test_prepare_stickers_accepts_a_variable_number_of_segments():
 
     assert len(stickers) == 2
     assert [sticker.sticker for sticker in stickers] == ["file-one", "file-two"]
-    assert [sticker.emoji_list for sticker in stickers] == [["✨"], ["✨"]]
+    assert [sticker.emoji_list for sticker in stickers] == [("✨",), ("✨",)]
     assert all(sticker.format == "video" for sticker in stickers)
 
 
