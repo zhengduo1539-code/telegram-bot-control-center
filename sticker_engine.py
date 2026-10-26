@@ -29,17 +29,17 @@ PALETTES: dict[str, str] = {
     "Gold": "#FFC857",
 }
 FONT_OPTIONS: tuple[str, ...] = (
-    "Sans Bold", "Serif Bold", "Mono Bold", "Italic", "Condensed", "Sans Regular",
+    "Impact", "Rubik", "Monaco", "Railway Italic", "Condensed Bold", "Sans Regular",
 )
 SHAPE_OPTIONS: tuple[str, ...] = ("Rounded", "Circle", "Heart", "Star", "Pill", "None")
 ANIMATION_OPTIONS: tuple[str, ...] = ("Pulse", "Bounce", "Wave", "Float", "Shake", "Tilt")
 
 _FONT_FILES: dict[str, tuple[str, ...]] = {
-    "Sans Bold": ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
-    "Serif Bold": ("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"),
-    "Mono Bold": ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationMono-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf"),
-    "Italic": ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf"),
-    "Condensed": ("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSansNarrow-Bold.ttf"),
+    "Impact": ("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    "Rubik": ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
+    "Monaco": ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf"),
+    "Railway Italic": ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf"),
+    "Condensed Bold": ("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSansNarrow-Bold.ttf"),
     "Sans Regular": ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
 }
 
@@ -82,12 +82,17 @@ def _rgb(value: str) -> tuple[int, int, int]:
 
 
 def _variant_hex(hex_color: str, variant: int) -> str:
+    """Return a coordinated but visibly distinct color for each pack item."""
     r, g, b = (part / 255 for part in _rgb(hex_color))
     h, s, v = colorsys.rgb_to_hsv(r, g, b)
     if variant == 1:
         s, v = max(0.35, s * 0.78), min(1.0, v * 1.12)
     elif variant == 2:
         h, s, v = (h + 0.045) % 1.0, min(1.0, s * 1.05), max(0.58, v * 0.92)
+    else:
+        h = (h + 0.085 * variant) % 1.0
+        s = min(1.0, max(0.58, s * (0.88 + (variant % 3) * 0.08)))
+        v = min(1.0, max(0.62, v * (0.88 + (variant % 2) * 0.12)))
     rr, gg, bb = colorsys.hsv_to_rgb(h, s, v)
     return "#{:02X}{:02X}{:02X}".format(round(rr * 255), round(gg * 255), round(bb * 255))
 
@@ -193,6 +198,27 @@ def render_preview_png(style: Style) -> bytes:
     return stream.getvalue()
 
 
+def render_preview_gif(style: Style) -> bytes:
+    """Render a compact looping GIF preview suitable for Telegram animation messages."""
+    frames = [render_frame(style, time_seconds=index / 15, size=256) for index in range(15)]
+    output = io.BytesIO()
+    frames[0].save(
+        output,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=67,
+        loop=0,
+        disposal=2,
+        optimize=True,
+        transparency=0,
+    )
+    data = output.getvalue()
+    if not data or not data.startswith((b"GIF87a", b"GIF89a")):
+        raise RuntimeError("Could not render the animated preview.")
+    return data
+
+
 def _ffmpeg_executable() -> str:
     try:
         import imageio_ffmpeg
@@ -236,7 +262,7 @@ def _encode_webm(frames: Iterable[Image.Image]) -> bytes:
 
 def render_pack_webm(style: Style) -> list[bytes]:
     base_hex = PALETTES[style.normalized().color]
-    variants = [base_hex, _variant_hex(base_hex, 1), _variant_hex(base_hex, 2)]
+    variants = [base_hex] + [_variant_hex(base_hex, index) for index in range(1, 6)]
     pack: list[bytes] = []
     for override in variants:
         frames = (
