@@ -653,9 +653,13 @@ class BotService:
                 pack_name = f"{slug}_{suffix}_by_{bot_username}"
                 pack_title = style.text.strip()[:64] if is_pro else f"Created in 👉 @{bot_username}"[:64]
 
+                expected_segments = split_text_for_stickers(style.text)
                 webm_files = await asyncio.to_thread(render_pack_webm, style)
-                if not webm_files:
-                    raise RuntimeError("No sticker segments were generated.")
+                if not webm_files or len(webm_files) != len(expected_segments):
+                    raise RuntimeError(
+                        f"renderer returned {len(webm_files)} sticker(s) for "
+                        f"{len(expected_segments)} text segment(s)"
+                    )
                 # The reference sends the complete text as a sample sticker, while
                 # the pack itself contains the individually readable text segments.
                 sample_webm = await asyncio.to_thread(render_single_webm, style)
