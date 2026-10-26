@@ -97,10 +97,16 @@ def _font(style_name: str, size: int) -> ImageFont.ImageFont:
             if hasattr(font, "get_variation_axes") and hasattr(font, "set_variation_by_axes"):
                 try:
                     axes = font.get_variation_axes()
-                    if axes and any(str(axis.get("name", "")).lower() in ("weight", "wght") for axis in axes):
+                    normalized_names = []
+                    for axis in axes:
+                        name = axis.get("name", "")
+                        if isinstance(name, bytes):
+                            name = name.decode("utf-8", "ignore")
+                        normalized_names.append(str(name).lower())
+                    if axes and any(name in ("weight", "wght") for name in normalized_names):
                         values = [axis.get("default", 400) for axis in axes]
-                        for index, axis in enumerate(axes):
-                            if str(axis.get("name", "")).lower() in ("weight", "wght"):
+                        for index, name in enumerate(normalized_names):
+                            if name in ("weight", "wght"):
                                 values[index] = weight
                         font.set_variation_by_axes(values)
                 except (OSError, ValueError, TypeError):
