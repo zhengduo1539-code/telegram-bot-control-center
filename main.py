@@ -307,7 +307,12 @@ class BotService:
         if not query:
             return
         match = re.fullmatch(r"pro:(\d{1,20}):([A-Za-z0-9_-]{8,64})", query.invoice_payload)
-        approved = bool(match and int(match.group(1)) == query.from_user.id)
+        approved = bool(
+            match
+            and int(match.group(1)) == query.from_user.id
+            and query.currency == "XTR"
+            and query.total_amount == PRO_PRICE_STARS
+        )
         try:
             await query.answer(
                 ok=approved,
@@ -322,8 +327,13 @@ class BotService:
         if not message or not user or not payment or not self.store:
             return
         payload_match = re.fullmatch(r"pro:(\d{1,20}):([A-Za-z0-9_-]{8,64})", payment.invoice_payload)
-        if not payload_match or int(payload_match.group(1)) != user.id:
-            logger.warning("Ignoring invalid PRO payment payload for user_id=%s", user.id)
+        if (
+            not payload_match
+            or int(payload_match.group(1)) != user.id
+            or payment.currency != "XTR"
+            or payment.total_amount != PRO_PRICE_STARS
+        ):
+            logger.warning("Ignoring invalid PRO payment details for user_id=%s", user.id)
             await message.reply_text("We couldn't verify this PRO payment. Please contact support with your Telegram receipt.")
             return
         expires_at = payment.subscription_expiration_date or (
