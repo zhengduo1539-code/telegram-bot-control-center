@@ -42,6 +42,8 @@ class BotService:
     def __init__(self) -> None:
         self.token = os.getenv("BOT_TOKEN", "").strip()
         self.mongo_uri = os.getenv("MONGODB_URI", "").strip()
+        self.mongo_database = os.getenv("MONGODB_DATABASE", "").strip()
+        self.mongo_auth_source = os.getenv("MONGODB_AUTH_SOURCE", "").strip()
         self.admin_ids = parse_admin_ids(os.getenv("ADMIN_IDS"))
         self.status = "not_configured"
         self.status_reason = "Set BOT_TOKEN, ADMIN_IDS and MONGODB_URI in Render Environment to enable the bot."
@@ -62,7 +64,11 @@ class BotService:
             logger.warning("Bot polling not started; missing environment variables: %s", ", ".join(missing))
             return
         try:
-            store = UsageStore(self.mongo_uri)
+            store = UsageStore(
+                self.mongo_uri,
+                database_name=self.mongo_database or None,
+                auth_source=self.mongo_auth_source or None,
+            )
             self.store = store
             await asyncio.to_thread(store.initialize)
             application = ApplicationBuilder().token(self.token).build()
