@@ -145,17 +145,19 @@ class BotService:
 
     @staticmethod
     def _keyboard(style: Style) -> InlineKeyboardMarkup:
+        # The source bot uses expressive glyphs as option indicators rather
+        # than generic single-color dots or geometric placeholders.
         color_icons = {
-            "Violet": "🟣", "Orange": "🟠", "Cyan": "🔵",
-            "Pink": "💗", "Lime": "🟢", "Gold": "🟡",
+            "Orange": "💊", "Pink": "💋", "Lime": "🟢🟡",
+            "Violet": "💜", "Cyan": "🔵🟢", "Gold": "🟡🟠",
         }
         shape_icons = {
-            "Rounded": "🟧", "Circle": "🟠", "Heart": "💗",
-            "Star": "⭐", "Pill": "🟩", "None": "▫️",
+            "Pill": "🎟️", "Heart": "💟", "Rounded": "🏷️",
+            "Circle": "⚪", "Star": "⭐", "None": "▫️",
         }
         animation_icons = {
-            "Pulse": "💗", "Bounce": "🔴", "Wave": "🚩",
-            "Float": "🪶", "Shake": "⚡", "Tilt": "🔄",
+            "Wave": "🚩", "Pulse": "💗", "Bounce": "🔴",
+            "Float": "🪶", "Shake": "⚡", "Tilt": "🔄", "None": "🚫",
         }
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("👈🏻", callback_data="font:-1"),
