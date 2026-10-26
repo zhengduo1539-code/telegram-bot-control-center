@@ -25,10 +25,14 @@ EmojiTitleBot turns a short text line into a coordinated pack of six animated Te
 | --- | --- |
 | u | Telegram user ID |
 | d | UTC day (YYYY-MM-DD) |
-| n | Packs reserved/used on that day (bounded to 10,000 to support paid and bonus use) |
+| n | Free packs used that day (0–3) |
 | x | Expiration timestamp, cleaned by a TTL index |
 
 The startup migration renames the old quota fields (user_id, day, count, expires_at) to the compact schema without resetting quota. A unique (u, d) index protects each daily record.
+
+### `extra_usage`
+
+Stores PRO and referral-bonus pack usage beyond the three free daily slots. It has a unique `(u, d)` index and a TTL index. Using a separate collection keeps the historic `daily_usage` validator and existing quota data compatible with database accounts that do not have `collMod` permission. Usage shown in bot replies and admin statistics combines both buckets.
 
 ### user_state
 
