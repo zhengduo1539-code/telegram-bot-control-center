@@ -680,7 +680,7 @@ async def home(request: Request) -> HTMLResponse:
 @app.get("/healthz")
 async def healthz(request: Request) -> dict[str, str]:
     service: BotService = request.app.state.bot_service
-    return {"status": "ok", "service": "emojititlebot", "bot": service.status}
+    return {"status": "ok", "service": "animated-text-creator", "bot": service.status}
 
 
 @app.get("/health")
@@ -689,7 +689,7 @@ async def health(request: Request) -> JSONResponse:
     if service.status != "running" or service.store is None:
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "service": "emojititlebot", "bot": service.status, "detail": service.status_reason},
+            content={"status": "not_ready", "service": "animated-text-creator", "bot": service.status, "detail": service.status_reason},
         )
     try:
         await asyncio.to_thread(service.store.ping)
@@ -697,6 +697,6 @@ async def health(request: Request) -> JSONResponse:
         logger.exception("Readiness check could not reach MongoDB")
         return JSONResponse(
             status_code=503,
-            content={"status": "degraded", "service": "emojititlebot", "bot": "running", "database": "disconnected"},
+            content={"status": "degraded", "service": "animated-text-creator", "bot": "running", "database": "disconnected"},
         )
     return JSONResponse(status_code=200, content={"status": "ok", "service": "animated-text-creator", "bot": "running", "database": "connected"})
