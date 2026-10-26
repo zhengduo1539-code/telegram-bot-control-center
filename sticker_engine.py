@@ -207,7 +207,7 @@ def render_preview_gif(style: Style) -> bytes:
         format="GIF",
         save_all=True,
         append_images=frames[1:],
-        duration=67,
+        duration=round(DURATION_SECONDS * 1000 / len(frames)),
         loop=0,
         disposal=2,
         optimize=True,
