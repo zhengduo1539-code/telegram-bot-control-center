@@ -11,8 +11,12 @@ from pymongo.errors import DuplicateKeyError, OperationFailure
 logger = logging.getLogger(__name__)
 
 DAILY_LIMIT = 3
+MAX_DAILY_USAGE = 10000
 RETENTION_DAYS = 60
 COLLECTION_NAME = "daily_usage"
+USER_COLLECTION_NAME = "user_state"
+PAYMENT_COLLECTION_NAME = "star_payments"
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 # Previous schema -> compact schema. Keep this mapping in one place so
 # migrations, queries, indexes, and tests use the same contract.
@@ -37,7 +41,7 @@ def _schema_validator() -> dict[str, Any]:
                 "n": {
                     "bsonType": ["int", "long"],
                     "minimum": 0,
-                    "maximum": DAILY_LIMIT,
+                    "maximum": MAX_DAILY_USAGE,
                 },
                 "x": {"bsonType": "date"},
             },
@@ -73,6 +77,8 @@ class UsageStore:
             # dedicated app database only when the URI has no database path.
             self.db = self.client.get_default_database(default="animated_text_creator")
         self.usage = self.db[COLLECTION_NAME]
+        self.users = self.db[USER_COLLECTION_NAME]
+        self.payments = self.db[PAYMENT_COLLECTION_NAME]
 
     def initialize(self) -> None:
         """Verify MongoDB, migrate old documents, then enforce compact indexes."""
@@ -84,6 +90,7 @@ class UsageStore:
         self._ensure_indexes()
         if not collection_created_with_validator:
             self._ensure_schema_validator()
+        self._ensure_account_indexes()
 
     def _ensure_collection(self) -> bool:
         """Create a fresh collection with validation where supported.
@@ -167,6 +174,11 @@ class UsageStore:
             name="x_ttl",
         )
 
+    def _ensure_account_indexes(self) -> None:
+        self.users.create_index([("u", ASCENDING)], unique=True, name="user_uq")
+        self.payments.create_index([("c", ASCENDING)], unique=True, name="charge_uq")
+        self.payments.create_index([("u", ASCENDING), ("d", ASCENDING)], name="user_payment_history")
+
     def _ensure_schema_validator(self) -> None:
         """Apply strict document validation if the DB user has collMod rights."""
         try:
@@ -219,11 +231,18 @@ class UsageStore:
         expires = datetime.combine(usage_day + timedelta(days=RETENTION_DAYS), time.min)
         return expires.replace(tzinfo=timezone.utc)
 
-    def reserve(self, user_id: int, now: datetime | None = None) -> int | None:
-        """Atomically reserve one daily slot; return its new count or None if full."""
+    def reserve(
+        self,
+        user_id: int,
+        now: datetime | None = None,
+        *,
+        allow_over_limit: bool = False,
+    ) -> int | None:
+        """Atomically reserve a daily slot; ordinary users stop at 3 unless entitled."""
         user_key = self._user_key(user_id)
         day_value = self.current_day(now)
-        query = {"u": user_key, "d": day_value, "n": {"$lt": DAILY_LIMIT}}
+        maximum = MAX_DAILY_USAGE if allow_over_limit else DAILY_LIMIT
+        query = {"u": user_key, "d": day_value, "n": {"$lt": maximum}}
         update = {
             "$inc": {"n": 1},
             "$setOnInsert": {
@@ -245,7 +264,7 @@ class UsageStore:
             document = self.usage.find_one_and_update(
                 query, update, upsert=False, return_document=ReturnDocument.AFTER
             )
-        if document and 1 <= int(document.get("n", 0)) <= DAILY_LIMIT:
+        if document and 1 <= int(document.get("n", 0)) <= maximum:
             return int(document["n"])
         return None
 
@@ -290,6 +309,108 @@ class UsageStore:
             "users_today": int(stats[0]["users"]),
             "packs_today": int(stats[0]["packs"]),
         }
+
+    def register_user(self, user_id: int, referrer_id: int | None = None) -> bool:
+        """Register a user once and award one referral credit for a genuine new invite."""
+        user_key = self._user_key(user_id)
+        referrer = self._user_key(referrer_id) if referrer_id is not None else None
+        if referrer == user_key:
+            referrer = None
+
+        if self.users.find_one({"u": user_key}, {"u": 1}):
+            return False
+
+        had_usage = self.usage.find_one({"u": user_key}, {"u": 1}) is not None
+        initial: dict[str, Any] = {"u": user_key, "b": 0, "p": EPOCH}
+        result = self.users.update_one({"u": user_key}, {"$setOnInsert": initial}, upsert=True)
+        if result.upserted_id is None or had_usage or referrer is None:
+            return False
+
+        self.users.update_one({"u": user_key}, {"$set": {"r": referrer}})
+        self.users.update_one(
+            {"u": referrer},
+            {"$inc": {"b": 1}, "$setOnInsert": {"u": referrer, "p": EPOCH}},
+            upsert=True,
+        )
+        return True
+
+    def get_account(self, user_id: int, now: datetime | None = None) -> dict[str, Any]:
+        """Return stable account entitlements without exposing raw database documents."""
+        user_key = self._user_key(user_id)
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        current = current.astimezone(timezone.utc)
+        document = self.users.find_one({"u": user_key}) or {}
+        pro_until = document.get("p", EPOCH)
+        if not isinstance(pro_until, datetime):
+            pro_until = EPOCH
+        if pro_until.tzinfo is None:
+            pro_until = pro_until.replace(tzinfo=timezone.utc)
+        pro_until = pro_until.astimezone(timezone.utc)
+        return {
+            "user_id": user_key,
+            "bonus_count": max(0, int(document.get("b", 0))),
+            "pro_until": pro_until,
+            "is_pro": pro_until > current,
+        }
+
+    def consume_bonus(self, user_id: int) -> bool:
+        """Atomically consume one referral pack credit, if available."""
+        user_key = self._user_key(user_id)
+        updated = self.users.find_one_and_update(
+            {"u": user_key, "b": {"$gt": 0}},
+            {"$inc": {"b": -1}},
+            return_document=ReturnDocument.AFTER,
+        )
+        return updated is not None
+
+    def add_bonus(self, user_id: int, amount: int = 1) -> None:
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount < 1 or amount > 100:
+            raise ValueError("bonus amount must be between 1 and 100")
+        user_key = self._user_key(user_id)
+        self.users.update_one(
+            {"u": user_key},
+            {"$inc": {"b": amount}, "$setOnInsert": {"u": user_key, "p": EPOCH}},
+            upsert=True,
+        )
+
+    def record_pro_payment(
+        self,
+        *,
+        user_id: int,
+        charge_id: str,
+        amount: int,
+        payload: str,
+        expires_at: datetime,
+        paid_at: datetime | None = None,
+    ) -> bool:
+        """Record a Stars charge exactly once and activate PRO only for a new charge."""
+        user_key = self._user_key(user_id)
+        if not charge_id or len(charge_id) > 256:
+            raise ValueError("invalid Telegram payment charge ID")
+        if not isinstance(expires_at, datetime):
+            raise ValueError("expires_at must be a datetime")
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        expires_at = expires_at.astimezone(timezone.utc)
+        when = paid_at or datetime.now(timezone.utc)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        when = when.astimezone(timezone.utc)
+        try:
+            self.payments.insert_one({
+                "c": charge_id, "u": user_key, "a": int(amount),
+                "p": str(payload)[:128], "d": when, "x": expires_at,
+            })
+        except DuplicateKeyError:
+            return False
+        self.users.update_one(
+            {"u": user_key},
+            {"$max": {"p": expires_at}, "$setOnInsert": {"u": user_key, "b": 0}},
+            upsert=True,
+        )
+        return True
 
     def close(self) -> None:
         self.client.close()
