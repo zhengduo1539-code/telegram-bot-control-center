@@ -201,13 +201,14 @@ class BotService:
         next_day = current.date() + timedelta(days=1)
         reset_at = datetime.combine(next_day, datetime.min.time(), tzinfo=timezone.utc)
         seconds = max(0, int((reset_at - current).total_seconds()))
-        return seconds // 3600, (seconds % 3600 + 59) // 60
+        total_minutes = (seconds + 59) // 60
+        return total_minutes // 60, total_minutes % 60
 
     def _limit_message(self, user_id: int, now: datetime | None = None) -> str:
         hours, minutes = self._time_until_utc_reset(now)
         return (
             "You have reached the limit of 3 packs per day.\n"
-            f"You can create a new pack in {hours} hours and {minutes} minutes.\n\n"
+            f"You can create a new pack in {hours} hours in {minutes} minutes.\n\n"
             "With 💎 PRO subscription you get:\n"
             "- Unlimited pack creation\n"
             "- Your text as the pack title instead of bot signature\n\n"
@@ -601,7 +602,7 @@ class BotService:
                     "Your Emojipack has been created!\n"
                     "You can now use it in any chat. Don't forget to add it to your collection to avoid losing it.\n"
                     f"{pack_url}\n\n"
-                    f"Used: {count} of {DAILY_LIMIT} free packs today\n"
+                    f"Used: {count}/{DAILY_LIMIT} free packs today\n"
                     f"{pro_note}\n\n"
                     "Emojipack with 6 emoji for Telegram Premium subscribers."
                 )
@@ -671,7 +672,7 @@ async def health(request: Request) -> JSONResponse:
     if service.status != "running" or service.store is None:
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "service": "animated-text-creator", "bot": service.status, "detail": service.status_reason},
+            content={"status": "not_ready", "service": "emojititlebot", "bot": service.status, "detail": service.status_reason},
         )
     try:
         await asyncio.to_thread(service.store.ping)
