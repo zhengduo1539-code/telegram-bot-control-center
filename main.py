@@ -527,12 +527,17 @@ class BotService:
             account = await asyncio.to_thread(self.store.get_account, user.id, quota_time)
             is_pro = bool(account["is_pro"])
             bonus_used = False
-            if is_pro:
+            reserved_over_limit = False
+
+            # Consume the 3 daily free slots first, even for PRO members. Extra
+            # packs are tracked in a separate collection to remain compatible
+            # with existing MongoDB validators on daily_usage.
+            count = await asyncio.to_thread(self.store.reserve, user.id, quota_time)
+            if count is None and is_pro:
                 count = await asyncio.to_thread(
                     self.store.reserve, user.id, quota_time, allow_over_limit=True
                 )
-            else:
-                count = await asyncio.to_thread(self.store.reserve, user.id, quota_time)
+                reserved_over_limit = count is not None
 
             if count is None and not is_pro:
                 bonus_used = await asyncio.to_thread(self.store.consume_bonus, user.id)
@@ -540,6 +545,7 @@ class BotService:
                     count = await asyncio.to_thread(
                         self.store.reserve, user.id, quota_time, allow_over_limit=True
                     )
+                    reserved_over_limit = count is not None
                     if count is None:
                         await asyncio.to_thread(self.store.add_bonus, user.id)
                         bonus_used = False
@@ -553,6 +559,7 @@ class BotService:
                     )
                 return
 
+            used_count = await asyncio.to_thread(self.store.get_count, user.id, quota_time)
             pack_created = False
             try:
                 await query.answer("Creating your animated emoji pack…")
@@ -602,7 +609,7 @@ class BotService:
                     "Your Emojipack has been created!\n"
                     "You can now use it in any chat. Don't forget to add it to your collection to avoid losing it.\n"
                     f"{pack_url}\n\n"
-                    f"Used: {count}/{DAILY_LIMIT} free packs today\n"
+                    f"Used: {used_count}/{DAILY_LIMIT} free packs today\n"
                     f"{pro_note}\n\n"
                     "Emojipack with 6 emoji for Telegram Premium subscribers."
                 )
@@ -617,7 +624,7 @@ class BotService:
                 )
             except Exception as exc:
                 if not pack_created:
-                    await asyncio.to_thread(self.store.release, user.id, quota_time)
+                    await asyncio.to_thread(self.store.release, user.id, quota_time, allow_over_limit=reserved_over_limit)
                     if bonus_used:
                         await asyncio.to_thread(self.store.add_bonus, user.id)
                 logger.exception("Pack creation failed for user_id=%s", user.id)
