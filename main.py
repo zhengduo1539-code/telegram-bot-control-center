@@ -141,29 +141,79 @@ class BotService:
         return bool(message and message.chat and message.chat.type == ChatType.PRIVATE)
 
     def _style_caption(self, style: Style, count: int | None = None) -> str:
-        import html
-        safe_text = html.escape(style.text)
-        return (
-            f"✨ <b>Animated Text Creator</b>\n\n"
-            f"Text: <code>{safe_text}</code>\n"
-            f"Font: {html.escape(style.font)}\n"
-            f"Color: {html.escape(style.color)}\n"
-            f"Shape: {html.escape(style.shape)}\n"
-            f"Animation: {html.escape(style.animation)}\n\n"
-            f"Daily free packs used: {count or 0}/{DAILY_LIMIT}\n"
-            "Choose options below, then create your 3-emoji pack."
-        )
+        return "Choose the font, color, shape, and animation for your text"
 
     @staticmethod
     def _keyboard(style: Style) -> InlineKeyboardMarkup:
+        color_icons = {
+            "Violet": "🟣", "Orange": "🟠", "Cyan": "🔵",
+            "Pink": "💗", "Lime": "🟢", "Gold": "🟡",
+        }
+        shape_icons = {
+            "Rounded": "🟧", "Circle": "🟠", "Heart": "💗",
+            "Star": "⭐", "Pill": "🟩", "None": "▫️",
+        }
+        animation_icons = {
+            "Pulse": "💗", "Bounce": "🔴", "Wave": "🚩",
+            "Float": "🪶", "Shake": "⚡", "Tilt": "🔄",
+        }
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("‹", callback_data="font:-1"), InlineKeyboardButton(f"🔤 {style.font}", callback_data="noop"), InlineKeyboardButton("›", callback_data="font:1")],
-            [InlineKeyboardButton("‹", callback_data="color:-1"), InlineKeyboardButton(f"🎨 {style.color}", callback_data="noop"), InlineKeyboardButton("›", callback_data="color:1")],
-            [InlineKeyboardButton("‹", callback_data="shape:-1"), InlineKeyboardButton(f"◈ {style.shape}", callback_data="noop"), InlineKeyboardButton("›", callback_data="shape:1")],
-            [InlineKeyboardButton("‹", callback_data="anim:-1"), InlineKeyboardButton(f"✨ {style.animation}", callback_data="noop"), InlineKeyboardButton("›", callback_data="anim:1")],
-            [InlineKeyboardButton("✅ Create Emoji Pack", callback_data="create"), InlineKeyboardButton("✏️ Change Text", callback_data="change")],
-            [InlineKeyboardButton("✖ Cancel", callback_data="cancel")],
+            [InlineKeyboardButton("👈🏻", callback_data="font:-1"),
+             InlineKeyboardButton(style.font, callback_data="noop"),
+             InlineKeyboardButton("👉🏻", callback_data="font:1")],
+            [InlineKeyboardButton("👈🏻", callback_data="color:-1"),
+             InlineKeyboardButton(color_icons.get(style.color, "🎨"), callback_data="noop"),
+             InlineKeyboardButton("👉🏻", callback_data="color:1")],
+            [InlineKeyboardButton("👈🏻", callback_data="shape:-1"),
+             InlineKeyboardButton(shape_icons.get(style.shape, "◈"), callback_data="noop"),
+             InlineKeyboardButton("👉🏻", callback_data="shape:1")],
+            [InlineKeyboardButton("👈🏻", callback_data="anim:-1"),
+             InlineKeyboardButton(animation_icons.get(style.animation, "✨"), callback_data="noop"),
+             InlineKeyboardButton("👉🏻", callback_data="anim:1")],
+            [InlineKeyboardButton("✅ Create Sticker Set", callback_data="create")],
         ])
+
+    def _referral_url(self, user_id: int) -> str:
+        username = re.sub(r"[^A-Za-z0-9_]", "", self.bot_username) or "EmojiTitleBot_bot"
+        return f"https://t.me/{username}?start=ref_{user_id}"
+
+    def _share_url(self, user_id: int) -> str:
+        referral = self._referral_url(user_id)
+        text = quote("Create your own animated emoji pack with EmojiTitleBot!")
+        return f"https://t.me/share/url?url={quote(referral, safe='')}&text={text}"
+
+    def _account_keyboard(self, user_id: int, *, include_invite: bool = False) -> InlineKeyboardMarkup:
+        rows = [[InlineKeyboardButton("⭐ Get PRO — 100 Stars", callback_data="get_pro")]]
+        rows.append([
+            InlineKeyboardButton(
+                "👥 Invite friend" if include_invite else "🔗 Share",
+                url=self._referral_url(user_id) if include_invite else self._share_url(user_id),
+            )
+        ])
+        return InlineKeyboardMarkup(rows)
+
+    @staticmethod
+    def _time_until_utc_reset(now: datetime | None = None) -> tuple[int, int]:
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        current = current.astimezone(timezone.utc)
+        next_day = current.date() + timedelta(days=1)
+        reset_at = datetime.combine(next_day, datetime.min.time(), tzinfo=timezone.utc)
+        seconds = max(0, int((reset_at - current).total_seconds()))
+        return seconds // 3600, (seconds % 3600 + 59) // 60
+
+    def _limit_message(self, user_id: int, now: datetime | None = None) -> str:
+        hours, minutes = self._time_until_utc_reset(now)
+        return (
+            "You have reached the limit of 3 packs per day.\n"
+            f"You can create a new pack in {hours} hours and {minutes} minutes.\n\n"
+            "With 💎 PRO subscription you get:\n"
+            "- Unlimited pack creation\n"
+            "- Your text as the pack title instead of bot signature\n\n"
+            "Or invite a friend to get +1 free pack!\n"
+            f"{self._referral_url(user_id)}"
+        )
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.effective_message
