@@ -398,6 +398,11 @@ class BotService:
         if len(text) > 20:
             await message.reply_text("Please keep text to 20 characters or fewer so it remains readable as a custom emoji.")
             return
+        if self.store:
+            try:
+                await asyncio.to_thread(self.store.register_user, user.id, None)
+            except Exception:
+                logger.exception("Could not register text creator user_id=%s", user.id)
         style = Style(text=text).normalized()
         self.sessions[user.id] = style
         count = 0
@@ -407,17 +412,16 @@ class BotService:
             except Exception:
                 logger.exception("Could not read daily count for user %s", user.id)
         try:
-            png = await asyncio.to_thread(render_preview_png, style)
+            preview_gif = await asyncio.to_thread(render_preview_gif, style)
             previous_message_id = self.session_message_ids.get(user.id)
             if previous_message_id:
                 try:
                     await context.bot.edit_message_reply_markup(chat_id=user.id, message_id=previous_message_id, reply_markup=None)
                 except TelegramError:
                     pass
-            preview = await message.reply_photo(
-                photo=InputFile(png, filename="animated-text-preview.png"),
+            preview = await message.reply_animation(
+                animation=InputFile(preview_gif, filename="animated-text-preview.gif"),
                 caption=self._style_caption(style, count),
-                parse_mode="HTML",
                 reply_markup=self._keyboard(style),
             )
             self.session_message_ids[user.id] = preview.message_id
@@ -432,6 +436,15 @@ class BotService:
             return
         if query.data == "noop":
             await query.answer()
+            return
+        if query.data == "get_pro":
+            await query.answer("Opening Telegram Stars payment…")
+            try:
+                await self._send_pro_invoice(user.id, user.id, context)
+            except TelegramError:
+                logger.exception("Could not send PRO invoice to user_id=%s", user.id)
+                if query.message:
+                    await query.message.reply_text("Unable to open the Telegram Stars invoice. Please try again later.")
             return
         current_message_id = self.session_message_ids.get(user.id)
         if current_message_id and query.message and query.message.message_id != current_message_id:
@@ -478,10 +491,10 @@ class BotService:
                 return
             self.sessions[user.id] = style
             await query.answer()
-            png = await asyncio.to_thread(render_preview_png, style)
+            preview_gif = await asyncio.to_thread(render_preview_gif, style)
             count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
             await query.edit_message_media(
-                media=InputMediaPhoto(media=InputFile(png, filename="animated-text-preview.png"), caption=self._style_caption(style, count), parse_mode="HTML"),
+                media=InputMediaAnimation(media=InputFile(preview_gif, filename="animated-text-preview.gif"), caption=self._style_caption(style, count)),
                 reply_markup=self._keyboard(style),
             )
         except Exception:
