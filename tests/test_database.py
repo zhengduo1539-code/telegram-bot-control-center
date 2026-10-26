@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from database import DAILY_LIMIT, RETENTION_DAYS, UsageStore, _schema_validator
+from database import DAILY_LIMIT, MAX_DAILY_USAGE, RETENTION_DAYS, UsageStore, _schema_validator
 
 
 @pytest.fixture
@@ -118,7 +118,7 @@ def test_schema_validator_requires_compact_fields_and_forbids_extra_fields():
     validator = _schema_validator()["$jsonSchema"]
     assert validator["required"] == ["u", "d", "n", "x"]
     assert validator["additionalProperties"] is False
-    assert validator["properties"]["n"]["maximum"] == DAILY_LIMIT
+    assert validator["properties"]["n"]["maximum"] == MAX_DAILY_USAGE
     assert validator["properties"]["x"]["bsonType"] == "date"
 
 
