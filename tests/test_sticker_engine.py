@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from PIL import Image
+from PIL import Image, ImageFont
 
 from sticker_engine import (
     ANIMATION_OPTIONS,
@@ -11,6 +11,7 @@ from sticker_engine import (
     render_frame,
     render_preview_gif,
     render_preview_png,
+    _font,
 )
 
 
@@ -20,6 +21,19 @@ def test_reference_default_style_uses_raleway_orange_pill_and_wave():
     assert style.color == "Orange"
     assert style.shape == "Pill"
     assert style.animation == "Wave"
+
+
+def test_reference_font_options_load_the_intended_typefaces():
+    expected_families = {
+        "Raleway italic": "raleway",
+        "Arial": "arimo",
+        "Rubik": "rubik",
+    }
+    for option, expected in expected_families.items():
+        font = _font(option, 36)
+        assert isinstance(font, ImageFont.FreeTypeFont)
+        family_name, _style_name = font.getname()
+        assert expected in family_name.lower()
 
 
 def test_style_normalization_clamps_text_and_options():
