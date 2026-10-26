@@ -31,6 +31,8 @@ def test_daily_reset_countdown_is_utc_and_rounds_up_minutes():
 
     assert BotService._time_until_utc_reset(at_hour) == (1, 0)
     assert BotService._time_until_utc_reset(at_seconds) == (0, 1)
+    at_last_second = datetime(2026, 10, 26, 23, 59, 59, tzinfo=timezone.utc)
+    assert BotService._time_until_utc_reset(at_last_second) == (0, 1)
 
 
 def test_quota_message_contains_reference_pro_and_invite_copy():
@@ -41,7 +43,7 @@ def test_quota_message_contains_reference_pro_and_invite_copy():
     text = service._limit_message(123456, now)
 
     assert "You have reached the limit of 3 packs per day." in text
-    assert "You can create a new pack in 1 hours and 0 minutes." in text
+    assert "You can create a new pack in 1 hours in 0 minutes." in text
     assert "With 💎 PRO subscription you get:" in text
     assert "- Unlimited pack creation" in text
     assert "- Your text as the pack title instead of bot signature" in text
