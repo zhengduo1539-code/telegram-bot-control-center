@@ -187,7 +187,7 @@ class BotService:
         rows.append([
             InlineKeyboardButton(
                 "👥 Invite friend" if include_invite else "🔗 Share",
-                url=self._referral_url(user_id) if include_invite else self._share_url(user_id),
+                url=self._share_url(user_id),
             )
         ])
         return InlineKeyboardMarkup(rows)
