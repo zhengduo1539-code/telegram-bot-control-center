@@ -23,7 +23,7 @@ def test_prepare_stickers_uploads_media_and_uses_returned_file_ids():
     assert [sticker.sticker for sticker in stickers] == [
         f"telegram-file-{index}" for index in range(len(PACK_EMOJIS))
     ]
-    assert [sticker.emoji_list for sticker in stickers] == [[emoji] for emoji in PACK_EMOJIS]
+    assert [sticker.emoji_list for sticker in stickers] == [(emoji,) for emoji in PACK_EMOJIS]
     assert all(sticker.format == "video" for sticker in stickers)
     assert bot.upload_sticker_file.await_count == len(PACK_EMOJIS)
     for index, call in enumerate(bot.upload_sticker_file.await_args_list, start=1):
