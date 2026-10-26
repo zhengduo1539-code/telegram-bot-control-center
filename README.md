@@ -36,9 +36,11 @@ Set these in Render Dashboard → Service → Environment. Do not add real token
 
 - ADMIN_IDS: one or more numeric Telegram user IDs separated by commas, spaces, or semicolons.
 - BOT_TOKEN: token from BotFather.
-- MONGODB_URI: MongoDB connection URI with MongoDB Atlas network access configured.
+- MONGODB_URI: MongoDB connection URI with MongoDB Atlas network access configured. The URI is passed to PyMongo without logging or rewriting its credentials.
+- MONGODB_DATABASE (optional): database name for this bot's quota collection. If set, it overrides the database path in the URI. If unset and the URI has no database path, the app uses `animated_text_creator` by default.
+- MONGODB_AUTH_SOURCE (optional): authentication database override for setups whose working MongoDB URI uses a non-default authentication database. Leave unset unless you know the other bot uses a custom `authSource`.
 
-If values are missing, the HTTP service still starts so Render's /healthz probe can pass, but Telegram polling remains disabled and /health returns HTTP 503 until configuration is complete. The /health endpoint also performs a MongoDB ping to check readiness.
+If required values are missing, the HTTP service still starts so Render's /healthz probe can pass, but Telegram polling remains disabled and /health returns HTTP 503 until configuration is complete. The /health endpoint also performs a MongoDB ping to check readiness. A `bad auth` error means MongoDB rejected authentication; changing the selected database alone cannot fix invalid credentials. Confirm the Render secret matches the working URI and configure `MONGODB_AUTH_SOURCE` only if that URI uses a custom authentication database.
 
 ## Render configuration
 
