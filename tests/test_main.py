@@ -1,10 +1,12 @@
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from main import BotService, PACK_EMOJIS
-from sticker_engine import Style
+from telegram.constants import ChatType
+
+from main import BotService, STICKER_EMOJI
+from sticker_engine import Style, split_text_for_stickers
 
 
 def test_start_welcome_matches_reference_copy():
@@ -51,14 +53,72 @@ def test_quota_message_contains_reference_pro_and_invite_copy():
     assert "https://t.me/EmojiTitleBot?start=ref_123456" in text
 
 
-def test_editor_keyboard_has_four_setting_rows_and_create_action():
+def test_editor_keyboard_matches_reference_arrows_and_create_action():
     keyboard = BotService._keyboard(Style(text="Hello").normalized())
 
     assert len(keyboard.inline_keyboard) == 5
     assert keyboard.inline_keyboard[0][1].text == "Raleway italic"
+    for row in keyboard.inline_keyboard[:4]:
+        assert row[0].text == "👉🏻"
+        assert row[2].text == "👉🏻"
     assert keyboard.inline_keyboard[-1][0].text == "✅ Create Sticker Set"
     assert keyboard.inline_keyboard[-1][0].callback_data == "create"
 
+    loading = BotService._keyboard(Style(text="Hello").normalized(), creating=True)
+    assert loading.inline_keyboard[-1][0].text == "⌛ Creating Sticker Set..."
 
-def test_pack_configuration_matches_six_emoji_reference():
-    assert len(PACK_EMOJIS) == 6
+
+def test_pack_configuration_is_text_length_adaptive():
+    assert STICKER_EMOJI == "✨"
+    assert split_text_for_stickers("Hi") == ["Hi"]
+    assert split_text_for_stickers("Hola") == ["Ho", "la"]
+
+
+def test_prepare_stickers_accepts_a_variable_number_of_segments():
+    service = BotService()
+    bot = SimpleNamespace(
+        upload_sticker_file=AsyncMock(side_effect=[
+            SimpleNamespace(file_id="file-one"),
+            SimpleNamespace(file_id="file-two"),
+        ])
+    )
+
+    stickers = asyncio.run(service._prepare_stickers(bot, 123456, [b"webm-one", b"webm-two"]))
+
+    assert len(stickers) == 2
+    assert [sticker.sticker for sticker in stickers] == ["file-one", "file-two"]
+    assert [sticker.emoji_list for sticker in stickers] == [("✨",), ("✨",)]
+    assert all(sticker.format == "video" for sticker in stickers)
+
+
+def test_new_text_reuses_the_last_selected_appearance():
+    service = BotService()
+    service.bot_username = "EmojiTitleBot"
+    service.store = MagicMock()
+    service.store.register_user.return_value = False
+    service.store.get_count.return_value = 0
+    service.last_styles[123456] = Style(
+        text="Previous", font="Monaco", color="Rainbow", shape="Heart", animation="Pulse"
+    )
+
+    message = SimpleNamespace(
+        text="OK",
+        chat=SimpleNamespace(type=ChatType.PRIVATE),
+        reply_text=AsyncMock(),
+        reply_animation=AsyncMock(return_value=SimpleNamespace(message_id=42)),
+    )
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_user=SimpleNamespace(id=123456),
+    )
+    context = SimpleNamespace(bot=SimpleNamespace(), args=[])
+
+    with patch("main.render_preview_gif", return_value=b"GIF89a-test"):
+        asyncio.run(service.on_text(update, context))
+
+    selected = service.sessions[123456]
+    assert selected.text == "OK"
+    assert selected.font == "Monaco"
+    assert selected.color == "Rainbow"
+    assert selected.shape == "Heart"
+    assert selected.animation == "Pulse"

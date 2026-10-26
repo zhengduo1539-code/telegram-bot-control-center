@@ -1,13 +1,14 @@
 # EmojiTitleBot | Text from Emojis
 
-EmojiTitleBot turns a short text line into a coordinated pack of six animated Telegram custom emoji. The Telegram chat flow follows the reference experience: a concise /start welcome, an animated preview editor, a sticker-set creation button, a free daily allowance, referral bonus packs, and a Telegram Stars PRO subscription.
+EmojiTitleBot turns a short text line into animated Telegram video stickers. Two-character text such as `Hi` stays as one sticker, while longer text is split into contiguous pieces (for example, `Hola` becomes `Ho` + `la`). The editor keeps the selected appearance for the next text, previews the design as a looping GIF, and creates a text-named `addstickers` pack. The existing free daily allowance, referral bonuses, and Telegram Stars PRO subscription remain in place.
 
 ## Features
 
 - Welcome and user-facing reply copy aligned with the reference video.
 - Animated GIF preview that updates when users change font, color, shape, or animation.
-- Six coordinated animated custom emoji per pack, rendered as transparent VP9 WebM at 100 × 100, 30 FPS, and two seconds per loop.
-- Individual output size guard of 256 KB per video emoji.
+- Text-length-adaptive pack count: no splitting for two-character text; longer text is split into contiguous two-character segments.
+- Regular video stickers rendered as transparent VP9 WebM at 512 × 512, 30 FPS, and two seconds per loop, with a 256 KB size guard per item.
+- High-quality gradient rendering, including a moving Rainbow palette, with a complete-text sample sticker sent to chat after pack creation.
 - Three free packs per user per UTC day, plus one-time referral bonus credits.
 - PRO recurring subscription billed with 100 Telegram Stars per 30-day period; PRO permits unlimited pack creation and uses the supplied text as the pack title.
 - Payment verification through Telegram pre-checkout and successful-payment updates, with unique charge IDs persisted to prevent duplicate entitlement grants.

@@ -8,26 +8,27 @@ import os
 import shutil
 import subprocess
 import tempfile
+import unicodedata
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable
 
 from PIL import Image, ImageDraw, ImageFont
 
-CANVAS_SIZE = 100
+CANVAS_SIZE = 512
 FPS = 30
 DURATION_SECONDS = 2
 FRAME_COUNT = FPS * DURATION_SECONDS
 MAX_WEBM_BYTES = 256 * 1024
 
 PALETTES: dict[str, str] = {
-    # The reference editor starts with the warm red/orange palette.
     "Orange": "#F52A10",
     "Pink": "#F12C82",
     "Lime": "#86D915",
     "Violet": "#9955F4",
     "Cyan": "#13C7DC",
     "Gold": "#FFC33A",
+    "Rainbow": "#FF315B",
 }
 PALETTE_GRADIENTS: dict[str, tuple[str, str]] = {
     "Orange": ("#F51E11", "#FF9D19"),
@@ -36,21 +37,24 @@ PALETTE_GRADIENTS: dict[str, tuple[str, str]] = {
     "Violet": ("#743AF0", "#D05BFF"),
     "Cyan": ("#00B6D8", "#52E4CC"),
     "Gold": ("#FFAD22", "#FFE65A"),
+    "Rainbow": ("#FF315B", "#7A39FF"),
 }
+# The reference selector cycles through these named type styles from left to right.
 FONT_OPTIONS: tuple[str, ...] = (
-    "Raleway italic", "Arial", "Rubik", "Monaco", "Impact", "Condensed Bold",
+    "Raleway italic", "Arial", "Roboto", "Madefor", "Monaco", "Impact", "Rubik",
 )
 SHAPE_OPTIONS: tuple[str, ...] = ("Pill", "Heart", "Rounded", "Circle", "Star", "None")
 ANIMATION_OPTIONS: tuple[str, ...] = ("Wave", "Pulse", "Bounce", "Float", "Shake", "Tilt", "None")
 
 _FONT_FILES: dict[str, tuple[str, ...]] = {
-    # Use close system-font fallbacks when the named family is not installed.
     "Raleway italic": ("/usr/share/fonts/truetype/raleway/Raleway-Italic.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf"),
     "Arial": ("/usr/share/fonts/truetype/msttcorefonts/Arial.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-    "Rubik": ("/usr/share/fonts/truetype/rubik/Rubik-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
+    "Roboto": ("/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    # "Madefor" is not openly redistributed, so use a high-quality geometric-sans substitute.
+    "Madefor": ("/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
     "Monaco": ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf"),
     "Impact": ("/usr/share/fonts/truetype/msttcorefonts/Impact.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-    "Condensed Bold": ("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSansNarrow-Bold.ttf"),
+    "Rubik": ("/usr/share/fonts/truetype/rubik/Rubik-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
 }
 
 @dataclass(frozen=True, slots=True)
@@ -74,10 +78,11 @@ class Style:
 
 
 _FONT_PACKAGE_SPECS: dict[str, tuple[str, int, str]] = {
-    # Use the real Google Fonts families for the styles that appear first in
-    # the reference UI; Arimo is metrically compatible with Arial.
     "Raleway italic": ("Raleway", 700, "italic"),
     "Arial": ("Arimo", 400, "normal"),
+    "Roboto": ("Roboto", 700, "normal"),
+    # The original Madefor typeface is not openly packaged; Montserrat is used as a close geometric alternative.
+    "Madefor": ("Montserrat", 700, "normal"),
     "Rubik": ("Rubik", 700, "normal"),
 }
 
@@ -176,14 +181,40 @@ def _gradient_layer(
     first: tuple[int, int, int],
     second: tuple[int, int, int],
     phase: float = 0.0,
+    *,
+    rainbow: bool = False,
 ) -> Image.Image:
-    """Create a smooth two-tone gradient with a restrained animated color drift."""
+    """Render a smooth animated gradient; Rainbow uses a continuous multicolor spectrum."""
     layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
+    rainbow_stops: tuple[tuple[float, tuple[int, int, int]], ...] = (
+        (0.00, (255, 49, 91)),
+        (0.17, (255, 135, 35)),
+        (0.34, (255, 224, 55)),
+        (0.51, (52, 211, 105)),
+        (0.68, (31, 188, 255)),
+        (0.84, (116, 77, 255)),
+        (1.00, (255, 49, 91)),
+    )
     for x in range(width):
         position = x / max(1, width - 1)
-        position = max(0.0, min(1.0, position + 0.035 * math.sin(2 * math.pi * position + phase)))
-        rgb = _mix_rgb(first, second, position)
+        if rainbow:
+            # A small phase shift makes the color spectrum drift smoothly in the loop.
+            position = (position + phase / (2 * math.pi) * 0.16) % 1.0
+            rgb = rainbow_stops[-1][1]
+            for index in range(1, len(rainbow_stops)):
+                start, start_rgb = rainbow_stops[index - 1]
+                end, end_rgb = rainbow_stops[index]
+                if position <= end:
+                    ratio = (position - start) / max(1e-9, end - start)
+                    rgb = _mix_rgb(start_rgb, end_rgb, ratio)
+                    break
+        else:
+            position = max(
+                0.0,
+                min(1.0, position + 0.035 * math.sin(2 * math.pi * position + phase)),
+            )
+            rgb = _mix_rgb(first, second, position)
         draw.line((x, 0, x, height), fill=(*rgb, 255))
     return layer
 
@@ -286,7 +317,8 @@ def _draw_shape(draw: ImageDraw.ImageDraw, shape: str, box: tuple[int, int, int,
 def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZE, color_override: str | None = None) -> Image.Image:
     """Render a transparent square sticker with a compact color shape behind the text."""
     style = style.normalized()
-    scale = 3
+    # Supersample the 512px video sticker twice; previews use the same high-quality path.
+    scale = 2 if size >= 512 else 3
     large_size = size * scale
     image = Image.new("RGBA", (large_size, large_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -298,12 +330,13 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
     stroke_width = max(1, large_size // 260)
     chosen_font: ImageFont.ImageFont = _font(style.font, max(10, font_size))
     bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
-    while font_size > max(10, int(large_size * 0.12)):
+    minimum_font_size = max(10, int(large_size * 0.045))
+    while font_size > minimum_font_size:
         chosen_font = _font(style.font, font_size)
         bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
         if (bounds[2] - bounds[0]) <= max_text_w and (bounds[3] - bounds[1]) <= max_text_h:
             break
-        font_size -= 2
+        font_size = max(minimum_font_size, font_size - 2)
     chosen_font = _font(style.font, max(10, font_size))
     bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
     text_w = max(1, bounds[2] - bounds[0])
@@ -330,6 +363,7 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
             palette_first,
             palette_second,
             phase if style.animation != "None" else 0.0,
+            rainbow=style.color == "Rainbow",
         )
         gradient.putalpha(mask)
         image.alpha_composite(gradient)
@@ -456,6 +490,7 @@ def _render_preview_frame(style: Style, time_seconds: float) -> Image.Image:
             palette_first,
             palette_second,
             phase if style.animation != "None" else 0.0,
+            rainbow=style.color == "Rainbow",
         )
         gradient.putalpha(mask)
         content.alpha_composite(gradient)
@@ -514,44 +549,105 @@ def _ffmpeg_executable() -> str:
         raise RuntimeError("FFmpeg is not available. Ensure imageio-ffmpeg is installed.")
 
 
+def _grapheme_clusters(text: str) -> list[str]:
+    """Keep combining marks, variation selectors, skin tones, and ZWJ sequences together."""
+    clusters: list[str] = []
+    join_next = False
+    for character in text:
+        codepoint = ord(character)
+        extender = (
+            bool(unicodedata.combining(character))
+            or 0xFE00 <= codepoint <= 0xFE0F
+            or 0xE0100 <= codepoint <= 0xE01EF
+            or 0x1F3FB <= codepoint <= 0x1F3FF
+        )
+        if clusters and (extender or character == "\u200d" or join_next):
+            clusters[-1] += character
+        else:
+            clusters.append(character)
+        join_next = character == "\u200d"
+    return clusters
+
+
+def split_text_for_stickers(text: str, max_clusters: int = 2) -> list[str]:
+    """Keep very short text intact; split longer text into contiguous, readable pieces."""
+    normalized = " ".join((text or "").split())
+    if not normalized:
+        return []
+    if max_clusters < 1:
+        raise ValueError("max_clusters must be a positive integer")
+    clusters = _grapheme_clusters(normalized)
+    if len(clusters) <= max_clusters:
+        return [normalized]
+    return [
+        "".join(clusters[index:index + max_clusters])
+        for index in range(0, len(clusters), max_clusters)
+    ]
+
+
 def _encode_webm(frames: Iterable[Image.Image]) -> bytes:
     executable = _ffmpeg_executable()
-    with tempfile.TemporaryDirectory(prefix="animated-emoji-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="animated-text-sticker-") as temp_dir:
         raw_path = Path(temp_dir) / "frames.rgba"
-        output_path = Path(temp_dir) / "emoji.webm"
+        output_path = Path(temp_dir) / "sticker.webm"
         with raw_path.open("wb") as raw_file:
             for frame in frames:
                 if frame.size != (CANVAS_SIZE, CANVAS_SIZE):
                     frame = frame.resize((CANVAS_SIZE, CANVAS_SIZE), Image.Resampling.LANCZOS)
                 raw_file.write(frame.convert("RGBA").tobytes())
-        command = [
-            executable, "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{CANVAS_SIZE}x{CANVAS_SIZE}",
-            "-framerate", str(FPS), "-i", str(raw_path), "-an", "-frames:v", str(FRAME_COUNT),
-            "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-auto-alt-ref", "0",
-            "-deadline", "good", "-cpu-used", "5", "-b:v", "110k", "-crf", "35",
-            "-metadata:s:v:0", "alpha_mode=1", "-f", "webm", str(output_path),
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
-        if result.returncode != 0 or not output_path.exists():
-            details = (result.stderr or "FFmpeg did not produce an output file")[-1200:]
-            raise RuntimeError(f"Could not render the animated emoji: {details}")
-        data = output_path.read_bytes()
-    if not data:
-        raise RuntimeError("The animation encoder returned an empty file.")
-    if len(data) > MAX_WEBM_BYTES:
-        raise RuntimeError("The rendered animation exceeds Telegram's 256 KB video-emoji limit.")
+
+        if not raw_path.exists() or raw_path.stat().st_size == 0:
+            raise RuntimeError("No animation frames were rendered.")
+
+        data: bytes | None = None
+        last_size = 0
+        # Start with high visual quality, then step down only if Telegram's
+        # 256 KB video-sticker limit would otherwise be exceeded.
+        for bitrate_kbps, crf in ((220, 30), (180, 32), (140, 34), (110, 36)):
+            output_path.unlink(missing_ok=True)
+            command = [
+                executable, "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{CANVAS_SIZE}x{CANVAS_SIZE}",
+                "-framerate", str(FPS), "-i", str(raw_path), "-an", "-frames:v", str(FRAME_COUNT),
+                "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-auto-alt-ref", "0",
+                "-deadline", "good", "-cpu-used", "5", "-b:v", f"{bitrate_kbps}k", "-crf", str(crf),
+                "-metadata:s:v:0", "alpha_mode=1", "-f", "webm", str(output_path),
+            ]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+            if result.returncode != 0 or not output_path.exists():
+                details = (result.stderr or "FFmpeg did not produce an output file")[-1200:]
+                raise RuntimeError(f"Could not render the animated sticker: {details}")
+            candidate = output_path.read_bytes()
+            last_size = len(candidate)
+            if candidate and last_size <= MAX_WEBM_BYTES:
+                data = candidate
+                break
+
+        if data is None:
+            raise RuntimeError(
+                f"The rendered animation exceeds Telegram's 256 KB video-sticker limit "
+                f"even after quality reduction ({last_size} bytes)."
+            )
     return data
 
 
+def render_single_webm(style: Style) -> bytes:
+    """Render the complete text as one transparent 512px VP9 video sticker."""
+    normalized = style.normalized()
+    if not normalized.text:
+        raise ValueError("Sticker text cannot be empty.")
+    frames = (
+        render_frame(normalized, time_seconds=index / FPS, size=CANVAS_SIZE)
+        for index in range(FRAME_COUNT)
+    )
+    return _encode_webm(frames)
+
+
 def render_pack_webm(style: Style) -> list[bytes]:
-    base_hex = PALETTES[style.normalized().color]
-    variants = [base_hex] + [_variant_hex(base_hex, index) for index in range(1, 6)]
-    pack: list[bytes] = []
-    for override in variants:
-        frames = (
-            render_frame(style, time_seconds=index / FPS, size=CANVAS_SIZE, color_override=override)
-            for index in range(FRAME_COUNT)
-        )
-        pack.append(_encode_webm(frames))
-    return pack
+    """Render one video sticker for each text segment; never create a fixed-size pack."""
+    normalized = style.normalized()
+    segments = split_text_for_stickers(normalized.text)
+    return [
+        render_single_webm(replace(normalized, text=segment))
+        for segment in segments
+    ]
