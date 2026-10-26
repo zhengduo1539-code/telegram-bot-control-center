@@ -41,7 +41,7 @@ def _schema_validator() -> dict[str, Any]:
                 "n": {
                     "bsonType": ["int", "long"],
                     "minimum": 0,
-                    "maximum": MAX_DAILY_USAGE,
+                    "maximum": DAILY_LIMIT,
                 },
                 "x": {"bsonType": "date"},
             },
@@ -77,6 +77,7 @@ class UsageStore:
             # dedicated app database only when the URI has no database path.
             self.db = self.client.get_default_database(default="animated_text_creator")
         self.usage = self.db[COLLECTION_NAME]
+        self.extra_usage = self.db["extra_usage"]
         self.users = self.db[USER_COLLECTION_NAME]
         self.payments = self.db[PAYMENT_COLLECTION_NAME]
 
@@ -91,6 +92,7 @@ class UsageStore:
         if not collection_created_with_validator:
             self._ensure_schema_validator()
         self._ensure_account_indexes()
+        self._ensure_extra_usage_indexes()
 
     def _ensure_collection(self) -> bool:
         """Create a fresh collection with validation where supported.
@@ -179,6 +181,15 @@ class UsageStore:
         self.payments.create_index([("c", ASCENDING)], unique=True, name="charge_uq")
         self.payments.create_index([("u", ASCENDING), ("d", ASCENDING)], name="user_payment_history")
 
+    def _ensure_extra_usage_indexes(self) -> None:
+        """Store PRO/referral overage separately so old quota validators stay compatible."""
+        self.extra_usage.create_index(
+            [("u", ASCENDING), ("d", ASCENDING)], unique=True, name="extra_ud_uq"
+        )
+        self.extra_usage.create_index(
+            [("x", ASCENDING)], expireAfterSeconds=0, name="extra_x_ttl"
+        )
+
     def _ensure_schema_validator(self) -> None:
         """Apply strict document validation if the DB user has collMod rights."""
         try:
@@ -241,6 +252,10 @@ class UsageStore:
         """Atomically reserve a daily slot; ordinary users stop at 3 unless entitled."""
         user_key = self._user_key(user_id)
         day_value = self.current_day(now)
+        # Keep the historic daily_usage collection limited to the original
+        # free quota. PRO and referral overage live in their own collection so
+        # older MongoDB schema validators never block paid/bonus generations.
+        usage = self.extra_usage if allow_over_limit else self.usage
         maximum = MAX_DAILY_USAGE if allow_over_limit else DAILY_LIMIT
         query = {"u": user_key, "d": day_value, "n": {"$lt": maximum}}
         update = {
@@ -252,63 +267,74 @@ class UsageStore:
             },
         }
         try:
-            document = self.usage.find_one_and_update(
+            document = usage.find_one_and_update(
                 query, update, upsert=True, return_document=ReturnDocument.AFTER
             )
         except DuplicateKeyError:
             # Concurrent first-time requests can race on the unique (u, d)
             # index. Read the winner and retry only while quota remains.
-            existing = self.usage.find_one({"u": user_key, "d": day_value}, {"n": 1})
+            existing = usage.find_one({"u": user_key, "d": day_value}, {"n": 1})
             if not existing or int(existing.get("n", 0)) >= maximum:
                 return None
-            document = self.usage.find_one_and_update(
+            document = usage.find_one_and_update(
                 query, update, upsert=False, return_document=ReturnDocument.AFTER
             )
         if document and 1 <= int(document.get("n", 0)) <= maximum:
             return int(document["n"])
         return None
 
-    def release(self, user_id: int, now: datetime | None = None) -> None:
-        """Return a reserved slot after failure, using the original reservation day."""
+    def release(
+        self,
+        user_id: int,
+        now: datetime | None = None,
+        *,
+        allow_over_limit: bool = False,
+    ) -> None:
+        """Return a reserved slot after failure, using its original quota bucket."""
         user_key = self._user_key(user_id)
         day_value = self.current_day(now)
-        self.usage.update_one(
+        usage = self.extra_usage if allow_over_limit else self.usage
+        usage.update_one(
             {"u": user_key, "d": day_value, "n": {"$gt": 0}},
             {"$inc": {"n": -1}},
         )
-        # Empty quota documents carry no useful state. The predicate prevents
-        # deleting a document another concurrent reservation has already reused.
-        self.usage.delete_one({"u": user_key, "d": day_value, "n": 0})
+        usage.delete_one({"u": user_key, "d": day_value, "n": 0})
 
     def get_count(self, user_id: int, now: datetime | None = None) -> int:
         user_key = self._user_key(user_id)
-        document = self.usage.find_one(
-            {"u": user_key, "d": self.current_day(now)}, {"n": 1}
+        day_value = self.current_day(now)
+        free_doc = self.usage.find_one({"u": user_key, "d": day_value}, {"n": 1})
+        extra_doc = self.extra_usage.find_one({"u": user_key, "d": day_value}, {"n": 1})
+        return (
+            int(free_doc.get("n", 0)) if free_doc else 0
+        ) + (
+            int(extra_doc.get("n", 0)) if extra_doc else 0
         )
-        return int(document.get("n", 0)) if document else 0
 
     def today_stats(self, now: datetime | None = None) -> dict[str, int]:
         day_value = self.current_day(now)
-        stats = list(
-            self.usage.aggregate(
-                [
-                    {"$match": {"d": day_value, "n": {"$gt": 0}}},
-                    {
-                        "$group": {
-                            "_id": None,
-                            "users": {"$sum": 1},
-                            "packs": {"$sum": "$n"},
-                        }
-                    },
-                ]
+        pack_total = 0
+        active_users: set[int] = set()
+        for collection in (self.usage, self.extra_usage):
+            stats = list(
+                collection.aggregate(
+                    [
+                        {"$match": {"d": day_value, "n": {"$gt": 0}}},
+                        {
+                            "$group": {
+                                "_id": None,
+                                "packs": {"$sum": "$n"},
+                            }
+                        },
+                    ]
+                )
             )
-        )
-        if not stats:
-            return {"users_today": 0, "packs_today": 0}
-        return {
-            "users_today": int(stats[0]["users"]),
-            "packs_today": int(stats[0]["packs"]),
-        }
+            if stats:
+                pack_total += int(stats[0].get("packs", 0))
+            active_users.update(
+                int(value) for value in collection.distinct("u", {"d": day_value, "n": {"$gt": 0}})
+            )
+        return {"users_today": len(active_users), "packs_today": pack_total}
 
     def register_user(self, user_id: int, referrer_id: int | None = None) -> bool:
         """Register a user once and award one referral credit for a genuine new invite."""
