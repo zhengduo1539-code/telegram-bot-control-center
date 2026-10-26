@@ -17,4 +17,4 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m compileall -q main.py database.py sticker_engine.py
-      - run: pytest -q
+      - run: python -m pytest -q
