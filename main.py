@@ -9,17 +9,18 @@ import secrets
 import time
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaPhoto, InputSticker, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaAnimation, InputSticker, LabeledPrice, Update
 from telegram.constants import ChatType
 from telegram.error import TelegramError
-from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
 from database import DAILY_LIMIT, UsageStore
-from sticker_engine import ANIMATION_OPTIONS, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_pack_webm, render_preview_png
+from sticker_engine import ANIMATION_OPTIONS, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_pack_webm, render_preview_gif
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -33,7 +34,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 logger = logging.getLogger("animated_text_creator")
-SERVICE_NAME = "Telegram Animated Text Creator"
+SERVICE_NAME = "EmojiTitleBot | Text from Emojis"
+PRO_PRICE_STARS = 100
+PRO_PERIOD_SECONDS = 30 * 24 * 60 * 60
+PACK_EMOJIS = ("✨", "💫", "🌟", "🔥", "💎", "🎉")
 
 
 def parse_admin_ids(value: str | None) -> set[int]:
@@ -85,12 +89,21 @@ class BotService:
             application.add_handler(CommandHandler("help", self.cmd_help))
             application.add_handler(CommandHandler("cancel", self.cmd_cancel))
             application.add_handler(CommandHandler("admin", self.cmd_admin))
+            application.add_handler(CommandHandler("pro", self.cmd_pro))
+            application.add_handler(PreCheckoutQueryHandler(self.on_precheckout))
+            application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, self.on_successful_payment))
             application.add_handler(CallbackQueryHandler(self.on_callback))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_text))
             await application.initialize()
             me = await application.bot.get_me()
             self.bot_username = me.username or ""
-            await application.bot.delete_webhook(drop_pending_updates=False)
+            await application.bot.set_my_commands([
+                BotCommand("start", "Start EmojiTitleBot"),
+                BotCommand("help", "How to create emoji packs"),
+                BotCommand("pro", "Get PRO with Telegram Stars"),
+                BotCommand("cancel", "Cancel current creation"),
+            ])
+            await application.bot.delete_webhook(drop_pending_updates=False
             await application.start()
             if application.updater is None:
                 raise RuntimeError("Telegram polling updater is unavailable.")
