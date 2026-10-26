@@ -4,6 +4,9 @@ from PIL import Image, ImageFont
 
 from sticker_engine import (
     ANIMATION_OPTIONS,
+    CANVAS_SIZE,
+    DURATION_SECONDS,
+    FPS,
     FONT_OPTIONS,
     PALETTES,
     SHAPE_OPTIONS,
@@ -11,6 +14,7 @@ from sticker_engine import (
     render_frame,
     render_preview_gif,
     render_preview_png,
+    split_text_for_stickers,
     _font,
 )
 
@@ -27,6 +31,8 @@ def test_reference_font_options_load_the_intended_typefaces():
     expected_families = {
         "Raleway italic": "raleway",
         "Arial": "arimo",
+        "Roboto": "roboto",
+        "Madefor": "montserrat",
         "Rubik": "rubik",
     }
     for option, expected in expected_families.items():
@@ -89,10 +95,27 @@ def test_preview_is_wide_white_looping_gif_with_full_width_artwork():
         assert 140 <= artwork_width <= 240
 
 
-def test_video_pack_has_six_telegram_compatible_webm_files():
+def test_text_segmentation_matches_reference_and_preserves_the_text():
+    assert split_text_for_stickers("Hi") == ["Hi"]
+    assert split_text_for_stickers("OK") == ["OK"]
+    assert split_text_for_stickers("Hola") == ["Ho", "la"]
+    assert split_text_for_stickers("Hello") == ["He", "ll", "o"]
+    assert "".join(split_text_for_stickers("Hello world")) == "Hello world"
+
+
+def test_video_pack_uses_dynamic_512px_telegram_compatible_webm_files():
     from sticker_engine import MAX_WEBM_BYTES, render_pack_webm
 
+    assert CANVAS_SIZE == 512
+    assert FPS == 30
+    assert DURATION_SECONDS == 2
     pack = render_pack_webm(Style(text="Test", color="Cyan", animation="Float"))
-    assert len(pack) == 6
+    assert len(pack) == len(split_text_for_stickers("Test")) == 2
     assert all(item.startswith(b"\x1aE\xdf\xa3") for item in pack)
     assert all(0 < len(item) <= MAX_WEBM_BYTES for item in pack)
+
+
+def test_rainbow_palette_is_available():
+    assert "Rainbow" in PALETTES
+    preview = render_preview_gif(Style(text="Hi", color="Rainbow"))
+    assert preview.startswith((b"GIF87a", b"GIF89a"))
