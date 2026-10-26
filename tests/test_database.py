@@ -192,3 +192,38 @@ def test_today_stats_returns_zero_without_records(mongo_store):
     collection.aggregate.return_value = []
 
     assert store.today_stats() == {"users_today": 0, "packs_today": 0}
+
+
+def test_explicit_database_override_is_used(monkeypatch):
+    client = MagicMock()
+    target_db = MagicMock()
+    client.__getitem__.return_value = target_db
+    monkeypatch.setattr("database.MongoClient", MagicMock(return_value=client))
+
+    store = UsageStore(
+        "mongodb+srv://example.invalid/?appName=Cluster0",
+        database_name="shared_bot_database",
+    )
+
+    assert store.db is target_db
+    client.__getitem__.assert_called_once_with("shared_bot_database")
+    client.get_default_database.assert_not_called()
+
+
+def test_explicit_auth_source_is_passed_to_pymongo(monkeypatch):
+    client = MagicMock()
+    db = MagicMock()
+    client.get_default_database.return_value = db
+    monkeypatch.setattr("database.MongoClient", MagicMock(return_value=client))
+
+    UsageStore(
+        "mongodb+srv://example.invalid/?appName=Cluster0",
+        auth_source="custom_auth_db",
+    )
+
+    client_constructor = __import__("database").MongoClient
+    client_constructor.assert_called_once()
+    args, kwargs = client_constructor.call_args
+    assert args == ("mongodb+srv://example.invalid/?appName=Cluster0",)
+    assert kwargs["authSource"] == "custom_auth_db"
+    assert "password" not in str(kwargs).lower()
