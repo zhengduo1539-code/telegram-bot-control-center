@@ -55,7 +55,7 @@ def test_editor_keyboard_has_four_setting_rows_and_create_action():
     keyboard = BotService._keyboard(Style(text="Hello").normalized())
 
     assert len(keyboard.inline_keyboard) == 5
-    assert keyboard.inline_keyboard[0][1].text == "Monaco"
+    assert keyboard.inline_keyboard[0][1].text == "Raleway italic"
     assert keyboard.inline_keyboard[-1][0].text == "✅ Create Sticker Set"
     assert keyboard.inline_keyboard[-1][0].callback_data == "create"
 
