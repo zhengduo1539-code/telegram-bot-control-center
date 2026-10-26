@@ -216,18 +216,47 @@ class BotService:
         )
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        message = update.effective_message
-        if not message:
+        message, user = update.effective_message, update.effective_user
+        if not message or not user:
             return
+
+        referrer_id = None
+        if context.args:
+            match = re.fullmatch(r"ref_(\d{1,20})", context.args[0])
+            if match:
+                candidate = int(match.group(1))
+                if candidate != user.id:
+                    referrer_id = candidate
+
+        referral_rewarded = False
+        if self.store:
+            try:
+                referral_rewarded = await asyncio.to_thread(
+                    self.store.register_user, user.id, referrer_id
+                )
+            except Exception:
+                logger.exception("Could not register Telegram user_id=%s", user.id)
+
+        if referral_rewarded and referrer_id is not None:
+            try:
+                account = await asyncio.to_thread(self.store.get_account, referrer_id)
+                await context.bot.send_message(
+                    chat_id=referrer_id,
+                    text=(
+                        "Your friend joined the bot! 🎉\n"
+                        f"+1 free pack added. You have {account['bonus_count']} bonus packs."
+                    ),
+                    reply_markup=self._account_keyboard(referrer_id),
+                )
+            except TelegramError:
+                logger.warning("Could not notify referrer user_id=%s", referrer_id)
+            except Exception:
+                logger.exception("Could not update referral notification for user_id=%s", referrer_id)
+
+        username = self.bot_username or "EmojiTitleBot"
         await message.reply_text(
-            "✨ *Animated Text Creator*\n\n"
-            "Turn short text into animated Telegram custom emoji.\n\n"
-            "1. Send text (up to 20 characters).\n"
-            "2. Choose font, color, shape and animation.\n"
-            "3. Create a coordinated pack of 3 animated emoji.\n\n"
-            "🎁 Free limit: *3 packs per user per UTC day*. No bot PRO plan or payment is included.\n"
-            "Note: Telegram Premium may be required to add and use custom emoji packs.",
-            parse_mode="Markdown",
+            f"👋 Hello! I'm @{username}. I can convert any text into beautiful animated emoji text. "
+            "Just send me your text and I will create a custom emoji pack for you!"
         )
 
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
