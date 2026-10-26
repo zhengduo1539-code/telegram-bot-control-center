@@ -268,6 +268,90 @@ class BotService:
                 parse_mode="Markdown",
             )
 
+    async def _send_pro_invoice(self, chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self.store or self.status != "running":
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="The payment service is temporarily unavailable. Please try again later.",
+            )
+            return
+        payload = f"pro:{user_id}:{secrets.token_urlsafe(12)}"
+        await context.bot.send_invoice(
+            chat_id=chat_id,
+            title="PRO Subscription",
+            description="Unlimited animated emoji pack creation and custom pack titles for 30 days.",
+            payload=payload,
+            provider_token="",
+            currency="XTR",
+            prices=[LabeledPrice("PRO — 30 days", PRO_PRICE_STARS)],
+            subscription_period=PRO_PERIOD_SECONDS,
+            start_parameter="emoji-pro",
+        )
+
+    async def cmd_pro(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message, user = update.effective_message, update.effective_user
+        if not message or not user:
+            return
+        if not self._private_chat(update):
+            await message.reply_text("Please open me in a private chat to subscribe to PRO.")
+            return
+        try:
+            await self._send_pro_invoice(message.chat_id, user.id, context)
+        except TelegramError:
+            logger.exception("Could not send PRO invoice to user_id=%s", user.id)
+            await message.reply_text("I couldn't open the Telegram Stars invoice. Please try again later.")
+
+    async def on_precheckout(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.pre_checkout_query
+        if not query:
+            return
+        match = re.fullmatch(r"pro:(\d{1,20}):([A-Za-z0-9_-]{8,64})", query.invoice_payload)
+        approved = bool(match and int(match.group(1)) == query.from_user.id)
+        try:
+            await query.answer(
+                ok=approved,
+                error_message=None if approved else "This PRO invoice is not valid for your account. Please open a new invoice from the bot.",
+            )
+        except TelegramError:
+            logger.exception("Could not answer a Stars pre-checkout query")
+
+    async def on_successful_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message, user = update.effective_message, update.effective_user
+        payment = message.successful_payment if message else None
+        if not message or not user or not payment or not self.store:
+            return
+        payload_match = re.fullmatch(r"pro:(\d{1,20}):([A-Za-z0-9_-]{8,64})", payment.invoice_payload)
+        if not payload_match or int(payload_match.group(1)) != user.id:
+            logger.warning("Ignoring invalid PRO payment payload for user_id=%s", user.id)
+            await message.reply_text("We couldn't verify this PRO payment. Please contact support with your Telegram receipt.")
+            return
+        expires_at = payment.subscription_expiration_date or (
+            datetime.now(timezone.utc) + timedelta(seconds=PRO_PERIOD_SECONDS)
+        )
+        try:
+            applied = await asyncio.to_thread(
+                self.store.record_pro_payment,
+                user_id=user.id,
+                charge_id=payment.telegram_payment_charge_id,
+                amount=payment.total_amount,
+                payload=payment.invoice_payload,
+                expires_at=expires_at,
+            )
+            if not applied:
+                await message.reply_text("This Telegram Stars payment has already been processed.")
+                return
+            await message.reply_text(
+                "🎉 PRO subscription activated!\n"
+                "You now have unlimited pack creation and custom pack titles while your subscription is active.",
+                reply_markup=self._account_keyboard(user.id),
+            )
+        except Exception:
+            logger.exception("Could not persist PRO payment for user_id=%s", user.id)
+            await message.reply_text(
+                "Telegram confirmed your payment, but activation needs attention. "
+                "Please contact support and keep your Telegram receipt."
+            )
+
     async def cmd_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         if user:
