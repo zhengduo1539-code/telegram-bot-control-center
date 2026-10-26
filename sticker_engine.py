@@ -247,6 +247,7 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
     large_size = size * scale
     image = Image.new("RGBA", (large_size, large_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
+    center = large_size / 2
 
     text = style.text or " "
     max_text_w, max_text_h = large_size * 0.72, large_size * 0.38
