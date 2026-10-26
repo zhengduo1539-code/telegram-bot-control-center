@@ -20,7 +20,7 @@ from telegram.error import TelegramError
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
 from database import DAILY_LIMIT, UsageStore
-from sticker_engine import ANIMATION_OPTIONS, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_pack_webm, render_preview_gif
+from sticker_engine import ANIMATION_OPTIONS, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_pack_webm, render_preview_gif, render_single_webm, split_text_for_stickers
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -37,7 +37,7 @@ logger = logging.getLogger("emojititlebot")
 SERVICE_NAME = "EmojiTitleBot | Text from Emojis"
 PRO_PRICE_STARS = 100
 PRO_PERIOD_SECONDS = 30 * 24 * 60 * 60
-PACK_EMOJIS = ("✨", "💫", "🌟", "🔥", "💎", "🎉")
+STICKER_EMOJI = "✨"
 
 
 def parse_admin_ids(value: str | None) -> set[int]:
@@ -62,6 +62,8 @@ class BotService:
         self.application: Application | None = None
         self.bot_username = ""
         self.sessions: dict[int, Style] = {}
+        # Keep style preferences in memory so the next text starts with the last selected appearance.
+        self.last_styles: dict[int, Style] = {}
         self.session_message_ids: dict[int, int] = {}
         self.locks: dict[int, asyncio.Lock] = {}
 
@@ -144,12 +146,11 @@ class BotService:
         return "Choose the font, color, shape, and animation for your text"
 
     @staticmethod
-    def _keyboard(style: Style) -> InlineKeyboardMarkup:
-        # The source bot uses expressive glyphs as option indicators rather
-        # than generic single-color dots or geometric placeholders.
+    def _keyboard(style: Style, *, creating: bool = False) -> InlineKeyboardMarkup:
         color_icons = {
             "Orange": "💊", "Pink": "💋", "Lime": "🟢🟡",
             "Violet": "💜", "Cyan": "🔵🟢", "Gold": "🟡🟠",
+            "Rainbow": "🌈",
         }
         shape_icons = {
             "Pill": "🎟️", "Heart": "💟", "Rounded": "🏷️",
@@ -159,20 +160,24 @@ class BotService:
             "Wave": "🚩", "Pulse": "💗", "Bounce": "🔴",
             "Float": "🪶", "Shake": "⚡", "Tilt": "🔄", "None": "🚫",
         }
+        # The reference uses the same right-pointing hand on both sides of each setting.
+        left_arrow = "👉🏻"
+        right_arrow = "👉🏻"
+        create_label = "⌛ Creating Sticker Set..." if creating else "✅ Create Sticker Set"
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("👈🏻", callback_data="font:-1"),
+            [InlineKeyboardButton(left_arrow, callback_data="font:-1"),
              InlineKeyboardButton(style.font, callback_data="noop"),
-             InlineKeyboardButton("👉🏻", callback_data="font:1")],
-            [InlineKeyboardButton("👈🏻", callback_data="color:-1"),
+             InlineKeyboardButton(right_arrow, callback_data="font:1")],
+            [InlineKeyboardButton(left_arrow, callback_data="color:-1"),
              InlineKeyboardButton(color_icons.get(style.color, "🎨"), callback_data="noop"),
-             InlineKeyboardButton("👉🏻", callback_data="color:1")],
-            [InlineKeyboardButton("👈🏻", callback_data="shape:-1"),
+             InlineKeyboardButton(right_arrow, callback_data="color:1")],
+            [InlineKeyboardButton(left_arrow, callback_data="shape:-1"),
              InlineKeyboardButton(shape_icons.get(style.shape, "◈"), callback_data="noop"),
-             InlineKeyboardButton("👉🏻", callback_data="shape:1")],
-            [InlineKeyboardButton("👈🏻", callback_data="anim:-1"),
+             InlineKeyboardButton(right_arrow, callback_data="shape:1")],
+            [InlineKeyboardButton(left_arrow, callback_data="anim:-1"),
              InlineKeyboardButton(animation_icons.get(style.animation, "✨"), callback_data="noop"),
-             InlineKeyboardButton("👉🏻", callback_data="anim:1")],
-            [InlineKeyboardButton("✅ Create Sticker Set", callback_data="create")],
+             InlineKeyboardButton(right_arrow, callback_data="anim:1")],
+            [InlineKeyboardButton(create_label, callback_data="create")],
         ])
 
     def _referral_url(self, user_id: int) -> str:
@@ -416,8 +421,10 @@ class BotService:
                 await asyncio.to_thread(self.store.register_user, user.id, None)
             except Exception:
                 logger.exception("Could not register text creator user_id=%s", user.id)
-        style = Style(text=text).normalized()
+        previous_style = self.sessions.get(user.id) or self.last_styles.get(user.id)
+        style = replace(previous_style, text=text).normalized() if previous_style else Style(text=text).normalized()
         self.sessions[user.id] = style
+        self.last_styles[user.id] = style
         count = 0
         if self.store:
             try:
@@ -503,6 +510,7 @@ class BotService:
                 await query.answer("Unknown option", show_alert=True)
                 return
             self.sessions[user.id] = style
+            self.last_styles[user.id] = style
             await query.answer()
             preview_gif = await asyncio.to_thread(render_preview_gif, style)
             count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
@@ -542,31 +550,26 @@ class BotService:
                 pass
 
     async def _prepare_stickers(self, bot, user_id: int, webm_files: list[bytes]) -> list[InputSticker]:
-        """Upload sticker binaries first, then build the JSON-only set payload.
-
-        Telegram's API expects each InputSticker.sticker field to resolve to a
-        string (file_id or attach URI). Uploading first avoids nested multipart
-        file objects being serialized as JSON by the installed PTB version.
-        """
-        if len(webm_files) != len(PACK_EMOJIS):
+        """Upload an adaptive number of regular video stickers and build the set payload."""
+        if not webm_files or len(webm_files) > 50:
             raise RuntimeError(
-                f"renderer returned {len(webm_files)} files; expected {len(PACK_EMOJIS)}"
+                f"renderer returned {len(webm_files)} files; expected between 1 and 50"
             )
 
         stickers: list[InputSticker] = []
-        for index, (data, emoji) in enumerate(zip(webm_files, PACK_EMOJIS, strict=True), start=1):
+        for index, data in enumerate(webm_files, start=1):
             uploaded = await bot.upload_sticker_file(
                 user_id=user_id,
-                sticker=InputFile(data, filename=f"emoji_{index}.webm"),
+                sticker=InputFile(data, filename=f"text_{index}.webm"),
                 sticker_format="video",
             )
             file_id = getattr(uploaded, "file_id", None)
             if not isinstance(file_id, str) or not file_id:
-                raise RuntimeError(f"Telegram did not return a file_id for emoji {index}")
+                raise RuntimeError(f"Telegram did not return a file_id for sticker {index}")
             stickers.append(
                 InputSticker(
                     sticker=file_id,
-                    emoji_list=[emoji],
+                    emoji_list=[STICKER_EMOJI],
                     format="video",
                 )
             )
@@ -596,9 +599,7 @@ class BotService:
             bonus_used = False
             reserved_over_limit = False
 
-            # Consume the 3 daily free slots first, even for PRO members. Extra
-            # packs are tracked in a separate collection to remain compatible
-            # with existing MongoDB validators on daily_usage.
+            # Preserve existing free-quota, PRO and referral-credit behavior.
             count = await asyncio.to_thread(self.store.reserve, user.id, quota_time)
             if count is None and is_pro:
                 count = await asyncio.to_thread(
@@ -628,34 +629,64 @@ class BotService:
 
             pack_created = False
             try:
-                await query.answer("Creating your animated emoji pack…")
+                await query.answer()
+                if query.message:
+                    try:
+                        await query.edit_message_reply_markup(
+                            reply_markup=self._keyboard(style, creating=True)
+                        )
+                    except TelegramError:
+                        logger.debug("Could not show pack-creation state for user_id=%s", user.id)
+
                 used_count = await asyncio.to_thread(self.store.get_count, user.id, quota_time)
                 bot_username = re.sub(
                     r"[^A-Za-z0-9_]", "",
                     self.bot_username or context.bot.username or "EmojiTitleBot",
                 ) or "EmojiTitleBot"
-                pack_name = (
-                    f"et_{user.id % 100000}_{int(time.time()) % 1000000}_"
-                    f"{secrets.token_hex(4)}_by_{bot_username.lower()}"
-                )
+
+                # Make the pack recognizable by its text, with Telegram's required bot suffix.
+                slug = re.sub(r"[^A-Za-z0-9]", "", style.text)
+                if not slug or not slug[0].isalpha():
+                    slug = f"Text{slug}"
+                slug = slug[:20]
+                suffix = secrets.token_hex(3)[:5]
+                pack_name = f"{slug}_{suffix}_by_{bot_username}"
                 pack_title = style.text.strip()[:64] if is_pro else f"Created in 👉 @{bot_username}"[:64]
+
                 webm_files = await asyncio.to_thread(render_pack_webm, style)
-                if len(webm_files) != len(PACK_EMOJIS):
-                    raise RuntimeError(
-                        f"renderer returned {len(webm_files)} files; expected {len(PACK_EMOJIS)}"
-                    )
+                if not webm_files:
+                    raise RuntimeError("No sticker segments were generated.")
+                # The reference sends the complete text as a sample sticker, while
+                # the pack itself contains the individually readable text segments.
+                sample_webm = await asyncio.to_thread(render_single_webm, style)
                 stickers = await self._prepare_stickers(context.bot, user.id, webm_files)
                 await context.bot.create_new_sticker_set(
                     user_id=user.id,
                     name=pack_name,
                     title=pack_title,
                     stickers=stickers,
-                    sticker_type="custom_emoji",
                 )
                 pack_created = True
-                pack_url = f"https://t.me/addemoji/{pack_name}"
+                pack_url = f"https://t.me/addstickers/{pack_name}"
                 self.sessions.pop(user.id, None)
                 self.session_message_ids.pop(user.id, None)
+                self.last_styles[user.id] = style
+
+                if query.message:
+                    try:
+                        await query.edit_message_reply_markup(reply_markup=None)
+                    except TelegramError:
+                        logger.debug("Could not remove completed editor keyboard for user_id=%s", user.id)
+
+                try:
+                    await context.bot.send_sticker(
+                        chat_id=user.id,
+                        sticker=InputFile(sample_webm, filename="text-sample.webm"),
+                    )
+                except Exception:
+                    # The pack already exists; a sample delivery failure must not
+                    # undo the successful creation or consume the quota twice.
+                    logger.exception("Pack created but sample sticker could not be sent to user_id=%s", user.id)
 
                 if is_pro:
                     pro_note = "💎 PRO subscription active: unlimited pack creation and custom pack titles."
@@ -669,27 +700,42 @@ class BotService:
                     "Your Emojipack has been created!\n"
                     "You can now use it in any chat. Don't forget to add it to your collection to avoid losing it.\n"
                     f"{pack_url}\n\n"
-                    f"Used: {used_count}/{DAILY_LIMIT} free packs today\n"
+                    f"Used: {used_count} of {DAILY_LIMIT} free packs today\n"
                     f"{pro_note}\n\n"
-                    "Emojipack with 6 emoji for Telegram Premium subscribers."
+                    f"Emojipack with {len(webm_files)} emoji for Telegram Premium subscribers."
                 )
                 if query.message:
-                    await query.message.reply_text(
-                        confirmation,
-                        reply_markup=self._account_keyboard(user.id),
-                    )
+                    try:
+                        await query.message.reply_text(
+                            confirmation,
+                            reply_markup=self._account_keyboard(user.id),
+                        )
+                    except TelegramError:
+                        logger.exception("Pack was created but confirmation could not be sent for user_id=%s", user.id)
                 logger.info(
-                    "Created custom emoji pack for user_id=%s; daily_count=%s; pro=%s",
-                    user.id, count, is_pro,
+                    "Created text sticker pack for user_id=%s; stickers=%s; daily_count=%s; pro=%s",
+                    user.id, len(webm_files), count, is_pro,
                 )
             except Exception as exc:
                 if not pack_created:
-                    await asyncio.to_thread(self.store.release, user.id, quota_time, allow_over_limit=reserved_over_limit)
+                    await asyncio.to_thread(
+                        self.store.release,
+                        user.id,
+                        quota_time,
+                        allow_over_limit=reserved_over_limit,
+                    )
                     if bonus_used:
                         await asyncio.to_thread(self.store.add_bonus, user.id)
+                    if query.message:
+                        try:
+                            await query.edit_message_reply_markup(
+                                reply_markup=self._keyboard(style)
+                            )
+                        except TelegramError:
+                            logger.debug("Could not restore editor keyboard after failure for user_id=%s", user.id)
                 logger.exception("Pack creation failed for user_id=%s", user.id)
                 error_hint = (
-                    "Telegram could not accept this pack. Please try another text or design."
+                    "Telegram could not accept this sticker pack. Please try another text or design."
                     if isinstance(exc, TelegramError)
                     else "The animation could not be encoded. Please try again with shorter text."
                 )
