@@ -46,20 +46,37 @@ def _schema_validator() -> dict[str, Any]:
 
 
 class UsageStore:
-    def __init__(self, mongo_uri: str) -> None:
-        self.client = MongoClient(
-            mongo_uri,
-            appname="TelegramAnimatedTextCreator",
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
-            socketTimeoutMS=8000,
-            retryWrites=True,
-        )
-        self.db = self.client.get_default_database(default="animated_text_creator")
+    def __init__(
+        self,
+        mongo_uri: str,
+        database_name: str | None = None,
+        auth_source: str | None = None,
+    ) -> None:
+        client_options: dict[str, Any] = {
+            "appname": "TelegramAnimatedTextCreator",
+            "serverSelectionTimeoutMS": 5000,
+            "connectTimeoutMS": 5000,
+            "socketTimeoutMS": 8000,
+            "retryWrites": True,
+        }
+        # Some deployments use a non-default authentication database. Keep
+        # the URI untouched unless an explicit override is configured.
+        if auth_source and auth_source.strip():
+            client_options["authSource"] = auth_source.strip()
+
+        self.client = MongoClient(mongo_uri, **client_options)
+        configured_database = (database_name or "").strip()
+        if configured_database:
+            self.db = self.client[configured_database]
+        else:
+            # Preserve a database selected in the connection URI; use a
+            # dedicated app database only when the URI has no database path.
+            self.db = self.client.get_default_database(default="animated_text_creator")
         self.usage = self.db[COLLECTION_NAME]
 
     def initialize(self) -> None:
         """Verify MongoDB, migrate old documents, then enforce compact indexes."""
+        logger.info("Initializing quota storage in MongoDB database '%s'", self.db.name)
         self.client.admin.command("ping")
         collection_created_with_validator = self._ensure_collection()
         self._migrate_legacy_schema()
