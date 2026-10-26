@@ -9,3 +9,5 @@ fontpkg==0.2.2
 fontpkg-raleway==4.26
 fontpkg-arimo==1.341
 fontpkg-rubik==2.300
+fontpkg-roboto==3.15
+fontpkg-montserrat==9.0
