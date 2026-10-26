@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaAnimation, InputSticker, LabeledPrice, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker, LabeledPrice, Update
 from telegram.constants import ChatType
 from telegram.error import TelegramError
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
@@ -504,16 +504,57 @@ class BotService:
             await query.answer()
             preview_gif = await asyncio.to_thread(render_preview_gif, style)
             count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
-            await query.edit_message_media(
-                media=InputMediaAnimation(media=InputFile(preview_gif, filename="animated-text-preview.gif"), caption=self._style_caption(style, count)),
+            if not query.message:
+                await query.answer("This editor is no longer available.", show_alert=True)
+                return
+            new_preview = await context.bot.send_animation(
+                chat_id=user.id,
+                animation=InputFile(preview_gif, filename="animated-text-preview.gif"),
+                caption=self._style_caption(style, count),
                 reply_markup=self._keyboard(style),
             )
+            self.session_message_ids[user.id] = new_preview.message_id
+            try:
+                await query.message.delete()
+            except TelegramError:
+                logger.debug("Old preview message could not be deleted for user_id=%s", user.id)
         except Exception:
             logger.exception("Could not update preview for user %s", user.id)
             try:
                 await query.answer("Could not update this preview. Please try again.", show_alert=True)
             except TelegramError:
                 pass
+
+    async def _prepare_stickers(self, bot, user_id: int, webm_files: list[bytes]) -> list[InputSticker]:
+        """Upload sticker binaries first, then build the JSON-only set payload.
+
+        Telegram's API expects each InputSticker.sticker field to resolve to a
+        string (file_id or attach URI). Uploading first avoids nested multipart
+        file objects being serialized as JSON by the installed PTB version.
+        """
+        if len(webm_files) != len(PACK_EMOJIS):
+            raise RuntimeError(
+                f"renderer returned {len(webm_files)} files; expected {len(PACK_EMOJIS)}"
+            )
+
+        stickers: list[InputSticker] = []
+        for index, (data, emoji) in enumerate(zip(webm_files, PACK_EMOJIS, strict=True), start=1):
+            uploaded = await bot.upload_sticker_file(
+                user_id=user_id,
+                sticker=InputFile(data, filename=f"emoji_{index}.webm"),
+                sticker_format="video",
+            )
+            file_id = getattr(uploaded, "file_id", None)
+            if not isinstance(file_id, str) or not file_id:
+                raise RuntimeError(f"Telegram did not return a file_id for emoji {index}")
+            stickers.append(
+                InputSticker(
+                    sticker=file_id,
+                    emoji_list=[emoji],
+                    format="video",
+                )
+            )
+        return stickers
 
     async def _create_pack(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query, user = update.callback_query, update.effective_user
@@ -587,14 +628,7 @@ class BotService:
                     raise RuntimeError(
                         f"renderer returned {len(webm_files)} files; expected {len(PACK_EMOJIS)}"
                     )
-                stickers = [
-                    InputSticker(
-                        sticker=InputFile(data, filename=f"emoji_{index + 1}.webm"),
-                        emoji_list=[emoji],
-                        format="video",
-                    )
-                    for index, (data, emoji) in enumerate(zip(webm_files, PACK_EMOJIS, strict=True))
-                ]
+                stickers = await self._prepare_stickers(context.bot, user.id, webm_files)
                 await context.bot.create_new_sticker_set(
                     user_id=user.id,
                     name=pack_name,
