@@ -73,7 +73,44 @@ class Style:
         )
 
 
+_FONT_PACKAGE_SPECS: dict[str, tuple[str, int, str]] = {
+    # Use the real Google Fonts families for the styles that appear first in
+    # the reference UI; Arimo is metrically compatible with Arial.
+    "Raleway italic": ("Raleway", 700, "italic"),
+    "Arial": ("Arimo", 400, "normal"),
+    "Rubik": ("Rubik", 700, "normal"),
+}
+
+
 def _font(style_name: str, size: int) -> ImageFont.ImageFont:
+    package_spec = _FONT_PACKAGE_SPECS.get(style_name)
+    if package_spec:
+        try:
+            import fontpkg
+
+            family, weight, font_style = package_spec
+            font_path = fontpkg.path(family, weight=weight, style=font_style)
+            font = ImageFont.truetype(str(font_path), size=size)
+            # Pillow supports variation fonts. Keep the family/weight in step
+            # with the visible option label when a package returns a variable
+            # font rather than a pre-instanced file.
+            if hasattr(font, "get_variation_axes") and hasattr(font, "set_variation_by_axes"):
+                try:
+                    axes = font.get_variation_axes()
+                    if axes and any(str(axis.get("name", "")).lower() in ("weight", "wght") for axis in axes):
+                        values = [axis.get("default", 400) for axis in axes]
+                        for index, axis in enumerate(axes):
+                            if str(axis.get("name", "")).lower() in ("weight", "wght"):
+                                values[index] = weight
+                        font.set_variation_by_axes(values)
+                except (OSError, ValueError, TypeError):
+                    pass
+            return font
+        except Exception:
+            # Preserve service availability if an optional font package cannot
+            # be resolved; the local/system fallbacks below remain available.
+            pass
+
     for candidate in _FONT_FILES.get(style_name, ()):
         if os.path.isfile(candidate):
             try:
