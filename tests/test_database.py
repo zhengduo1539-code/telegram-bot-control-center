@@ -199,6 +199,7 @@ def test_get_count_sums_free_and_overflow_buckets(mongo_store):
 def test_today_stats_ignores_zero_count_rows(mongo_store):
     store, _, _, collection = mongo_store
     collection.aggregate.return_value = [{"users": 2, "packs": 4}]
+    collection.distinct.return_value = [123, 456]
     now = datetime(2026, 10, 26, tzinfo=timezone.utc)
 
     assert store.today_stats(now) == {"users_today": 2, "packs_today": 4}
