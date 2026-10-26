@@ -9,9 +9,26 @@ A Telegram bot that turns a short text line into a coordinated pack of three ani
 - PNG preview updates as a user changes settings.
 - VP9 WebM output with alpha metadata, 100 × 100 pixels, 30 FPS, two-second loop, and a 256 KB size guard.
 - Three coordinated color variants per successful pack.
-- MongoDB-backed atomic daily quota, with a 60-day TTL to limit usage-record growth.
+- Compact MongoDB quota records with a unique user/day index, atomic increments, and a 60-day TTL cleanup.
+- Safe, idempotent migration from the previous long-field schema to the compact schema at startup.
+- Application-level user ID checks and bounded quota values; strict MongoDB schema validation is installed when permissions allow.
 - /health is the readiness endpoint for UptimeRobot; /healthz remains available for Render's existing health check.
 - One Render Free Web Service runs the FastAPI health server and Telegram long polling in the same process.
+
+## MongoDB storage format
+
+The only application data stored in MongoDB is the daily quota counter, in the daily_usage collection:
+
+| Field | Meaning | Type |
+| --- | --- | --- |
+| u | Telegram user ID | Integer |
+| d | UTC day (YYYY-MM-DD) | String |
+| n | Packs reserved/used on that day | Integer, 0–3 |
+| x | Expiration timestamp | BSON Date |
+
+The old fields (user_id, day, count, expires_at) are renamed in-place to (u, d, n, x). Unused created_at and updated_at fields are removed because no feature reads them. The migration keeps the user ID, usage count, day and expiration date; it does not reset a user's quota. Existing legacy indexes are replaced with a unique (u, d) index and TTL index on x. Documents with zero quota are removed because they represent no consumed quota.
+
+If MongoDB rejects schema-validator configuration due to the database user's permissions, the bot logs a warning and continues with application-level validation and the unique/TTL indexes. The bot does not require elevated dbAdmin privileges to run.
 
 ## Required environment variables
 
@@ -46,4 +63,4 @@ Run tests with: pytest -q
 
 ## Quota behaviour
 
-Quota is reserved atomically before rendering, so concurrent button taps cannot exceed three generations. If rendering or Telegram upload fails before the pack is created, the reservation is released. The quota resets at 00:00 UTC. Daily records expire after 60 days.
+Quota is reserved atomically before rendering, so concurrent button taps cannot exceed three generations. If rendering or Telegram upload fails before the pack is created, the reservation is released against the same UTC day it was reserved—even if the process crosses midnight. The quota resets at 00:00 UTC. Daily records expire after 60 days.

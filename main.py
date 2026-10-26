@@ -9,6 +9,7 @@ import secrets
 import time
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -318,13 +319,16 @@ class BotService:
             await query.answer("Your pack is already being created.", show_alert=False)
             return
         async with lock:
-            count = await asyncio.to_thread(self.store.reserve, user.id)
+            # Use the same timestamp for reservation and rollback. If generation
+            # crosses UTC midnight and fails, the previous day's quota is restored.
+            quota_time = datetime.now(timezone.utc)
+            count = await asyncio.to_thread(self.store.reserve, user.id, quota_time)
             if count is None:
                 await query.answer("Daily free limit reached: 3 packs per UTC day. Try again tomorrow.", show_alert=True)
                 return
-            await query.answer("Creating your animated emoji pack…", show_alert=False)
             pack_created = False
             try:
+                await query.answer("Creating your animated emoji pack…", show_alert=False)
                 bot_username = self.bot_username or (context.bot.username or "bot")
                 bot_username = re.sub(r"[^A-Za-z0-9_]", "", bot_username).lower() or "bot"
                 pack_name = f"tc_{user.id % 100000}_{int(time.time()) % 1000000}_{secrets.token_hex(2)}_by_{bot_username}"
@@ -366,7 +370,7 @@ class BotService:
                 logger.info("Created custom emoji pack for user_id=%s; daily_count=%s", user.id, count)
             except Exception as exc:
                 if not pack_created:
-                    await asyncio.to_thread(self.store.release, user.id)
+                    await asyncio.to_thread(self.store.release, user.id, quota_time)
                 logger.exception("Pack creation failed for user_id=%s", user.id)
                 error_hint = "Telegram rejected the generated pack or the animation could not be encoded."
                 if isinstance(exc, TelegramError):
