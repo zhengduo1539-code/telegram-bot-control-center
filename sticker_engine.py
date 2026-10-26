@@ -355,11 +355,14 @@ def _render_preview_frame(style: Style, time_seconds: float) -> Image.Image:
     content = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(content)
     text = style.text or " "
-    font_size = 80
+    # Match the source clip: at a 660x220 GIF canvas, "Hello" is about
+    # 110px wide and the colored badge is about 165px wide (roughly one
+    # quarter of the canvas). Large text or a 300-500px badge is not faithful.
+    font_size = 52
     chosen_font = _font(style.font, font_size)
     bounds = draw.textbbox((0, 0), text, font=chosen_font)
     while font_size > 22 and (
-        bounds[2] - bounds[0] > width * 0.62 or bounds[3] - bounds[1] > height * 0.38
+        bounds[2] - bounds[0] > width * 0.70 or bounds[3] - bounds[1] > height * 0.44
     ):
         font_size -= 2
         chosen_font = _font(style.font, font_size)
@@ -386,12 +389,12 @@ def _render_preview_frame(style: Style, time_seconds: float) -> Image.Image:
     elif style.animation == "None":
         pulse, dx, dy, angle = 1.0, 0.0, 0.0, 0.0
 
-    # The reference fills a wide white canvas with a large, centered badge.
-    # A 220x220 square inset only uses one third of the preview width.
-    pad_x = max(84.0, text_h * 1.42)
-    pad_y = max(8.0, text_h * 0.12)
-    badge_w = min(width * 0.86, text_w + 2 * pad_x)
-    badge_h = min(height * 0.44, text_h + 2 * pad_y)
+    # The source's capsule has moderate side padding and stays compact within
+    # the wide white canvas; its height is close to a third of the canvas.
+    pad_x = max(20.0, text_h * 0.45)
+    pad_y = max(5.0, text_h * 0.15)
+    badge_w = min(width * 0.62, max(160.0, text_w + 2 * pad_x))
+    badge_h = min(height * 0.38, max(56.0, text_h + 2 * pad_y))
     badge_x = center_x - badge_w / 2
     badge_y = center_y - badge_h / 2
     box = (int(badge_x), int(badge_y), int(badge_x + badge_w), int(badge_y + badge_h))
