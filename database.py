@@ -316,6 +316,13 @@ class UsageStore:
         referrer = self._user_key(referrer_id) if referrer_id is not None else None
         if referrer == user_key:
             referrer = None
+        if referrer is not None:
+            known_referrer = (
+                self.users.find_one({"u": referrer}, {"u": 1}) is not None
+                or self.usage.find_one({"u": referrer}, {"u": 1}) is not None
+            )
+            if not known_referrer:
+                referrer = None
 
         if self.users.find_one({"u": user_key}, {"u": 1}):
             return False
