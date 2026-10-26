@@ -405,19 +405,23 @@ class UsageStore:
         if when.tzinfo is None:
             when = when.replace(tzinfo=timezone.utc)
         when = when.astimezone(timezone.utc)
+        is_new_charge = True
         try:
             self.payments.insert_one({
                 "c": charge_id, "u": user_key, "a": int(amount),
                 "p": str(payload)[:128], "d": when, "x": expires_at,
             })
         except DuplicateKeyError:
-            return False
+            is_new_charge = False
+        # Always reconcile the entitlement after a charge was seen. If a prior
+        # write stored the charge but failed before updating user_state, webhook
+        # redelivery repairs the entitlement instead of leaving PRO inactive.
         self.users.update_one(
             {"u": user_key},
             {"$max": {"p": expires_at}, "$setOnInsert": {"u": user_key, "b": 0}},
             upsert=True,
         )
-        return True
+        return is_new_charge
 
     def close(self) -> None:
         self.client.close()
