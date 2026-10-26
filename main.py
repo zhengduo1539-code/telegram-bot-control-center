@@ -505,7 +505,7 @@ class BotService:
             preview_gif = await asyncio.to_thread(render_preview_gif, style)
             count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
             if not query.message:
-                await query.answer("This editor is no longer available.", show_alert=True)
+                logger.warning("Editor message missing while refreshing preview for user_id=%s", user.id)
                 return
             new_preview = await context.bot.send_animation(
                 chat_id=user.id,
