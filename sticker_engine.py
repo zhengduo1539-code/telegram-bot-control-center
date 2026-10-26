@@ -200,7 +200,7 @@ def render_preview_png(style: Style) -> bytes:
 
 def render_preview_gif(style: Style) -> bytes:
     """Render a compact looping GIF preview suitable for Telegram animation messages."""
-    frames = [render_frame(style, time_seconds=index / 15, size=256) for index in range(15)]
+    frames = [render_frame(style, time_seconds=index * (DURATION_SECONDS / 15), size=256) for index in range(15)]
     output = io.BytesIO()
     frames[0].save(
         output,
