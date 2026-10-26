@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from database import DAILY_LIMIT, RETENTION_DAYS, UsageStore, _schema_validator
+from database import DAILY_LIMIT, MAX_DAILY_USAGE, RETENTION_DAYS, UsageStore, _schema_validator
 
 
 @pytest.fixture
@@ -11,8 +11,21 @@ def mongo_store(monkeypatch):
     client = MagicMock()
     db = MagicMock()
     collection = MagicMock()
+    extra_usage = MagicMock()
+    users = MagicMock()
+    payments = MagicMock()
+    extra_usage.find_one.return_value = None
+    extra_usage.aggregate.return_value = []
+    extra_usage.distinct.return_value = []
+    collection.distinct.return_value = []
+    collections = {
+        "daily_usage": collection,
+        "extra_usage": extra_usage,
+        "user_state": users,
+        "star_payments": payments,
+    }
     client.get_default_database.return_value = db
-    db.__getitem__.return_value = collection
+    db.__getitem__.side_effect = lambda name: collections[name]
     db.list_collection_names.return_value = ["daily_usage"]
     collection.name = "daily_usage"
     collection.list_indexes.return_value = [
@@ -141,6 +154,18 @@ def test_reserve_uses_compact_fields_and_atomic_increment(mongo_store):
     assert "created_at" not in update["$setOnInsert"]
 
 
+def test_reserve_allows_entitled_usage_in_separate_overflow_collection(mongo_store):
+    store, _, _, _ = mongo_store
+    store.extra_usage.find_one_and_update.return_value = {"u": 12345, "d": "2026-10-26", "n": 1}
+    now = datetime(2026, 10, 26, 23, 30, tzinfo=timezone.utc)
+
+    assert store.reserve(12345, now, allow_over_limit=True) == 1
+
+    query, update = store.extra_usage.find_one_and_update.call_args.args[:2]
+    assert query == {"u": 12345, "d": "2026-10-26", "n": {"$lt": MAX_DAILY_USAGE}}
+    assert update["$inc"] == {"n": 1}
+
+
 def test_release_rolls_back_the_original_utc_day_and_removes_empty_document(mongo_store):
     store, _, _, collection = mongo_store
     original_reservation_time = datetime(2026, 10, 26, 23, 59, tzinfo=timezone.utc)
@@ -156,13 +181,17 @@ def test_release_rolls_back_the_original_utc_day_and_removes_empty_document(mong
     )
 
 
-def test_get_count_uses_compact_keys(mongo_store):
+def test_get_count_sums_free_and_overflow_buckets(mongo_store):
     store, _, _, collection = mongo_store
-    collection.find_one.return_value = {"n": 2}
+    collection.find_one.return_value = {"n": 3}
+    store.extra_usage.find_one.return_value = {"n": 1}
     now = datetime(2026, 10, 26, tzinfo=timezone.utc)
 
-    assert store.get_count(12345, now) == 2
+    assert store.get_count(12345, now) == 4
     collection.find_one.assert_called_once_with(
+        {"u": 12345, "d": "2026-10-26"}, {"n": 1}
+    )
+    store.extra_usage.find_one.assert_called_once_with(
         {"u": 12345, "d": "2026-10-26"}, {"n": 1}
     )
 
@@ -170,19 +199,14 @@ def test_get_count_uses_compact_keys(mongo_store):
 def test_today_stats_ignores_zero_count_rows(mongo_store):
     store, _, _, collection = mongo_store
     collection.aggregate.return_value = [{"users": 2, "packs": 4}]
+    collection.distinct.return_value = [123, 456]
     now = datetime(2026, 10, 26, tzinfo=timezone.utc)
 
     assert store.today_stats(now) == {"users_today": 2, "packs_today": 4}
     collection.aggregate.assert_called_once_with(
         [
             {"$match": {"d": "2026-10-26", "n": {"$gt": 0}}},
-            {
-                "$group": {
-                    "_id": None,
-                    "users": {"$sum": 1},
-                    "packs": {"$sum": "$n"},
-                }
-            },
+            {"$group": {"_id": None, "packs": {"$sum": "$n"}}},
         ]
     )
 
