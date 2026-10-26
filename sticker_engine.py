@@ -330,12 +330,13 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
     stroke_width = max(1, large_size // 260)
     chosen_font: ImageFont.ImageFont = _font(style.font, max(10, font_size))
     bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
-    while font_size > max(10, int(large_size * 0.12)):
+    minimum_font_size = max(10, int(large_size * 0.045))
+    while font_size > minimum_font_size:
         chosen_font = _font(style.font, font_size)
         bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
         if (bounds[2] - bounds[0]) <= max_text_w and (bounds[3] - bounds[1]) <= max_text_h:
             break
-        font_size -= 2
+        font_size = max(minimum_font_size, font_size - 2)
     chosen_font = _font(style.font, max(10, font_size))
     bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
     text_w = max(1, bounds[2] - bounds[0])
