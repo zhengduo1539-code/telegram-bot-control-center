@@ -263,8 +263,8 @@ class BotService:
         message = update.effective_message
         if message:
             await message.reply_text(
-                "Send a short line of text to open the editor. Use the arrows to change each option, then tap *Create Emoji Pack*.\n\n"
-                "Commands: /start, /help, /cancel" + ("\n/admin — administrator usage stats" if update.effective_user and update.effective_user.id in self.admin_ids else ""),
+                "Send any short text to open the animated preview. Use the arrows to change its font, color, shape, and animation, then tap *Create Sticker Set*.\n\n"
+                "Commands: /start, /help, /pro, /cancel" + ("\n/admin — administrator usage stats" if update.effective_user and update.effective_user.id in self.admin_ids else ""),
                 parse_mode="Markdown",
             )
 
@@ -654,15 +654,15 @@ app = FastAPI(title=SERVICE_NAME, docs_url=None, redoc_url=None, openapi_url=Non
 async def home(request: Request) -> HTMLResponse:
     service: BotService = request.app.state.bot_service
     status_text = "Running" if service.status == "running" else "Setup required"
-    description = "Send a short text to the Telegram bot to create an animated custom-emoji pack." if service.status == "running" else "Add BOT_TOKEN, ADMIN_IDS and MONGODB_URI in Render Environment, then restart the service."
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{SERVICE_NAME}</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a1020;color:#edf2ff;font:16px/1.6 system-ui,sans-serif;padding:24px}}main{{max-width:620px;background:#111a2d;border:1px solid #293653;border-radius:22px;padding:36px;box-shadow:0 24px 70px #0005}}.tag{{display:inline-block;border:1px solid #67508d;border-radius:999px;padding:4px 10px;color:#d9baff;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}}h1{{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:20px 0 12px}}p{{color:#b9c5de}}code{{color:#e4c9ff}}</style></head><body><main><span class="tag">{status_text}</span><h1>✨ Animated Text Creator</h1><p>{description}</p><p>Daily allowance: <strong>3 packs per user, UTC day</strong>. This service does not include a bot PRO plan or payments.</p><p>Health endpoint: <code>/health</code></p></main></body></html>"""
+    description = "Send a short text to EmojiTitleBot in Telegram to create an animated custom-emoji pack." if service.status == "running" else "Add BOT_TOKEN, ADMIN_IDS and MONGODB_URI in Render Environment, then restart the service."
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{SERVICE_NAME}</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a1020;color:#edf2ff;font:16px/1.6 system-ui,sans-serif;padding:24px}}main{{max-width:620px;background:#111a2d;border:1px solid #293653;border-radius:22px;padding:36px;box-shadow:0 24px 70px #0005}}.tag{{display:inline-block;border:1px solid #67508d;border-radius:999px;padding:4px 10px;color:#d9baff;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}}h1{{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:20px 0 12px}}p{{color:#b9c5de}}code{{color:#e4c9ff}}</style></head><body><main><span class="tag">{status_text}</span><h1>👋 EmojiTitleBot</h1><p>{description}</p><p>Free allowance: <strong>3 packs per user, UTC day</strong>. PRO unlocks unlimited pack creation and custom pack titles, with Telegram Stars billing.</p><p>Health endpoint: <code>/health</code></p></main></body></html>"""
     return HTMLResponse(html)
 
 
 @app.get("/healthz")
 async def healthz(request: Request) -> dict[str, str]:
     service: BotService = request.app.state.bot_service
-    return {"status": "ok", "service": "animated-text-creator", "bot": service.status}
+    return {"status": "ok", "service": "emojititlebot", "bot": service.status}
 
 
 @app.get("/health")
