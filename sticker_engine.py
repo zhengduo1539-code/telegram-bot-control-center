@@ -145,7 +145,7 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
     # Keep the lettering centered and scale it to the canvas first. The
     # selected shape is then fitted to the text instead of filling the entire
     # emoji canvas with a large tile.
-    max_text_w = large_size * 0.82
+    max_text_w = large_size * 0.76
     max_text_h = large_size * 0.42
     font_size = int(large_size * 0.50)
     stroke_width = max(1, large_size // 260)
@@ -158,10 +158,12 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
             break
         font_size -= 2
 
+    chosen_font = _font(style.font, max(10, font_size))
+    bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
     text_w = max(1, bounds[2] - bounds[0])
     text_h = max(1, bounds[3] - bounds[1])
-    pad_x = max(large_size * 0.045, text_h * 0.34)
-    pad_y = max(large_size * 0.025, text_h * 0.22)
+    pad_x = max(large_size * 0.03, text_h * 0.14)
+    pad_y = max(large_size * 0.025, text_h * 0.18)
     box_w = min(large_size * 0.94, text_w + pad_x * 2)
     box_h = min(large_size * 0.78, text_h + pad_y * 2)
     box = (
