@@ -1,4 +1,4 @@
-"""Telegram Animated Text Creator. FastAPI health endpoint + Telegram long polling."""
+"""EmojiTitleBot: FastAPI health endpoint + Telegram long polling."""
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +33,7 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-logger = logging.getLogger("animated_text_creator")
+logger = logging.getLogger("emojititlebot")
 SERVICE_NAME = "EmojiTitleBot | Text from Emojis"
 PRO_PRICE_STARS = 100
 PRO_PERIOD_SECONDS = 30 * 24 * 60 * 60
@@ -103,7 +103,7 @@ class BotService:
                 BotCommand("pro", "Get PRO with Telegram Stars"),
                 BotCommand("cancel", "Cancel current creation"),
             ])
-            await application.bot.delete_webhook(drop_pending_updates=False
+            await application.bot.delete_webhook(drop_pending_updates=False)
             await application.start()
             if application.updater is None:
                 raise RuntimeError("Telegram polling updater is unavailable.")
@@ -680,6 +680,6 @@ async def health(request: Request) -> JSONResponse:
         logger.exception("Readiness check could not reach MongoDB")
         return JSONResponse(
             status_code=503,
-            content={"status": "degraded", "service": "animated-text-creator", "bot": "running", "database": "disconnected"},
+            content={"status": "degraded", "service": "emojititlebot", "bot": "running", "database": "disconnected"},
         )
     return JSONResponse(status_code=200, content={"status": "ok", "service": "animated-text-creator", "bot": "running", "database": "connected"})
