@@ -2,6 +2,8 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+from telegram import InputMediaAnimation
+
 from main import BotService, PACK_EMOJIS
 from sticker_engine import Style
 
@@ -32,18 +34,24 @@ def test_prepare_stickers_uploads_media_and_uses_returned_file_ids():
         assert call.kwargs["sticker"].filename == f"emoji_{index}.webm"
 
 
-def test_preview_setting_sends_new_animation_and_removes_old_message(monkeypatch):
+def test_preview_setting_edits_existing_message_using_uploaded_file_id(monkeypatch):
     service = BotService()
     user = SimpleNamespace(id=12345)
-    old_message = SimpleNamespace(message_id=100, delete=AsyncMock())
+    old_message = SimpleNamespace(message_id=100)
     query = SimpleNamespace(
         data="font:1",
         message=old_message,
         answer=AsyncMock(),
+        edit_message_media=AsyncMock(),
     )
     update = SimpleNamespace(callback_query=query, effective_user=user)
+    uploaded = SimpleNamespace(
+        message_id=200,
+        animation=SimpleNamespace(file_id="telegram-preview-file-id"),
+        delete=AsyncMock(),
+    )
     bot = MagicMock()
-    bot.send_animation = AsyncMock(return_value=SimpleNamespace(message_id=200))
+    bot.send_animation = AsyncMock(return_value=uploaded)
     context = SimpleNamespace(bot=bot)
 
     service.sessions[user.id] = Style(text="Hello").normalized()
@@ -55,8 +63,16 @@ def test_preview_setting_sends_new_animation_and_removes_old_message(monkeypatch
     asyncio.run(service.on_callback(update, context))
 
     bot.send_animation.assert_awaited_once()
-    assert bot.send_animation.await_args.kwargs["chat_id"] == user.id
-    assert bot.send_animation.await_args.kwargs["animation"].filename == "animated-text-preview.gif"
-    old_message.delete.assert_awaited_once()
-    assert service.session_message_ids[user.id] == 200
-    assert service.sessions[user.id].font != "Impact"
+    send_kwargs = bot.send_animation.await_args.kwargs
+    assert send_kwargs["chat_id"] == user.id
+    assert send_kwargs["animation"].filename == "animated-text-preview.gif"
+    assert "caption" not in send_kwargs
+    assert "reply_markup" not in send_kwargs
+    uploaded.delete.assert_awaited_once()
+    query.edit_message_media.assert_awaited_once()
+    edit_kwargs = query.edit_message_media.await_args.kwargs
+    assert isinstance(edit_kwargs["media"], InputMediaAnimation)
+    assert edit_kwargs["media"].media == "telegram-preview-file-id"
+    assert edit_kwargs["reply_markup"] is not None
+    assert service.session_message_ids[user.id] == old_message.message_id
+    assert service.sessions[user.id].font != "Monaco"

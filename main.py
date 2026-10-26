@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker, LabeledPrice, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaAnimation, InputSticker, LabeledPrice, Update
 from telegram.constants import ChatType
 from telegram.error import TelegramError
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
@@ -507,17 +507,31 @@ class BotService:
             if not query.message:
                 logger.warning("Editor message missing while refreshing preview for user_id=%s", user.id)
                 return
-            new_preview = await context.bot.send_animation(
+
+            # Upload the GIF once to obtain a Telegram file_id, then use that
+            # ID to edit the existing preview message. This keeps the original
+            # editor message and keyboard in place without multipart edit-media
+            # payloads that Telegram rejected as "media not found".
+            uploaded_preview = await context.bot.send_animation(
                 chat_id=user.id,
                 animation=InputFile(preview_gif, filename="animated-text-preview.gif"),
-                caption=self._style_caption(style, count),
+            )
+            animation = getattr(uploaded_preview, "animation", None)
+            preview_file_id = getattr(animation, "file_id", None)
+            try:
+                await uploaded_preview.delete()
+            except TelegramError:
+                logger.debug("Temporary preview upload could not be deleted for user_id=%s", user.id)
+            if not isinstance(preview_file_id, str) or not preview_file_id:
+                raise RuntimeError("Telegram did not return a file_id for the preview animation")
+
+            await query.edit_message_media(
+                media=InputMediaAnimation(
+                    media=preview_file_id,
+                    caption=self._style_caption(style, count),
+                ),
                 reply_markup=self._keyboard(style),
             )
-            self.session_message_ids[user.id] = new_preview.message_id
-            try:
-                await query.message.delete()
-            except TelegramError:
-                logger.debug("Old preview message could not be deleted for user_id=%s", user.id)
         except Exception:
             logger.exception("Could not update preview for user %s", user.id)
             try:

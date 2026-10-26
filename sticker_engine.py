@@ -47,10 +47,11 @@ _FONT_FILES: dict[str, tuple[str, ...]] = {
 @dataclass(frozen=True, slots=True)
 class Style:
     text: str
-    font: str = "Sans Bold"
-    color: str = "Violet"
+    # These defaults match the reference bot's first editor state.
+    font: str = "Monaco"
+    color: str = "Gold"
     shape: str = "Rounded"
-    animation: str = "Pulse"
+    animation: str = "Wave"
 
     def normalized(self) -> "Style":
         return replace(
@@ -128,41 +129,78 @@ def _draw_shape(draw: ImageDraw.ImageDraw, shape: str, box: tuple[int, int, int,
 
 
 def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZE, color_override: str | None = None) -> Image.Image:
+    """Render a transparent square sticker with a compact color shape behind the text."""
     style = style.normalized()
     scale = 3
     large_size = size * scale
     image = Image.new("RGBA", (large_size, large_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
+
     color_hex = color_override or PALETTES[style.color]
     rgb = _rgb(color_hex)
-    fill = (rgb[0], rgb[1], rgb[2], 232)
+    fill = (rgb[0], rgb[1], rgb[2], 255)
     center = large_size / 2
-    box_w = large_size * (0.84 if style.shape not in ("Heart", "Star") else 0.76)
-    box_h = large_size * (0.70 if style.shape == "Pill" else 0.78)
-    box = (int(center - box_w / 2), int(center - box_h / 2), int(center + box_w / 2), int(center + box_h / 2))
-    _draw_shape(draw, style.shape, box, fill)
-    text = style.text
-    max_text_w, max_text_h = large_size * (0.72 if style.shape != "None" else 0.82), large_size * 0.38
-    font_size = int(large_size * 0.38)
+    text = style.text or " "
+
+    # Keep the lettering centered and scale it to the canvas first. The
+    # selected shape is then fitted to the text instead of filling the entire
+    # emoji canvas with a large tile.
+    max_text_w = large_size * 0.76
+    max_text_h = large_size * 0.42
+    font_size = int(large_size * 0.50)
+    stroke_width = max(1, large_size // 260)
     chosen_font: ImageFont.ImageFont = _font(style.font, max(10, font_size))
-    while font_size > 10:
+    bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
+    while font_size > max(10, int(large_size * 0.12)):
         chosen_font = _font(style.font, font_size)
-        bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=max(1, large_size // 160))
+        bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
         if (bounds[2] - bounds[0]) <= max_text_w and (bounds[3] - bounds[1]) <= max_text_h:
             break
         font_size -= 2
-    stroke_width = max(1, large_size // 130)
-    bbox = draw.textbbox((center, center), text, font=chosen_font, anchor="mm", stroke_width=stroke_width)
-    if bbox[3] - bbox[1] > max_text_h and style.shape == "Heart":
-        chosen_font = _font(style.font, max(10, font_size - 5))
-    draw.text(
-        (center + large_size * 0.004, center + large_size * 0.012), text,
-        font=chosen_font, anchor="mm", fill=(0, 0, 0, 105), stroke_width=stroke_width,
-        stroke_fill=(0, 0, 0, 95),
+
+    chosen_font = _font(style.font, max(10, font_size))
+    bounds = draw.textbbox((0, 0), text, font=chosen_font, stroke_width=stroke_width)
+    text_w = max(1, bounds[2] - bounds[0])
+    text_h = max(1, bounds[3] - bounds[1])
+    pad_x = max(large_size * 0.03, text_h * 0.14)
+    pad_y = max(large_size * 0.025, text_h * 0.18)
+    box_w = min(large_size * 0.94, text_w + pad_x * 2)
+    box_h = min(large_size * 0.78, text_h + pad_y * 2)
+    box = (
+        int(center - box_w / 2),
+        int(center - box_h / 2),
+        int(center + box_w / 2),
+        int(center + box_h / 2),
     )
-    text_color = (255, 255, 255, 255) if style.shape != "None" else (rgb[0], rgb[1], rgb[2], 255)
-    outline = (20, 16, 32, 210) if style.shape != "None" else (255, 255, 255, 220)
-    draw.text((center, center), text, font=chosen_font, anchor="mm", fill=text_color, stroke_width=stroke_width, stroke_fill=outline)
+    _draw_shape(draw, style.shape, box, fill)
+
+    brightness = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+    if style.shape == "None":
+        text_color = (rgb[0], rgb[1], rgb[2], 255)
+    elif brightness >= 0.62:
+        text_color = (16, 16, 16, 255)
+    else:
+        text_color = (255, 255, 255, 255)
+
+    # A restrained shadow keeps the word readable without the heavy outline
+    # used by the previous square-tile renderer.
+    draw.text(
+        (center + large_size * 0.006, center + large_size * 0.012),
+        text,
+        font=chosen_font,
+        anchor="mm",
+        fill=(0, 0, 0, 70),
+        stroke_width=0,
+    )
+    draw.text(
+        (center, center),
+        text,
+        font=chosen_font,
+        anchor="mm",
+        fill=text_color,
+        stroke_width=0,
+    )
+
     phase = (time_seconds / DURATION_SECONDS) * (2 * math.pi)
     factor, dx, dy, angle = 1.0, 0.0, 0.0, 0.0
     if style.animation == "Pulse":
@@ -177,6 +215,7 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
         dx = large_size * 0.035 * math.sin(phase * 3.0)
     elif style.animation == "Tilt":
         angle = 11.0 * math.sin(phase)
+
     if abs(angle) > 0.1:
         image = image.rotate(angle, resample=Image.Resampling.BICUBIC, center=(center, center))
     if abs(factor - 1.0) > 0.005:
@@ -190,7 +229,6 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
         image = shifted
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
-
 def render_preview_png(style: Style) -> bytes:
     image = render_frame(style, time_seconds=0.55, size=512)
     stream = io.BytesIO()
@@ -199,8 +237,22 @@ def render_preview_png(style: Style) -> bytes:
 
 
 def render_preview_gif(style: Style) -> bytes:
-    """Render a compact looping GIF preview suitable for Telegram animation messages."""
-    frames = [render_frame(style, time_seconds=index * (DURATION_SECONDS / 15), size=256) for index in range(15)]
+    """Render the same text treatment in the wide, white preview used by the reference bot."""
+    width, height = 660, 220
+    sticker_size = 220
+    frames: list[Image.Image] = []
+    for index in range(15):
+        sticker_frame = render_frame(
+            style,
+            time_seconds=index * (DURATION_SECONDS / 15),
+            size=sticker_size,
+        )
+        # The source bot shows a wide white GIF canvas, with the compact text
+        # sticker centered rather than a square tile filling the whole preview.
+        canvas = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+        canvas.alpha_composite(sticker_frame, ((width - sticker_size) // 2, (height - sticker_size) // 2))
+        frames.append(canvas.convert("RGB"))
+
     output = io.BytesIO()
     frames[0].save(
         output,
@@ -211,13 +263,11 @@ def render_preview_gif(style: Style) -> bytes:
         loop=0,
         disposal=2,
         optimize=True,
-        transparency=0,
     )
     data = output.getvalue()
     if not data or not data.startswith((b"GIF87a", b"GIF89a")):
         raise RuntimeError("Could not render the animated preview.")
     return data
-
 
 def _ffmpeg_executable() -> str:
     try:
