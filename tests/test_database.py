@@ -141,6 +141,18 @@ def test_reserve_uses_compact_fields_and_atomic_increment(mongo_store):
     assert "created_at" not in update["$setOnInsert"]
 
 
+def test_reserve_allows_entitled_usage_above_free_limit(mongo_store):
+    store, _, _, collection = mongo_store
+    collection.find_one_and_update.return_value = {"u": 12345, "d": "2026-10-26", "n": 4}
+    now = datetime(2026, 10, 26, 23, 30, tzinfo=timezone.utc)
+
+    assert store.reserve(12345, now, allow_over_limit=True) == 4
+
+    query, update = collection.find_one_and_update.call_args.args[:2]
+    assert query == {"u": 12345, "d": "2026-10-26", "n": {"$lt": MAX_DAILY_USAGE}}
+    assert update["$inc"] == {"n": 1}
+
+
 def test_release_rolls_back_the_original_utc_day_and_removes_empty_document(mongo_store):
     store, _, _, collection = mongo_store
     original_reservation_time = datetime(2026, 10, 26, 23, 59, tzinfo=timezone.utc)
