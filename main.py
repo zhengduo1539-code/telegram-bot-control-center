@@ -430,13 +430,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=SERVICE_NAME, version="2.0.0", lifespan=lifespan)
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> JSONResponse:
     body = {"service": SERVICE_NAME, "status": service.status, "telegram_ready": service.ready}
     return JSONResponse(body, status_code=200 if service.ready else 503)
 
 
-@app.get("/healthz")
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 async def healthz() -> JSONResponse:
     # Liveness endpoint is intentionally independent of Telegram availability so Render
     # can start the web process while BOT_TOKEN is being configured.
