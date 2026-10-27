@@ -20,7 +20,7 @@ from telegram.error import TelegramError
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
 from database import DAILY_LIMIT, UsageStore
-from sticker_engine import ANIMATION_OPTIONS, CUSTOM_EMOJI_COUNT, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_pack_webm, render_preview_gif
+from sticker_engine import ANIMATION_OPTIONS, CUSTOM_EMOJI_COUNT, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_loading_gif, render_pack_webm, render_preview_gif
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -65,6 +65,7 @@ class BotService:
         # Keep style preferences in memory so the next text starts with the last selected appearance.
         self.last_styles: dict[int, Style] = {}
         self.session_message_ids: dict[int, int] = {}
+        self.preview_updates: set[int] = set()
         self.locks: dict[int, asyncio.Lock] = {}
 
     async def start(self) -> None:
@@ -145,6 +146,38 @@ class BotService:
     def _style_caption(self, style: Style, count: int | None = None) -> str:
         return "Choose the font, color, shape, and animation for your text"
 
+    async def _upload_animation_file_id(self, bot, user_id: int, data: bytes, filename: str) -> str:
+        """Upload an animation temporarily and return its reusable Telegram file_id."""
+        uploaded = await bot.send_animation(
+            chat_id=user_id,
+            animation=InputFile(data, filename=filename),
+        )
+        animation = getattr(uploaded, "animation", None)
+        file_id = getattr(animation, "file_id", None)
+        try:
+            await uploaded.delete()
+        except Exception:
+            logger.debug("Temporary animation message could not be deleted for user_id=%s", user_id)
+        if not isinstance(file_id, str) or not file_id:
+            raise RuntimeError(f"Telegram did not return a file_id for {filename}")
+        return file_id
+
+    async def _persist_style_preference(self, user_id: int, style: Style) -> None:
+        """Keep visual choices available for the next message and after a restart."""
+        self.last_styles[user_id] = style
+        if not self.store:
+            return
+        preference = {
+            "font": style.font,
+            "color": style.color,
+            "shape": style.shape,
+            "animation": style.animation,
+        }
+        try:
+            await asyncio.to_thread(self.store.save_style, user_id, preference)
+        except Exception:
+            # A preference write must never make preview editing or pack creation fail.
+            logger.exception("Could not persist style preference for user_id=%s", user_id)
     @staticmethod
     def _keyboard(style: Style, *, creating: bool = False) -> InlineKeyboardMarkup:
         color_icons = {
@@ -158,7 +191,7 @@ class BotService:
         }
         animation_icons = {
             "Wave": "🚩", "Pulse": "💗", "Bounce": "🔴",
-            "Float": "🪶", "Shake": "⚡", "Tilt": "🔄", "None": "🚫",
+            "Float": "⬇️", "Shake": "⚡", "Tilt": "↕️", "None": "🚫",
         }
         # The reference uses the same right-pointing hand on both sides of each setting.
         left_arrow = "👉🏻"
@@ -422,6 +455,13 @@ class BotService:
             except Exception:
                 logger.exception("Could not register text creator user_id=%s", user.id)
         previous_style = self.sessions.get(user.id) or self.last_styles.get(user.id)
+        if previous_style is None and self.store:
+            try:
+                saved_style = await asyncio.to_thread(self.store.get_style, user.id)
+                if saved_style:
+                    previous_style = Style(text="", **saved_style).normalized()
+            except Exception:
+                logger.exception("Could not load saved style preference for user_id=%s", user.id)
         style = replace(previous_style, text=text).normalized() if previous_style else Style(text=text).normalized()
         self.sessions[user.id] = style
         self.last_styles[user.id] = style
@@ -445,6 +485,7 @@ class BotService:
                 reply_markup=self._keyboard(style),
             )
             self.session_message_ids[user.id] = preview.message_id
+            await self._persist_style_preference(user.id, style)
         except Exception:
             logger.exception("Preview render failed for user %s", user.id)
             await message.reply_text("I couldn't render that preview. Try a shorter text using basic letters and numbers.")
@@ -470,6 +511,9 @@ class BotService:
         if current_message_id and query.message and query.message.message_id != current_message_id:
             await query.answer("This editor has been replaced. Use the latest preview.", show_alert=True)
             return
+        if user.id in self.preview_updates:
+            await query.answer("Preview is updating. Please wait.")
+            return
         if query.data == "create":
             await self._create_pack(update, context)
             return
@@ -491,6 +535,7 @@ class BotService:
             if query.message:
                 await query.message.reply_text("Send the new text (up to 20 characters).")
             return
+        previous_style = style
         try:
             key, direction = query.data.split(":", 1)
             delta = int(direction)
@@ -509,45 +554,73 @@ class BotService:
             else:
                 await query.answer("Unknown option", show_alert=True)
                 return
-            self.sessions[user.id] = style
-            self.last_styles[user.id] = style
-            await query.answer()
-            preview_gif = await asyncio.to_thread(render_preview_gif, style)
-            count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
+
             if not query.message:
-                logger.warning("Editor message missing while refreshing preview for user_id=%s", user.id)
+                await query.answer("This preview is no longer available. Send your text again.", show_alert=True)
+                return
+            active_pack_lock = self.locks.get(user.id)
+            if active_pack_lock and active_pack_lock.locked():
+                await query.answer("A pack is being created. Please wait.")
                 return
 
-            # Upload the GIF once to obtain a Telegram file_id, then use that
-            # ID to edit the existing preview message. This keeps the original
-            # editor message and keyboard in place without multipart edit-media
-            # payloads that Telegram rejected as "media not found".
-            uploaded_preview = await context.bot.send_animation(
-                chat_id=user.id,
-                animation=InputFile(preview_gif, filename="animated-text-preview.gif"),
-            )
-            animation = getattr(uploaded_preview, "animation", None)
-            preview_file_id = getattr(animation, "file_id", None)
+            # Serialize this user's preview updates. Keep the previous style as
+            # the active state until the new GIF is successfully displayed.
+            self.preview_updates.add(user.id)
+            loading_shown = False
+            await query.answer()
             try:
-                await uploaded_preview.delete()
-            except TelegramError:
-                logger.debug("Temporary preview upload could not be deleted for user_id=%s", user.id)
-            if not isinstance(preview_file_id, str) or not preview_file_id:
-                raise RuntimeError("Telegram did not return a file_id for the preview animation")
+                count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
+                loading_gif = await asyncio.to_thread(render_loading_gif, style)
+                loading_file_id = await self._upload_animation_file_id(
+                    context.bot, user.id, loading_gif, "animated-text-loading.gif"
+                )
+                await query.edit_message_media(
+                    media=InputMediaAnimation(
+                        media=loading_file_id,
+                        caption=self._style_caption(style, count),
+                    ),
+                    reply_markup=self._keyboard(style),
+                )
+                loading_shown = True
 
-            await query.edit_message_media(
-                media=InputMediaAnimation(
-                    media=preview_file_id,
-                    caption=self._style_caption(style, count),
-                ),
-                reply_markup=self._keyboard(style),
-            )
+                preview_gif = await asyncio.to_thread(render_preview_gif, style)
+                preview_file_id = await self._upload_animation_file_id(
+                    context.bot, user.id, preview_gif, "animated-text-preview.gif"
+                )
+                await query.edit_message_media(
+                    media=InputMediaAnimation(
+                        media=preview_file_id,
+                        caption=self._style_caption(style, count),
+                    ),
+                    reply_markup=self._keyboard(style),
+                )
+                self.sessions[user.id] = style
+                await self._persist_style_preference(user.id, style)
+            except Exception:
+                logger.exception("Could not update preview for user %s", user.id)
+                # If rendering failed after the spinner was shown, restore the
+                # previous design in the same message instead of leaving a spinner.
+                if loading_shown:
+                    try:
+                        previous_gif = await asyncio.to_thread(render_preview_gif, previous_style)
+                        previous_file_id = await self._upload_animation_file_id(
+                            context.bot, user.id, previous_gif, "animated-text-preview-restore.gif"
+                        )
+                        previous_count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
+                        await query.edit_message_media(
+                            media=InputMediaAnimation(
+                                media=previous_file_id,
+                                caption=self._style_caption(previous_style, previous_count),
+                            ),
+                            reply_markup=self._keyboard(previous_style),
+                        )
+                    except Exception:
+                        logger.exception("Could not restore previous preview for user_id=%s", user.id)
+            finally:
+                self.preview_updates.discard(user.id)
         except Exception:
-            logger.exception("Could not update preview for user %s", user.id)
-            try:
-                await query.answer("Could not update this preview. Please try again.", show_alert=True)
-            except TelegramError:
-                pass
+            logger.exception("Could not process preview selector for user %s", user.id)
+            self.preview_updates.discard(user.id)
 
     async def _prepare_stickers(self, bot, user_id: int, webm_files: list[bytes]) -> list[InputSticker]:
         """Upload the three 100×100 video assets used by a custom-emoji pack."""
