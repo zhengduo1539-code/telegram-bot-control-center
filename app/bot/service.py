@@ -31,6 +31,7 @@ from app.analysis.animation import AnimationError, analyze_animation, change_tgs
 from app.config import Settings
 from app.storage.mongo import MongoStore
 from app.telegram.links import normalize_custom_emoji_id, parse_pack_link
+from app.telegram.pack_export import PackExportError, PackZipBuilder, pack_archive_filename
 
 
 logger = logging.getLogger(__name__)
@@ -176,7 +177,7 @@ class BotService:
         app.add_handler(CommandHandler("recent", self._recent_command))
         app.add_handler(CommandHandler("id", self._id_command))
         app.add_handler(CommandHandler("cancel", self._cancel_command))
-        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed|text):"))
+        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed|text|zip):"))
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, self._message))
         app.add_error_handler(self._error_handler)
 
@@ -464,6 +465,13 @@ class BotService:
                 emoji = str(item.get("emoji") or "🎞")
                 row.append(InlineKeyboardButton(f"{emoji[:4]} {item_index + 1}", callback_data=f"item:{session_id}:{item_index}"))
             rows.append(row)
+        if items:
+            rows.append([
+                InlineKeyboardButton(
+                    f"📦 Export all {len(items)} files (.ZIP)",
+                    callback_data=f"zip:{session_id}",
+                )
+            ])
         page_count = max(1, (len(items) + PACK_PAGE_SIZE - 1) // PACK_PAGE_SIZE)
         if page_count > 1:
             nav: list[InlineKeyboardButton] = []
@@ -483,6 +491,23 @@ class BotService:
         await query.answer()
         parts = query.data.split(":")
         action = parts[0]
+
+        if action == "zip" and len(parts) == 2 and self.store:
+            session = await self.store.get_pack_session(parts[1], user.id)
+            if not session:
+                if query.message:
+                    await query.message.reply_text("This pack selection expired. Send the pack link again.")
+                return
+            if not query.message:
+                return
+            await self._export_pack_zip(
+                chat_id=query.message.chat_id,
+                user_id=user.id,
+                session_id=parts[1],
+                session=session,
+                context=context,
+            )
+            return
 
         if action == "page" and len(parts) == 3 and self.store:
             session = await self.store.get_pack_session(parts[1], user.id)
@@ -647,6 +672,107 @@ class BotService:
         except (TelegramError, AnimationError, OSError):
             logger.warning("Could not export asset for user_id=%s", user_id, exc_info=True)
             await context.bot.send_message(chat_id=chat_id, text="Could not export this original file. It may have expired or become unavailable.")
+
+    async def _export_pack_zip(
+        self,
+        chat_id: int,
+        user_id: int,
+        session_id: str,
+        session: dict[str, Any],
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        items = session.get("items", [])
+        if not isinstance(items, list) or not items:
+            await context.bot.send_message(chat_id=chat_id, text="This pack has no files to export.")
+            return
+        if len(items) > MAX_PACK_STICKERS:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"This pack has {len(items)} items; one ZIP export supports at most {MAX_PACK_STICKERS} files.",
+            )
+            return
+        if context.user_data.get("pack_export_active"):
+            await context.bot.send_message(chat_id=chat_id, text="A ZIP export is already running for you. Please wait for it to finish.")
+            return
+
+        context.user_data["pack_export_active"] = True
+        progress = None
+        builder: PackZipBuilder | None = None
+        try:
+            progress = await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"Preparing one ZIP archive for {len(items)} original files…",
+            )
+            builder = PackZipBuilder(
+                title=str(session.get("title") or "Telegram pack"),
+                short_name=str(session.get("short_name") or ""),
+                kind=str(session.get("kind") or "stickers"),
+            )
+            for index, item in enumerate(items, start=1):
+                if not isinstance(item, dict) or not item.get("file_id"):
+                    raise PackExportError(f"Pack item {index} is missing its Telegram file reference.")
+                data = await self._download_file(str(item["file_id"]), context)
+                builder.add(index, item, data)
+                del data
+
+                if index % 10 == 0 or index == len(items):
+                    try:
+                        await progress.edit_text(f"Downloading original files: {index}/{len(items)}…")
+                    except TelegramError:
+                        logger.debug("Could not update ZIP export progress for user_id=%s", user_id)
+
+            archive_data = builder.finish()
+            archive_name = pack_archive_filename(str(session.get("title") or "telegram_emoji_pack"))
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=InputFile(BytesIO(archive_data), filename=archive_name),
+                caption=(
+                    f"✅ Export complete: {len(items)} original files in one ZIP archive. "
+                    "The source files are unchanged; manifest.json contains the pack and file metadata."
+                ),
+            )
+            try:
+                await progress.edit_text(f"✅ ZIP ready — {len(items)} files exported together.")
+            except TelegramError:
+                logger.debug("Could not finalize ZIP export progress for user_id=%s", user_id)
+        except (PackExportError, AnimationError) as exc:
+            if builder is not None:
+                builder.abort()
+            logger.info("Pack ZIP export was stopped for user_id=%s: %s", user_id, type(exc).__name__)
+            if progress is not None:
+                try:
+                    await progress.edit_text(f"ZIP export stopped: {html.escape(str(exc))}", parse_mode="HTML")
+                except TelegramError:
+                    await context.bot.send_message(chat_id=chat_id, text=f"ZIP export stopped: {str(exc)}")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=f"ZIP export stopped: {str(exc)}")
+        except (TelegramError, OSError, ValueError) as exc:
+            if builder is not None:
+                builder.abort()
+            logger.warning(
+                "Pack ZIP export failed for user_id=%s session_id=%s error=%s",
+                user_id,
+                session_id,
+                type(exc).__name__,
+            )
+            if progress is not None:
+                try:
+                    await progress.edit_text(
+                        "ZIP export failed before completion. No partial archive was sent. "
+                        "Check that the pack files are still available, then try again."
+                    )
+                except TelegramError:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="ZIP export failed before completion. No partial archive was sent; please try again.",
+                    )
+            else:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="ZIP export failed before completion. No partial archive was sent; please try again.",
+                )
+        finally:
+            context.user_data.pop("pack_export_active", None)
 
     async def _consume_edit(
         self,
