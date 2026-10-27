@@ -42,3 +42,11 @@ def parse_pack_link(value: str) -> PackLink | None:
         kind=PACK_PREFIXES[parts[0].lower()],
         source_url=f"https://t.me/{parts[0].lower()}/{short_name}",
     )
+
+
+def normalize_custom_emoji_id(value: str) -> str | None:
+    """Accept numeric Telegram custom emoji identifiers, not file IDs."""
+    candidate = (value or "").strip()
+    if re.fullmatch(r"[0-9]{10,32}", candidate):
+        return candidate
+    return None
