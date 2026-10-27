@@ -6,7 +6,7 @@ A dedicated Telegram bot for analyzing Telegram custom animated emojis and stick
 
 ## Features
 
-- **Pack-link browser:** resolve a Telegram sticker/emoji pack through the Bot API and browse its items with paginated inline buttons.
+- **Pack-link browser:** resolve a Telegram sticker/emoji pack through the Bot API and browse its items with paginated inline buttons. An **Export all files (.ZIP)** action downloads every source asset and returns one ZIP with unchanged original files plus a `manifest.json` inventory.
 - **Custom emoji ID lookup:** read custom_emoji_id message entities or accept an ID via `/id <numeric_id>` / a plain numeric ID, then resolve it with getCustomEmojiStickers.
 - **Source-preserving reuse:** send the original sticker back or export the original file without rendering it again.
 - **TGS inspection:** analyze Lottie dimensions, FPS, duration, layer counts, shape types, detected fill/stroke/gradient colors, keyframes and effects where those values are present in the source.
@@ -67,7 +67,7 @@ Editing actions are available only for supported TGS Lottie files. **Replace tex
 - Pack browsing sessions expire after 12 hours.
 - Analysis metadata/file references expire after 30 days.
 - Binary input files are not stored in MongoDB.
-- Files are limited to 20 MiB for processing; downloads are validated before analysis.
+- Individual files are limited to 20 MiB for processing; pack ZIP exports have a 45 MiB combined source-size cap to stay under Telegram document-delivery limits.
 - Only official t.me / telegram.me pack links are accepted. The bot never fetches arbitrary URLs supplied by users.
 
 ## Development and verification
