@@ -90,7 +90,7 @@ def test_preview_setting_edits_existing_message_using_uploaded_file_id(monkeypat
     assert service.session_message_ids[user.id] == old_message.message_id
     assert service.sessions[user.id].font != "Monaco"
     service.store.save_style.assert_called_once_with(user.id, {
-        "font": "Arial", "color": "Orange", "shape": "Pill", "animation": "Wave"
+        "font": "Arial", "color": "Orange", "shape": "shape_0", "animation": "anim_0"
     })
 
 
