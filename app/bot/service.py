@@ -309,7 +309,7 @@ class BotService:
             await query.answer("Updating preview…")
             try:
                 async with self.render_semaphore:
-                gif = await asyncio.to_thread(render_preview_gif, session.style)
+                    gif = await asyncio.to_thread(render_preview_gif, session.style)
                 await query.edit_message_media(
                     media=InputMediaAnimation(
                         media=InputFile(BytesIO(gif), filename="custom-emoji-preview.gif"),
