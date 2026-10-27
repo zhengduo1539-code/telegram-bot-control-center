@@ -8,6 +8,7 @@ from app.analysis.animation import (
     analyze_animation,
     change_tgs_speed,
     recolor_tgs,
+    replace_text_tgs,
 )
 
 
@@ -103,3 +104,71 @@ def test_speed_rejects_invalid_multiplier():
 def test_unsupported_format_is_rejected():
     with pytest.raises(AnimationError):
         analyze_animation(b"not an animation")
+
+
+
+def make_text_tgs(text="WELCOME"):
+    root = {
+        "v": "5.7.4",
+        "fr": 60,
+        "ip": 0,
+        "op": 180,
+        "w": 512,
+        "h": 512,
+        "nm": "synthetic-text-test",
+        "layers": [
+            {
+                "ddd": 0,
+                "ind": 1,
+                "ty": 5,
+                "nm": "editable headline",
+                "ks": {"o": {"a": 1, "k": [{"t": 0, "s": [100], "e": [50], "i": {"x": 0.5, "y": 1}, "o": {"x": 0.5, "y": 0}}, {"t": 90, "s": [50]}]}},
+                "t": {
+                    "d": {
+                        "k": [
+                            {"t": 0, "s": {"t": text, "s": 36, "f": "Arial", "fc": [1, 0.5, 0]}},
+                            {"t": 90, "s": {"t": text, "s": 36, "f": "Arial", "fc": [1, 0.5, 0]}},
+                        ]
+                    },
+                    "a": [],
+                },
+            }
+        ],
+    }
+    return gzip.compress(json.dumps(root, separators=(",", ":")).encode(), mtime=0)
+
+
+def test_replace_text_preserves_text_styling_and_animation_timeline():
+    original = make_text_tgs()
+    rebuilt = replace_text_tgs(original, "HOWAREYOU")
+    root = decode_tgs(rebuilt)
+    layer = root["layers"][0]
+    assert [keyframe["s"]["t"] for keyframe in layer["t"]["d"]["k"]] == ["HOWAREYOU", "HOWAREYOU"]
+    assert [keyframe["t"] for keyframe in layer["t"]["d"]["k"]] == [0, 90]
+    assert layer["t"]["d"]["k"][0]["s"]["s"] == 36
+    assert layer["t"]["d"]["k"][0]["s"]["f"] == "Arial"
+    assert layer["ks"]["o"]["k"][0]["e"] == [50]
+    report = analyze_animation(rebuilt, "tgs")
+    assert report["text_replace_supported"] is True
+    assert report["text_contents"] == ["HOWAREYOU"]
+
+
+@pytest.mark.parametrize("value", ["", " ", "A" * 21, "HELLO\nWORLD"])
+def test_replace_text_rejects_empty_oversized_or_control_text(value):
+    with pytest.raises(AnimationError):
+        replace_text_tgs(make_text_tgs(), value)
+
+
+def test_replace_text_rejects_vector_only_animation():
+    with pytest.raises(AnimationError, match="no editable Lottie text layer"):
+        replace_text_tgs(make_tgs(), "HOWAREYOU")
+
+
+def test_replace_text_rejects_multiple_editable_layers():
+    root = decode_tgs(make_text_tgs())
+    second = json.loads(json.dumps(root["layers"][0]))
+    second["ind"] = 2
+    root["layers"].append(second)
+    source = gzip.compress(json.dumps(root, separators=(",", ":")).encode(), mtime=0)
+    with pytest.raises(AnimationError, match="contains 2 editable text layers"):
+        replace_text_tgs(source, "HOWAREYOU")
