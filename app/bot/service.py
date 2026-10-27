@@ -546,9 +546,8 @@ class BotService:
                 await query.answer("Editing is currently supported for TGS vector animations only.", show_alert=True)
                 return
             if action == "text" and not asset.get("report", {}).get("text_replace_supported"):
-                await query.answer(
-                    "This animation has no single editable text layer. Vector-outlined letters need reconstruction instead.",
-                    show_alert=True,
+                await query.message.reply_text(
+                    "This animation has no single editable text layer. Vector-outlined letters need reconstruction instead."
                 )
                 return
             context.user_data["pending_edit"] = {"asset_id": parts[1], "mode": action}
