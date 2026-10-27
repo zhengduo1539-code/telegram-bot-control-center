@@ -120,9 +120,9 @@ def _analyze_tgs(data: bytes) -> dict[str, Any]:
             effect_count += len(node.get("ef", []) or [])
         if isinstance(node.get("t"), (int, float)) and ("s" in node or "e" in node) and ("i" in node or "o" in node):
             keyframes += 1
-        if shape_type in {"fl", "st"} and isinstance(node.get("c"), dict):
+        if isinstance(shape_type, str) and shape_type in {"fl", "st"} and isinstance(node.get("c"), dict):
             _colors_from_property(node["c"], colors)
-        if shape_type in {"gf", "gs"} and isinstance(node.get("g"), dict):
+        if isinstance(shape_type, str) and shape_type in {"gf", "gs"} and isinstance(node.get("g"), dict):
             _colors_from_property(node["g"], colors)
     duration = max(0.0, (op - ip) / fr) if fr > 0 else 0.0
     return {
@@ -311,10 +311,10 @@ def recolor_tgs(data: bytes, hex_color: str) -> bytes:
     changed = 0
     for node in _walk(root):
         shape_type = node.get("ty")
-        if shape_type in {"fl", "st"} and isinstance(node.get("c"), dict):
+        if isinstance(shape_type, str) and shape_type in {"fl", "st"} and isinstance(node.get("c"), dict):
             _replace_color_value(node["c"], rgb)
             changed += 1
-        elif shape_type in {"gf", "gs"} and isinstance(node.get("g"), dict):
+        elif isinstance(shape_type, str) and shape_type in {"gf", "gs"} and isinstance(node.get("g"), dict):
             _replace_gradient_value(node["g"], rgb)
             changed += 1
     if not changed:
