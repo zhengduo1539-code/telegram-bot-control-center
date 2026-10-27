@@ -553,7 +553,7 @@ class BotService:
             return
         try:
             data = await self._download_file(str(item["file_id"]), context)
-            report = analyze_animation(data, _format_hint(item))
+            report = await asyncio.to_thread(analyze_animation, data, _format_hint(item))
             asset_id = secrets.token_hex(5)
             await self.store.save_asset(
                 asset_id=asset_id,
@@ -652,14 +652,14 @@ class BotService:
         try:
             data = await self._download_file(str(asset["file_id"]), context)
             if mode == "color":
-                output = recolor_tgs(data, text)
+                output = await asyncio.to_thread(recolor_tgs, data, text)
                 suffix = "recolored"
             elif mode == "speed":
                 try:
                     multiplier = float(text)
                 except ValueError as exc:
                     raise AnimationError("Send a numeric multiplier from 0.5 to 2.0, such as 1.5.") from exc
-                output = change_tgs_speed(data, multiplier)
+                output = await asyncio.to_thread(change_tgs_speed, data, multiplier)
                 suffix = "speed-adjusted"
             else:
                 raise AnimationError("Unknown edit action.")
