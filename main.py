@@ -188,7 +188,7 @@ class BotService:
         # These IDs describe the three icon states visible in the recording;
         # source-side names and any unshown states are intentionally not inferred.
         shape_icons = {
-            "shape_0": "🎟️", "shape_1": "🟣", "shape_2": "💟",
+            "shape_0": "🎟️", "shape_1": "🟣", "shape_2": "💜",
         }
         animation_icons = {
             "anim_0": "🚩", "anim_1": "🚫", "anim_2": "⬇️",
