@@ -138,7 +138,7 @@ def test_selector_icons_match_reference_choices_and_arrows_are_identical():
     assert BotService._keyboard(Style(text="x", color="Rainbow").normalized()).inline_keyboard[1][1].text == "🌈"
     assert keyboard.inline_keyboard[2][1].text == "🎟️"
     assert BotService._keyboard(Style(text="x", shape="shape_1").normalized()).inline_keyboard[2][1].text == "🟣"
-    assert BotService._keyboard(Style(text="x", shape="shape_2").normalized()).inline_keyboard[2][1].text == "💟"
+    assert BotService._keyboard(Style(text="x", shape="shape_2").normalized()).inline_keyboard[2][1].text == "💜"
     assert keyboard.inline_keyboard[3][1].text == "🚩"
     assert BotService._keyboard(Style(text="x", animation="anim_1").normalized()).inline_keyboard[3][1].text == "🚫"
     assert BotService._keyboard(Style(text="x", animation="anim_2").normalized()).inline_keyboard[3][1].text == "⬇️"
