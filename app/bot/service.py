@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import re
 import secrets
 from io import BytesIO
 from typing import Any
@@ -29,7 +30,7 @@ from telegram.ext import (
 from app.analysis.animation import AnimationError, analyze_animation, change_tgs_speed, recolor_tgs
 from app.config import Settings
 from app.storage.mongo import MongoStore
-from app.telegram.links import parse_pack_link
+from app.telegram.links import normalize_custom_emoji_id, parse_pack_link
 
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,7 @@ class BotService:
                     BotCommand("help", "How to analyze emoji and packs"),
                     BotCommand("status", "Show bot readiness"),
                     BotCommand("recent", "Show recent analysis reports"),
+                    BotCommand("id", "Analyze a custom animated emoji ID"),
                 ]
             )
             self.status, self.reason, self.ready = "ready", "MongoDB and Telegram are connected.", True
@@ -162,6 +164,7 @@ class BotService:
         app.add_handler(CommandHandler("help", self._help_command))
         app.add_handler(CommandHandler("status", self._status_command))
         app.add_handler(CommandHandler("recent", self._recent_command))
+        app.add_handler(CommandHandler("id", self._id_command))
         app.add_handler(CommandHandler("cancel", self._cancel_command))
         app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed):"))
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, self._message))
@@ -253,6 +256,29 @@ class BotService:
             parse_mode="HTML",
         )
 
+    async def _id_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        message = update.effective_message
+        if not user or not message:
+            return
+        if not self.store:
+            await message.reply_text("The analyzer is not ready yet. Please try again later.")
+            return
+        if len(context.args) != 1:
+            await message.reply_text(
+                "Send a custom emoji ID like this:\n<code>/id 5368324170671202286</code>",
+                parse_mode="HTML",
+            )
+            return
+        emoji_id = normalize_custom_emoji_id(context.args[0])
+        if not emoji_id:
+            await message.reply_text(
+                "That ID format is invalid. Use the numeric custom emoji ID, or send the animated emoji itself."
+            )
+            return
+        await self._touch_user(user.id, user.username)
+        await self._lookup_custom_emoji_id(message.chat_id, user.id, emoji_id, context)
+
     async def _recent_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         message = update.effective_message
@@ -321,6 +347,11 @@ class BotService:
             await self._handle_pack_link(message.chat_id, user.id, link, context)
             return
 
+        raw_emoji_id = normalize_custom_emoji_id(text)
+        if raw_emoji_id:
+            await self._lookup_custom_emoji_id(message.chat_id, user.id, raw_emoji_id, context)
+            return
+
         entities = list(message.entities or []) + list(message.caption_entities or [])
         custom_ids = list(dict.fromkeys(
             entity.custom_emoji_id
@@ -348,6 +379,24 @@ class BotService:
                 "Send a custom animated emoji, an animated sticker, a TGS/WEBM file, or a Telegram pack link. "
                 "Use /help for details."
             )
+
+    async def _lookup_custom_emoji_id(
+        self, chat_id: int, user_id: int, emoji_id: str, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        try:
+            stickers = await context.bot.get_custom_emoji_stickers(custom_emoji_ids=[emoji_id])
+        except TelegramError:
+            logger.warning("Telegram could not resolve custom emoji ID for user_id=%s", user_id)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Telegram could not resolve that ID. Confirm it is a custom_emoji_id, not a file_id or file_unique_id.",
+            )
+            return
+        items = [_sticker_record(sticker) for sticker in stickers if getattr(sticker, "file_id", "")]
+        if not items:
+            await context.bot.send_message(chat_id=chat_id, text="Telegram returned no item for that custom emoji ID.")
+            return
+        await self._inspect_item(chat_id, user_id, items[0], context, source="custom_emoji_id")
 
     async def _handle_pack_link(self, chat_id: int, user_id: int, link: Any, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
