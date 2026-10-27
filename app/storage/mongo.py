@@ -5,7 +5,7 @@ and compact analysis metadata are retained with TTL indexes to control storage g
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
