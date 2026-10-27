@@ -149,6 +149,7 @@ class BotService:
                     BotCommand("status", "Show bot readiness"),
                     BotCommand("recent", "Show recent analysis reports"),
                     BotCommand("id", "Analyze a custom animated emoji ID"),
+                    BotCommand("cancel", "Cancel the current edit"),
                 ]
             )
             self.status, self.reason, self.ready = "ready", "MongoDB and Telegram are connected.", True
