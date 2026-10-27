@@ -7,7 +7,7 @@ A dedicated Telegram bot for analyzing Telegram custom animated emojis and stick
 ## Features
 
 - **Pack-link browser:** resolve a Telegram sticker/emoji pack through the Bot API and browse its items with paginated inline buttons.
-- **Custom emoji ID lookup:** read custom_emoji_id message entities and resolve them with getCustomEmojiStickers.
+- **Custom emoji ID lookup:** read custom_emoji_id message entities or accept an ID via `/id <numeric_id>` / a plain numeric ID, then resolve it with getCustomEmojiStickers.
 - **Source-preserving reuse:** send the original sticker back or export the original file without rendering it again.
 - **TGS inspection:** analyze Lottie dimensions, FPS, duration, layer counts, shape types, detected fill/stroke/gradient colors, keyframes and effects where those values are present in the source.
 - **WEBM inspection:** sample video frames for dominant colors and use decoder metadata for dimensions, FPS and duration. WEBM is a raster video; its original vector layers and keyframes cannot be recovered from pixels.
@@ -54,6 +54,7 @@ On Render, the app prefers a webhook. When running locally without PUBLIC_BASE_U
 - /help — supported inputs and editing.
 - /status — service readiness.
 - /recent — recent analysis references.
+- /id <numeric_id> — analyze a numeric Telegram custom emoji ID.
 - Send a custom animated emoji in a message, an animated sticker, or a .TGS/.WEBM/.WEBP file.
 - Paste a Telegram addemoji or addstickers pack link.
 - Choose a pack item, then use Send original, Export file, Recolor TGS, or Adjust speed.
@@ -62,7 +63,7 @@ Editing actions are available only for supported TGS Lottie files. Exported TGS 
 
 ## Data and retention
 
-- User profile metadata is limited to Telegram user ID, username and timestamps.
+- User profile metadata is limited to Telegram user ID, username and timestamps; inactive user records expire after 180 days.
 - Pack browsing sessions expire after 12 hours.
 - Analysis metadata/file references expire after 30 days.
 - Binary input files are not stored in MongoDB.
