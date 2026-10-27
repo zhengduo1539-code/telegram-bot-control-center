@@ -32,6 +32,7 @@ from app.config import Settings
 from app.storage.mongo import MongoStore
 from app.telegram.links import normalize_custom_emoji_id, parse_pack_link
 from app.telegram.pack_export import PackExportError, PackZipBuilder, pack_archive_filename
+from app.telegram.zip_import import PackImportError, extract_zip_member, parse_pack_archive
 
 
 logger = logging.getLogger(__name__)
@@ -337,6 +338,10 @@ class BotService:
             return
 
         document = message.document
+        if document and (document.file_name or "").lower().endswith(".zip"):
+            await self._handle_zip_upload(message.chat_id, user.id, document, context)
+            return
+
         if document and (document.file_name or "").lower().endswith((".tgs", ".webm", ".webp")):
             record = {
                 "file_id": document.file_id,
@@ -387,8 +392,61 @@ class BotService:
 
         if text.strip():
             await message.reply_text(
-                "Send a custom animated emoji, an animated sticker, a TGS/WEBM file, or a Telegram pack link. "
+                "Send a custom animated emoji, an animated sticker, a TGS/WEBM file, a ZIP of animation files, or a Telegram pack link. "
                 "Use /help for details."
+            )
+
+    async def _handle_zip_upload(
+        self,
+        chat_id: int,
+        user_id: int,
+        document: Any,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        if not self.store:
+            await context.bot.send_message(chat_id=chat_id, text="The analyzer is not ready yet. Please try again later.")
+            return
+        try:
+            archive_bytes = await self._download_file(str(document.file_id), context)
+            parsed = await asyncio.to_thread(
+                parse_pack_archive,
+                archive_bytes,
+                (document.file_name or "Imported animation pack"),
+            )
+            items = [
+                {
+                    **item,
+                    "file_id": str(document.file_id),
+                    "file_unique_id": str(getattr(document, "file_unique_id", "") or ""),
+                    "type": "uploaded_zip_entry",
+                }
+                for item in parsed["items"]
+            ]
+            await self._create_selection(
+                chat_id=chat_id,
+                user_id=user_id,
+                items=items,
+                title=parsed["title"],
+                kind=parsed["kind"],
+                context=context,
+                short_name=parsed["short_name"],
+            )
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"✅ Imported <b>{len(items)} animation files</b> from your ZIP.\n"
+                    "Choose any item to inspect, send, recolor, speed-adjust or export it. "
+                    "Use <b>Export all</b> to rebuild a single ZIP from the imported files."
+                ),
+                parse_mode="HTML",
+            )
+        except PackImportError as exc:
+            await context.bot.send_message(chat_id=chat_id, text=f"ZIP import stopped: {html.escape(str(exc))}")
+        except (TelegramError, AnimationError, OSError, ValueError):
+            logger.warning("Could not import an uploaded animation ZIP for user_id=%s", user_id, exc_info=True)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="I couldn't read that ZIP. Check that it is a valid archive with TGS, WEBM or WEBP files.",
             )
 
     async def _lookup_custom_emoji_id(
@@ -560,8 +618,22 @@ class BotService:
             chat_id = query.message.chat_id
             if action == "original":
                 try:
-                    await context.bot.send_sticker(chat_id=chat_id, sticker=asset["file_id"])
-                except TelegramError:
+                    if asset.get("source_member"):
+                        data = await self._download_asset_bytes(asset, context)
+                        ext = {"TGS": "tgs", "WEBM": "webm", "WEBP": "webp"}.get(str(asset.get("format")), "tgs")
+                        original_file = InputFile(BytesIO(data), filename=f"original_{asset['_id']}.{ext}")
+                        try:
+                            await context.bot.send_sticker(chat_id=chat_id, sticker=original_file)
+                        except TelegramError:
+                            await context.bot.send_document(
+                                chat_id=chat_id,
+                                document=InputFile(BytesIO(data), filename=f"original_{asset['_id']}.{ext}"),
+                                caption="Original animation file extracted from your ZIP.",
+                            )
+                    else:
+                        await context.bot.send_sticker(chat_id=chat_id, sticker=asset["file_id"])
+                except (TelegramError, AnimationError, OSError):
+                    logger.warning("Could not resend original asset for user_id=%s", user.id, exc_info=True)
                     await query.message.reply_text("Telegram could not resend this original file. Try Export to download it.")
                 return
             if action == "export":
@@ -596,7 +668,7 @@ class BotService:
         if not self.store or not item.get("file_id"):
             return
         try:
-            data = await self._download_file(str(item["file_id"]), context)
+            data = await self._download_item_bytes(item, context)
             report = await asyncio.to_thread(analyze_animation, data, _format_hint(item))
             asset_id = secrets.token_hex(5)
             await self.store.save_asset(
@@ -608,6 +680,7 @@ class BotService:
                 format_name=str(report.get("format", "unknown")),
                 report=report,
                 emoji=str(item.get("emoji") or ""),
+                source_member=str(item.get("source_member") or ""),
             )
         except AnimationError as exc:
             await context.bot.send_message(chat_id=chat_id, text=f"Could not analyze this animation: {html.escape(str(exc))}", parse_mode="HTML")
@@ -641,6 +714,24 @@ class BotService:
             reply_markup=InlineKeyboardMarkup(buttons),
         )
 
+    async def _download_item_bytes(
+        self, item: dict[str, Any], context: ContextTypes.DEFAULT_TYPE
+    ) -> bytes:
+        member = str(item.get("source_member") or "")
+        if not member:
+            return await self._download_file(str(item["file_id"]), context)
+        archive_data = await self._download_file(str(item["file_id"]), context)
+        return await asyncio.to_thread(extract_zip_member, archive_data, member, self.settings.max_download_bytes)
+
+    async def _download_asset_bytes(
+        self, asset: dict[str, Any], context: ContextTypes.DEFAULT_TYPE
+    ) -> bytes:
+        member = str(asset.get("source_member") or "")
+        if not member:
+            return await self._download_file(str(asset["file_id"]), context)
+        archive_data = await self._download_file(str(asset["file_id"]), context)
+        return await asyncio.to_thread(extract_zip_member, archive_data, member, self.settings.max_download_bytes)
+
     async def _download_file(self, file_id: str, context: ContextTypes.DEFAULT_TYPE) -> bytes:
         file = await context.bot.get_file(file_id)
         reported_size = getattr(file, "file_size", None)
@@ -661,7 +752,7 @@ class BotService:
         context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
         try:
-            data = await self._download_file(str(asset["file_id"]), context)
+            data = await self._download_asset_bytes(asset, context)
             ext = {"TGS": "tgs", "WEBM": "webm", "WEBP": "webp"}.get(str(asset.get("format")), "bin")
             filename = f"animation_{asset['_id']}.{ext}"
             await context.bot.send_document(
@@ -698,6 +789,7 @@ class BotService:
         context.user_data["pack_export_active"] = True
         progress = None
         builder: PackZipBuilder | None = None
+        archive_cache: dict[str, bytes] = {}
         try:
             progress = await context.bot.send_message(
                 chat_id=chat_id,
@@ -711,7 +803,20 @@ class BotService:
             for index, item in enumerate(items, start=1):
                 if not isinstance(item, dict) or not item.get("file_id"):
                     raise PackExportError(f"Pack item {index} is missing its Telegram file reference.")
-                data = await self._download_file(str(item["file_id"]), context)
+                if item.get("source_member"):
+                    parent_file_id = str(item["file_id"])
+                    archive_data = archive_cache.get(parent_file_id)
+                    if archive_data is None:
+                        archive_data = await self._download_file(parent_file_id, context)
+                        archive_cache[parent_file_id] = archive_data
+                    data = await asyncio.to_thread(
+                        extract_zip_member,
+                        archive_data,
+                        str(item["source_member"]),
+                        self.settings.max_download_bytes,
+                    )
+                else:
+                    data = await self._download_file(str(item["file_id"]), context)
                 builder.add(index, item, data)
                 del data
 
@@ -735,7 +840,7 @@ class BotService:
                 await progress.edit_text(f"✅ ZIP ready — {len(items)} files exported together.")
             except TelegramError:
                 logger.debug("Could not finalize ZIP export progress for user_id=%s", user_id)
-        except (PackExportError, AnimationError) as exc:
+        except (PackExportError, PackImportError, AnimationError) as exc:
             if builder is not None:
                 builder.abort()
             logger.info("Pack ZIP export was stopped for user_id=%s: %s", user_id, type(exc).__name__)
@@ -799,7 +904,7 @@ class BotService:
             await message.reply_text("That source is no longer available. Analyze it again to create a fresh edit session.")
             return
         try:
-            data = await self._download_file(str(asset["file_id"]), context)
+            data = await self._download_asset_bytes(asset, context)
             if mode == "color":
                 output = await asyncio.to_thread(recolor_tgs, data, text)
                 suffix = "recolored"
