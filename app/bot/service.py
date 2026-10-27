@@ -368,7 +368,7 @@ class BotService:
                         except TelegramError:
                             pass
                 assets = await task
-                await status.edit_text("📦 Uploading the Custom Animated Emojis to Telegram…")
+                await status.edit_text("📦 Uploading your animated pack to Telegram…")
                 published = await self.publisher.create_pack(
                     bot=self.application.bot,
                     owner_id=session.owner_id,
