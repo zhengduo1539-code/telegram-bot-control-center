@@ -21,12 +21,24 @@ from sticker_engine import (
 )
 
 
-def test_reference_default_style_uses_raleway_orange_pill_and_wave():
+def test_default_style_uses_the_first_observed_visual_presets():
     style = Style(text="Hello").normalized()
     assert style.font == "Raleway italic"
     assert style.color == "Orange"
-    assert style.shape == "Pill"
-    assert style.animation == "Wave"
+    assert style.shape == "shape_0"
+    assert style.animation == "anim_0"
+    assert SHAPE_OPTIONS == ("shape_0", "shape_1", "shape_2")
+    assert ANIMATION_OPTIONS == ("anim_0", "anim_1", "anim_2")
+
+
+def test_known_legacy_style_names_migrate_but_unverified_names_fall_back_safely():
+    assert Style(text="Hi", shape="Pill", animation="Wave").normalized().shape == "shape_0"
+    assert Style(text="Hi", shape="Circle", animation="None").normalized().animation == "anim_1"
+    assert Style(text="Hi", shape="Heart", animation="Float").normalized().animation == "anim_2"
+    # Removed presets had no verified matching state in the reference recording.
+    normalized = Style(text="Hi", shape="Star", animation="Pulse").normalized()
+    assert normalized.shape == "shape_0"
+    assert normalized.animation == "anim_0"
 
 
 def test_reference_font_options_load_the_intended_typefaces():
@@ -73,12 +85,12 @@ def test_frame_is_transparent_and_text_fitted_instead_of_full_canvas_tile():
 
 
 def test_preview_is_png():
-    content = render_preview_png(Style(text="Hello", color="Orange", shape="Heart", animation="Bounce"))
+    content = render_preview_png(Style(text="Hello", color="Orange", shape="shape_2", animation="anim_2"))
     assert content.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_preview_is_wide_white_looping_gif_with_full_width_artwork():
-    content = render_preview_gif(Style(text="Hello", color="Orange", shape="Pill", animation="Wave"))
+    content = render_preview_gif(Style(text="Hello", color="Orange", shape="shape_0", animation="anim_0"))
     assert content.startswith((b"GIF87a", b"GIF89a"))
     assert len(content) > 100
     with Image.open(BytesIO(content)) as image:
@@ -121,7 +133,7 @@ def test_video_pack_uses_three_100px_custom_emoji_webm_files():
     assert CUSTOM_EMOJI_SIZE == 100
     assert FPS == 30
     assert DURATION_SECONDS == 2
-    pack = render_pack_webm(Style(text="Test", color="Cyan", animation="Float"))
+    pack = render_pack_webm(Style(text="Test", color="Cyan", animation="anim_2"))
     assert len(pack) == CUSTOM_EMOJI_COUNT == 3
     assert all(item.startswith(b"\x1aE\xdf\xa3") for item in pack)
     assert all(0 < len(item) <= MAX_WEBM_BYTES for item in pack)
