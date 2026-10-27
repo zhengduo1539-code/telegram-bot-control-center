@@ -185,13 +185,13 @@ class BotService:
             "Violet": "💜", "Cyan": "🔵🟢", "Gold": "🟡🟠",
             "Rainbow": "🌈",
         }
+        # These IDs describe the three icon states visible in the recording;
+        # source-side names and any unshown states are intentionally not inferred.
         shape_icons = {
-            "Pill": "🎟️", "Heart": "💟", "Rounded": "🏷️",
-            "Circle": "⚪", "Star": "⭐", "None": "▫️",
+            "shape_0": "🎟️", "shape_1": "🟣", "shape_2": "💟",
         }
         animation_icons = {
-            "Wave": "🚩", "Pulse": "💗", "Bounce": "🔴",
-            "Float": "⬇️", "Shake": "⚡", "Tilt": "↕️", "None": "🚫",
+            "anim_0": "🚩", "anim_1": "🚫", "anim_2": "⬇️",
         }
         # The reference uses the same right-pointing hand on both sides of each setting.
         left_arrow = "👉🏻"
