@@ -94,10 +94,18 @@ def test_parse_rejects_empty_archive_and_corrupt_zip():
         parse_pack_archive(b"not a zip")
 
 
-def test_parse_rejects_oversized_expanded_archive():
-    # Use ZIP_STORED and a sparse-ish large entry so the preflight size check
-    # rejects it without reading/extracting the animation payload.
-    payload = b"x" * (MAX_ZIP_EXPANDED_BYTES + 1)
+def test_parse_rejects_single_file_over_per_file_limit():
+    payload = b"x" * (20 * 1024 * 1024 + 1)
     data = make_zip([("too_big.tgs", payload)])
-    with pytest.raises(PackImportError, match="45 MiB"):
+    with pytest.raises(PackImportError, match="20 MiB per-file limit"):
+        parse_pack_archive(data)
+
+
+def test_parse_rejects_aggregate_uncompressed_size(monkeypatch):
+    from app.telegram import zip_import
+
+    monkeypatch.setattr(zip_import, "MAX_ZIP_MEMBER_BYTES", 8)
+    monkeypatch.setattr(zip_import, "MAX_ZIP_EXPANDED_BYTES", 10)
+    data = make_zip([("first.tgs", b"12345678"), ("second.tgs", b"abc")])
+    with pytest.raises(PackImportError, match="uncompressed animation files exceed"):
         parse_pack_archive(data)
