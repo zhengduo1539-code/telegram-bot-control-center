@@ -4,8 +4,17 @@ import json
 import pytest
 
 from emoji_engine import (
-    ANIMATION_OPTIONS, CANVAS, END_FRAME, FPS, MAX_TGS_BYTES, SHAPE_OPTIONS,
-    FONT_OPTIONS, Style, build_tgs, render_preview_gif, validate_tgs,
+    ANIMATION_OPTIONS,
+    CANVAS,
+    END_FRAME,
+    FPS,
+    MAX_TGS_BYTES,
+    FONT_OPTIONS,
+    SHAPE_OPTIONS,
+    Style,
+    build_tgs,
+    render_preview_gif,
+    validate_tgs,
 )
 
 

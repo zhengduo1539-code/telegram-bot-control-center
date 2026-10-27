@@ -1,5 +1,4 @@
 import pytest
-
 from naming import make_pack_name
 
 

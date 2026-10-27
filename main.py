@@ -41,7 +41,6 @@ from telegram.ext import (
 )
 
 from naming import make_pack_name
-
 from emoji_engine import (
     ANIMATION_ICONS,
     ANIMATION_OPTIONS,
