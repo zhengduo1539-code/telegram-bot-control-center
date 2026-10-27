@@ -696,12 +696,13 @@ class BotService:
             return
 
         context.user_data["pack_export_active"] = True
-        progress = await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"Preparing one ZIP archive for {len(items)} original files…",
-        )
+        progress = None
         builder: PackZipBuilder | None = None
         try:
+            progress = await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"Preparing one ZIP archive for {len(items)} original files…",
+            )
             builder = PackZipBuilder(
                 title=str(session.get("title") or "Telegram pack"),
                 short_name=str(session.get("short_name") or ""),
@@ -738,9 +739,12 @@ class BotService:
             if builder is not None:
                 builder.abort()
             logger.info("Pack ZIP export was stopped for user_id=%s: %s", user_id, type(exc).__name__)
-            try:
-                await progress.edit_text(f"ZIP export stopped: {html.escape(str(exc))}", parse_mode="HTML")
-            except TelegramError:
+            if progress is not None:
+                try:
+                    await progress.edit_text(f"ZIP export stopped: {html.escape(str(exc))}", parse_mode="HTML")
+                except TelegramError:
+                    await context.bot.send_message(chat_id=chat_id, text=f"ZIP export stopped: {str(exc)}")
+            else:
                 await context.bot.send_message(chat_id=chat_id, text=f"ZIP export stopped: {str(exc)}")
         except (TelegramError, OSError, ValueError) as exc:
             if builder is not None:
@@ -751,12 +755,18 @@ class BotService:
                 session_id,
                 type(exc).__name__,
             )
-            try:
-                await progress.edit_text(
-                    "ZIP export failed before completion. No partial archive was sent. "
-                    "Check that the pack files are still available, then try again."
-                )
-            except TelegramError:
+            if progress is not None:
+                try:
+                    await progress.edit_text(
+                        "ZIP export failed before completion. No partial archive was sent. "
+                        "Check that the pack files are still available, then try again."
+                    )
+                except TelegramError:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="ZIP export failed before completion. No partial archive was sent; please try again.",
+                    )
+            else:
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text="ZIP export failed before completion. No partial archive was sent; please try again.",
