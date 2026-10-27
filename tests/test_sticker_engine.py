@@ -21,12 +21,24 @@ from sticker_engine import (
 )
 
 
-def test_reference_default_style_uses_raleway_orange_pill_and_wave():
+def test_default_style_uses_the_first_observed_visual_presets():
     style = Style(text="Hello").normalized()
     assert style.font == "Raleway italic"
     assert style.color == "Orange"
-    assert style.shape == "Pill"
-    assert style.animation == "Wave"
+    assert style.shape == "shape_0"
+    assert style.animation == "anim_0"
+    assert SHAPE_OPTIONS == ("shape_0", "shape_1", "shape_2")
+    assert ANIMATION_OPTIONS == ("anim_0", "anim_1", "anim_2")
+
+
+def test_known_legacy_style_names_migrate_but_unverified_names_fall_back_safely():
+    assert Style(text="Hi", shape="Pill", animation="Wave").normalized().shape == "shape_0"
+    assert Style(text="Hi", shape="Circle", animation="None").normalized().animation == "anim_1"
+    assert Style(text="Hi", shape="Heart", animation="Float").normalized().animation == "anim_2"
+    # Removed presets had no verified matching state in the reference recording.
+    normalized = Style(text="Hi", shape="Star", animation="Pulse").normalized()
+    assert normalized.shape == "shape_0"
+    assert normalized.animation == "anim_0"
 
 
 def test_reference_font_options_load_the_intended_typefaces():
@@ -59,6 +71,35 @@ def test_style_normalization_clamps_text_and_options():
     assert style.animation == ANIMATION_OPTIONS[0]
 
 
+def test_three_observed_shape_states_render_distinct_results():
+    from PIL import ImageChops
+
+    frames = [
+        render_frame(Style(text="Hello", shape=shape, animation="anim_1"), time_seconds=0.0, size=220)
+        for shape in SHAPE_OPTIONS
+    ]
+    assert all(frame.size == (220, 220) for frame in frames)
+    assert ImageChops.difference(frames[0], frames[1]).getbbox() is not None
+    assert ImageChops.difference(frames[1], frames[2]).getbbox() is not None
+    assert ImageChops.difference(frames[0], frames[2]).getbbox() is not None
+
+
+def test_three_observed_animation_states_have_distinct_motion_contracts():
+    from PIL import ImageChops
+
+    still_early = render_frame(Style(text="Hello", animation="anim_1"), time_seconds=0.0, size=220)
+    still_later = render_frame(Style(text="Hello", animation="anim_1"), time_seconds=0.5, size=220)
+    assert ImageChops.difference(still_early, still_later).getbbox() is None
+
+    pennant_early = render_frame(Style(text="Hello", animation="anim_0"), time_seconds=0.0, size=220)
+    pennant_later = render_frame(Style(text="Hello", animation="anim_0"), time_seconds=0.35, size=220)
+    assert ImageChops.difference(pennant_early, pennant_later).getbbox() is not None
+
+    down_early = render_frame(Style(text="Hello", animation="anim_2"), time_seconds=0.0, size=220)
+    down_later = render_frame(Style(text="Hello", animation="anim_2"), time_seconds=0.5, size=220)
+    assert ImageChops.difference(down_early, down_later).getbbox() is not None
+
+
 def test_frame_is_transparent_and_text_fitted_instead_of_full_canvas_tile():
     frame = render_frame(Style(text="Hello"), time_seconds=0.25, size=100)
     assert frame.size == (100, 100)
@@ -73,12 +114,12 @@ def test_frame_is_transparent_and_text_fitted_instead_of_full_canvas_tile():
 
 
 def test_preview_is_png():
-    content = render_preview_png(Style(text="Hello", color="Orange", shape="Heart", animation="Bounce"))
+    content = render_preview_png(Style(text="Hello", color="Orange", shape="shape_2", animation="anim_2"))
     assert content.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_preview_is_wide_white_looping_gif_with_full_width_artwork():
-    content = render_preview_gif(Style(text="Hello", color="Orange", shape="Pill", animation="Wave"))
+    content = render_preview_gif(Style(text="Hello", color="Orange", shape="shape_0", animation="anim_0"))
     assert content.startswith((b"GIF87a", b"GIF89a"))
     assert len(content) > 100
     with Image.open(BytesIO(content)) as image:
@@ -121,7 +162,7 @@ def test_video_pack_uses_three_100px_custom_emoji_webm_files():
     assert CUSTOM_EMOJI_SIZE == 100
     assert FPS == 30
     assert DURATION_SECONDS == 2
-    pack = render_pack_webm(Style(text="Test", color="Cyan", animation="Float"))
+    pack = render_pack_webm(Style(text="Test", color="Cyan", animation="anim_2"))
     assert len(pack) == CUSTOM_EMOJI_COUNT == 3
     assert all(item.startswith(b"\x1aE\xdf\xa3") for item in pack)
     assert all(0 < len(item) <= MAX_WEBM_BYTES for item in pack)

@@ -6,6 +6,7 @@ EmojiTitleBot turns a short text line into an animated Telegram **custom emoji p
 
 - Welcome and user-facing reply copy aligned with the reference video.
 - Animated GIF preview that updates when users change font, color, shape, or animation.
+- Shape and animation selectors expose only the three visual states seen in the supplied recording; option IDs are local renderer identifiers, not claims about the source bot's undisclosed internal names. Additional states are not inferred from incomplete footage.
 - Fixed-size custom emoji packs containing three full-text design variants (not character-split fragments).
 - Custom emoji rendered as transparent VP9 WebM at exactly 100 × 100, 30 FPS, and two seconds per loop, with a 256 KB size guard per item.
 - High-quality gradient rendering, including a moving Rainbow palette; after creation the bot previews the result using a real custom-emoji message entity rather than sending a regular sticker.
