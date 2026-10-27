@@ -22,6 +22,7 @@ EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 # migrations, queries, indexes, and tests use the same contract.
 LEGACY_FIELDS = ("user_id", "day", "count", "expires_at", "created_at", "updated_at")
 LEGACY_INDEX_FIELDS = {"user_id", "day", "expires_at"}
+STYLE_STORAGE_FIELDS = {"font": "f", "color": "c", "shape": "h", "animation": "a"}
 
 
 def _schema_validator() -> dict[str, Any]:
@@ -388,6 +389,43 @@ class UsageStore:
             "is_pro": pro_until > current,
         }
 
+    def get_style(self, user_id: int) -> dict[str, str] | None:
+        """Return the user's saved appearance; unknown or partial values are ignored."""
+        user_key = self._user_key(user_id)
+        document = self.users.find_one({"u": user_key}, {"s": 1}) or {}
+        stored = document.get("s")
+        if not isinstance(stored, dict):
+            return None
+
+        style: dict[str, str] = {}
+        for public_field, stored_field in STYLE_STORAGE_FIELDS.items():
+            value = stored.get(stored_field)
+            if not isinstance(value, str) or not value or len(value) > 32:
+                return None
+            style[public_field] = value
+        return style
+
+    def save_style(self, user_id: int, style: dict[str, str]) -> None:
+        """Persist only the four small style choices in the existing user_state row."""
+        user_key = self._user_key(user_id)
+        if not isinstance(style, dict) or set(style) != set(STYLE_STORAGE_FIELDS):
+            raise ValueError("style must contain font, color, shape, and animation")
+
+        stored: dict[str, str] = {}
+        for public_field, stored_field in STYLE_STORAGE_FIELDS.items():
+            value = style[public_field]
+            if not isinstance(value, str) or not value.strip() or len(value) > 32:
+                raise ValueError(f"invalid style field: {public_field}")
+            stored[stored_field] = value.strip()
+
+        self.users.update_one(
+            {"u": user_key},
+            {
+                "$set": {"s": stored},
+                "$setOnInsert": {"u": user_key, "b": 0, "p": EPOCH},
+            },
+            upsert=True,
+        )
     def consume_bonus(self, user_id: int) -> bool:
         """Atomically consume one referral pack credit, if available."""
         user_key = self._user_key(user_id)
