@@ -100,7 +100,7 @@ def test_new_text_reuses_the_last_selected_appearance():
     service.store.register_user.return_value = False
     service.store.get_count.return_value = 0
     service.last_styles[123456] = Style(
-        text="Previous", font="Monaco", color="Rainbow", shape="Heart", animation="Pulse"
+        text="Previous", font="Monaco", color="Rainbow", shape="shape_2", animation="anim_2"
     )
 
     message = SimpleNamespace(
@@ -122,8 +122,8 @@ def test_new_text_reuses_the_last_selected_appearance():
     assert selected.text == "OK"
     assert selected.font == "Monaco"
     assert selected.color == "Rainbow"
-    assert selected.shape == "Heart"
-    assert selected.animation == "Pulse"
+    assert selected.shape == "shape_2"
+    assert selected.animation == "anim_2"
 
 
 def test_selector_icons_match_reference_choices_and_arrows_are_identical():
@@ -136,11 +136,12 @@ def test_selector_icons_match_reference_choices_and_arrows_are_identical():
     assert BotService._keyboard(Style(text="x", color="Pink").normalized()).inline_keyboard[1][1].text == "💋"
     assert BotService._keyboard(Style(text="x", color="Lime").normalized()).inline_keyboard[1][1].text == "🟢🟡"
     assert BotService._keyboard(Style(text="x", color="Rainbow").normalized()).inline_keyboard[1][1].text == "🌈"
-    assert BotService._keyboard(Style(text="x", shape="Heart").normalized()).inline_keyboard[2][1].text == "💟"
-    assert BotService._keyboard(Style(text="x", animation="Wave").normalized()).inline_keyboard[3][1].text == "🚩"
-    assert BotService._keyboard(Style(text="x", animation="Float").normalized()).inline_keyboard[3][1].text == "⬇️"
-    assert BotService._keyboard(Style(text="x", animation="Tilt").normalized()).inline_keyboard[3][1].text == "↕️"
-    assert BotService._keyboard(Style(text="x", animation="None").normalized()).inline_keyboard[3][1].text == "🚫"
+    assert keyboard.inline_keyboard[2][1].text == "🎟️"
+    assert BotService._keyboard(Style(text="x", shape="shape_1").normalized()).inline_keyboard[2][1].text == "🟣"
+    assert BotService._keyboard(Style(text="x", shape="shape_2").normalized()).inline_keyboard[2][1].text == "💟"
+    assert keyboard.inline_keyboard[3][1].text == "🚩"
+    assert BotService._keyboard(Style(text="x", animation="anim_1").normalized()).inline_keyboard[3][1].text == "🚫"
+    assert BotService._keyboard(Style(text="x", animation="anim_2").normalized()).inline_keyboard[3][1].text == "⬇️"
 
 
 def test_new_text_loads_saved_appearance_after_service_restart(monkeypatch):
@@ -170,8 +171,8 @@ def test_new_text_loads_saved_appearance_after_service_restart(monkeypatch):
     selected = service.sessions[123456]
     assert selected.text == "New"
     assert (selected.font, selected.color, selected.shape, selected.animation) == (
-        "Monaco", "Rainbow", "Heart", "Pulse"
+        "Monaco", "Rainbow", "shape_2", "anim_0"
     )
     service.store.save_style.assert_called_once_with(123456, {
-        "font": "Monaco", "color": "Rainbow", "shape": "Heart", "animation": "Pulse"
+        "font": "Monaco", "color": "Rainbow", "shape": "shape_2", "animation": "anim_0"
     })
