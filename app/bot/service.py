@@ -27,7 +27,7 @@ from telegram.ext import (
     filters,
 )
 
-from app.analysis.animation import AnimationError, analyze_animation, change_tgs_speed, recolor_tgs
+from app.analysis.animation import AnimationError, analyze_animation, change_tgs_speed, recolor_tgs, replace_text_tgs
 from app.config import Settings
 from app.storage.mongo import MongoStore
 from app.telegram.links import normalize_custom_emoji_id, parse_pack_link
@@ -87,6 +87,15 @@ def _report_text(report: dict[str, Any], asset_id: str) -> str:
     colors = report.get("colors") or []
     lines.append("Colors: " + (" ".join(f"<code>{html.escape(c)}</code>" for c in colors[:10]) if colors else "Not detected"))
     lines.append(f"Editable reconstruction: <b>{'available for TGS' if report.get('editable') else 'not available for this format'}</b>")
+    if report.get("format") == "TGS":
+        text_layer_count = int(report.get("editable_text_layer_count", 0) or 0)
+        if text_layer_count == 1:
+            source_text = ", ".join(html.escape(value) for value in report.get("text_contents", [])[:3]) or "available"
+            lines.append(f"Editable text layer: <b>yes</b> (<code>{source_text}</code>)")
+        elif text_layer_count > 1:
+            lines.append(f"Editable text layers: <b>{text_layer_count}</b> — automatic replacement is disabled to avoid changing unrelated labels")
+        else:
+            lines.append("Editable text layer: <b>not found</b> — lettering may be vector outlines; exact text replacement needs vector reconstruction")
     if report.get("note"):
         lines.append(html.escape(str(report["note"])))
     if report.get("sampled_frames") is not None:
@@ -167,7 +176,7 @@ class BotService:
         app.add_handler(CommandHandler("recent", self._recent_command))
         app.add_handler(CommandHandler("id", self._id_command))
         app.add_handler(CommandHandler("cancel", self._cancel_command))
-        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed):"))
+        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed|text):"))
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, self._message))
         app.add_error_handler(self._error_handler)
 
@@ -516,7 +525,7 @@ class BotService:
                 await self._inspect_item(query.message.chat_id, user.id, item, context, source=str(session.get("kind", "pack")))
             return
 
-        if action in {"original", "export", "color", "speed"} and len(parts) == 2 and self.store:
+        if action in {"original", "export", "color", "speed", "text"} and len(parts) == 2 and self.store:
             asset = await self.store.get_asset(parts[1], user.id)
             if not asset:
                 await query.answer("The analysis expired or belongs to another user.", show_alert=True)
@@ -536,8 +545,19 @@ class BotService:
             if asset.get("format") != "TGS":
                 await query.answer("Editing is currently supported for TGS vector animations only.", show_alert=True)
                 return
+            if action == "text" and not asset.get("report", {}).get("text_replace_supported"):
+                await query.answer(
+                    "This animation has no single editable text layer. Vector-outlined letters need reconstruction instead.",
+                    show_alert=True,
+                )
+                return
             context.user_data["pending_edit"] = {"asset_id": parts[1], "mode": action}
-            prompt = "Send the new hex color, for example <code>#FF8800</code>." if action == "color" else "Send a speed multiplier from <code>0.5</code> to <code>2.0</code> (for example <code>1.5</code>)."
+            if action == "color":
+                prompt = "Send the new hex color, for example <code>#FF8800</code>."
+            elif action == "speed":
+                prompt = "Send a speed multiplier from <code>0.5</code> to <code>2.0</code> (for example <code>1.5</code>)."
+            else:
+                prompt = "Send replacement text (1–20 characters). The original animation timing and style properties will be preserved when the TGS has an editable text layer. Use /cancel to stop."
             await query.message.reply_text(prompt, parse_mode="HTML")
             return
 
@@ -586,6 +606,10 @@ class BotService:
                     InlineKeyboardButton("⏱ Adjust speed", callback_data=f"speed:{asset_id}"),
                 ]
             )
+            if report.get("text_replace_supported"):
+                buttons.append([
+                    InlineKeyboardButton("✍ Replace text", callback_data=f"text:{asset_id}")
+                ])
         await context.bot.send_message(
             chat_id=chat_id,
             text=_report_text(report, asset_id),
@@ -654,6 +678,9 @@ class BotService:
             if mode == "color":
                 output = await asyncio.to_thread(recolor_tgs, data, text)
                 suffix = "recolored"
+            elif mode == "text":
+                output = await asyncio.to_thread(replace_text_tgs, data, text)
+                suffix = "text-replaced"
             elif mode == "speed":
                 try:
                     multiplier = float(text)
@@ -673,11 +700,21 @@ class BotService:
             return
 
         context.user_data.pop("pending_edit", None)
+        output_file = InputFile(BytesIO(output), filename=f"emoji_{asset_id}_{suffix}.tgs")
+        if mode == "text":
+            try:
+                await context.bot.send_sticker(chat_id=message.chat_id, sticker=output_file)
+                await message.reply_text(
+                    "Text replaced. The original timeline, animation properties and text styling were retained. "
+                    "The source file was updated; the sticker pack itself was not modified."
+                )
+                return
+            except TelegramError:
+                logger.warning("Telegram rejected the edited TGS as a sticker; sending source as a document.")
         await message.reply_document(
             document=InputFile(BytesIO(output), filename=f"emoji_{asset_id}_{suffix}.tgs"),
             caption=(
-                "Edited TGS source. This is an exported file, not an automatic replacement in the original pack. "
-                "Upload it through Telegram's sticker/emoji pack workflow to publish it."
+                "Edited TGS source. The original pack is unchanged; use Telegram's sticker/emoji workflow to publish it."
             ),
         )
 
