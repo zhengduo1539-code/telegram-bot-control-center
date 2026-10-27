@@ -93,6 +93,7 @@ class MongoStore:
         format_name: str,
         report: dict[str, Any],
         emoji: str = "",
+        source_member: str = "",
     ) -> None:
         await self.db.assets.insert_one(
             {
@@ -103,6 +104,7 @@ class MongoStore:
                 "source": source[:32],
                 "format": format_name[:16],
                 "emoji": emoji[:32],
+                "source_member": source_member[:512],
                 "report": report,
                 "created_at": datetime.now(timezone.utc),
             }
