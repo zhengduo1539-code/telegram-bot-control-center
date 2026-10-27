@@ -1,11 +1,6 @@
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 python-telegram-bot>=22.8,<23.0
+pymongo>=4.13,<5.0
 Pillow>=11.0,<13.0
-fonttools>=4.58,<5.0
-fontpkg==0.2.2
-fontpkg-raleway==4.26
-fontpkg-arimo==1.341
-fontpkg-rubik==2.300
-fontpkg-roboto==3.15
-fontpkg-montserrat==9.0
+imageio-ffmpeg>=0.5,<1.0

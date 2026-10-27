@@ -1,1 +1,1 @@
-"""Modular Telegram animated emoji and sticker bot."""
+"""Animated Emoji Analyzer & Rebuilder application package."""
