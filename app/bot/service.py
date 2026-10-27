@@ -255,7 +255,8 @@ class BotService:
                 "<code>https://t.me/addstickers/PACK</code> link to browse a pack, or upload a ZIP containing TGS/WEBM/WEBP files.\n"
                 "3. Select an item to inspect it, or use Export all to package the whole library.\n"
                 "4. Use <b>Original</b> to send it unchanged or <b>Export</b> to download the source file.\n"
-                "5. TGS items also offer conservative color and speed edits.\n\n"
+                "5. TGS items also offer conservative color and speed edits.\n"
+                "6. Tap <b>Create with this animation</b> to save a TGS template, send your own text, then reuse saved templates with /templates.\n\n"
                 "Only official Telegram pack links are accepted; arbitrary external URLs are not downloaded. "
                 "The bot stores analysis metadata and Telegram file IDs, not binary source files.",
                 parse_mode="HTML",
@@ -411,6 +412,7 @@ class BotService:
             await message.reply_text("Only TGS vector animation templates can be rebuilt as text right now.")
             return
 
+        output: bytes | None = None
         try:
             source_data = await self._download_asset_bytes(template, context)
             output, rebuild_mode = await asyncio.to_thread(
@@ -460,17 +462,21 @@ class BotService:
             context.user_data.pop("pending_template", None)
             await message.reply_text(f"The saved ZIP template is no longer readable: {html.escape(str(exc))}", parse_mode="HTML")
         except TelegramError:
-            logger.warning("Telegram rejected the generated template output for user_id=%s", user_id, exc_info=True)
-            try:
-                await context.bot.send_document(
-                    chat_id=message.chat_id,
-                    document=InputFile(BytesIO(output), filename="animated_text_variant.tgs"),
-                    caption="Generated TGS source. If Telegram does not accept it as a sticker, the TGS file is still attached for inspection.",
-                )
-                await message.reply_text("Telegram did not accept this file as a sticker, so I returned the TGS source as a document.")
+            logger.warning("Telegram could not download or deliver the template result for user_id=%s", user_id, exc_info=True)
+            if output is not None:
+                try:
+                    await context.bot.send_document(
+                        chat_id=message.chat_id,
+                        document=InputFile(BytesIO(output), filename="animated_text_variant.tgs"),
+                        caption="Generated TGS source. Telegram did not accept it as a sticker, so the source file is attached instead.",
+                    )
+                    await message.reply_text("Telegram did not accept this file as a sticker, so I returned the TGS source as a document.")
+                    context.user_data.pop("pending_template", None)
+                except TelegramError:
+                    await message.reply_text("Telegram could not deliver the generated TGS. Please retry with a shorter text.")
+            else:
+                await message.reply_text("Telegram could not retrieve the saved template file. Send the original animated emoji again and save it as a template.")
                 context.user_data.pop("pending_template", None)
-            except TelegramError:
-                await message.reply_text("Telegram could not deliver the generated TGS. Please retry with a shorter text.")
         except (OSError, ValueError):
             logger.warning("Could not generate template text for user_id=%s", user_id, exc_info=True)
             await message.reply_text("I couldn't retrieve the saved source or build the animation. Please re-save the source and retry.")
