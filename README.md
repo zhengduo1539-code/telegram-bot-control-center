@@ -11,6 +11,8 @@ A dedicated Telegram bot for analyzing Telegram custom animated emojis and stick
 - **Custom emoji ID lookup:** read custom_emoji_id message entities or accept an ID via `/id <numeric_id>` / a plain numeric ID, then resolve it with getCustomEmojiStickers.
 - **Source-preserving reuse:** send the original sticker back or export the original file without rendering it again.
 - **TGS inspection:** analyze Lottie dimensions, FPS, duration, layer counts, shape types, detected fill/stroke/gradient colors, keyframes and effects where those values are present in the source.
+- **Reusable animation templates:** send a custom animated emoji and the bot records the source Custom Emoji ID, Telegram file reference and analysis metadata. Tap **Create with this animation** to save it as a personal template; use `/templates` to choose it again later.
+- **Text/Unicode recreation:** if a TGS has one editable Lottie text layer, the bot replaces its text while preserving the source timeline and styling. If the source is shape-only (common for Telegram emojis), it creates vector glyphs and adapts the template's dominant color and animated transform profile. That is a reconstruction, not a pixel-identical copy of the original glyphs/effects. Unicode characters require a locally installed outline font.
 - **WEBM inspection:** sample video frames for dominant colors and use decoder metadata for dimensions, FPS and duration. WEBM is a raster video; its original vector layers and keyframes cannot be recovered from pixels.
 - **Constrained TGS editing:** recolor supported fill/stroke/gradient properties, change timeline speed, or replace text in a single editable Lottie text layer while preserving its timing/style properties. Rebuilt files are validated against 512×512 dimensions, 60 FPS, a maximum three-second duration, expanded JSON limits and Telegram's 64 KiB TGS compressed-size limit. Vector-outline lettering is not falsely treated as editable text.
 - **MongoDB metadata only:** store user activity, pack browsing sessions, file IDs and analysis reports. Raw binaries are processed in memory and are not saved to MongoDB.
@@ -56,11 +58,12 @@ On Render, the app prefers a webhook. When running locally without PUBLIC_BASE_U
 - /status — service readiness.
 - /recent — recent analysis references.
 - /id <numeric_id> — analyze a numeric Telegram custom emoji ID.
+- /templates — list saved personal animation templates.
 - Send a custom animated emoji in a message, an animated sticker, or a .TGS/.WEBM/.WEBP file.
 - Paste a Telegram addemoji or addstickers pack link.
 - Choose a pack item, then use Send original, Export file, Recolor TGS, or Adjust speed.
 
-Editing actions are available only for supported TGS Lottie files. **Replace text** works when the source has one editable Lottie text layer. If the lettering has already been converted to vector shape outlines (common in sticker assets), the bot reports that limitation rather than destroying or guessing at the original glyph animation. Exact text replacement for those outline-only animations requires a separate vector reconstruction workflow. Exported TGS files are not automatically inserted into a third-party pack; the user publishes them through Telegram's supported sticker/emoji workflow. WEBM files can be reused byte-for-byte, but raster frames do not provide editable source vectors.
+Editing actions are available only for supported TGS Lottie files. **Replace text** works when the source has one editable Lottie text layer. **Create with this animation** can also reconstruct shape-only sources as vector text using a detected color and an animated shape-layer transform profile. If the lettering has already been converted to vector shape outlines (common in sticker assets), the bot reports that limitation rather than destroying or guessing at the original glyph animation. That reconstruction is not pixel-identical: the original per-letter outlines, gradients, layer-specific effects and complex decoration are not generically recoverable as editable text. TGS exports are validated against Telegram's canvas, FPS, duration and compressed-size constraints. Use `TEMPLATE_FONT_PATH` to provide an installed outline font for extra Unicode coverage. Exported TGS files are not automatically inserted into a third-party pack; the user publishes them through Telegram's supported sticker/emoji workflow. WEBM files can be reused byte-for-byte, but raster frames do not provide editable source vectors.
 
 ## Data and retention
 
