@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import unicodedata
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable
@@ -16,6 +15,8 @@ from typing import Iterable
 from PIL import Image, ImageDraw, ImageFont
 
 CANVAS_SIZE = 512
+CUSTOM_EMOJI_SIZE = 100
+CUSTOM_EMOJI_COUNT = 3
 FPS = 30
 DURATION_SECONDS = 2
 FRAME_COUNT = FPS * DURATION_SECONDS
@@ -363,7 +364,7 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
             palette_first,
             palette_second,
             phase if style.animation != "None" else 0.0,
-            rainbow=style.color == "Rainbow",
+            rainbow=style.color == "Rainbow" and color_override is None,
         )
         gradient.putalpha(mask)
         image.alpha_composite(gradient)
@@ -549,51 +550,17 @@ def _ffmpeg_executable() -> str:
         raise RuntimeError("FFmpeg is not available. Ensure imageio-ffmpeg is installed.")
 
 
-def _grapheme_clusters(text: str) -> list[str]:
-    """Keep combining marks, variation selectors, skin tones, and ZWJ sequences together."""
-    clusters: list[str] = []
-    join_next = False
-    for character in text:
-        codepoint = ord(character)
-        extender = (
-            bool(unicodedata.combining(character))
-            or 0xFE00 <= codepoint <= 0xFE0F
-            or 0xE0100 <= codepoint <= 0xE01EF
-            or 0x1F3FB <= codepoint <= 0x1F3FF
-        )
-        if clusters and (extender or character == "\u200d" or join_next):
-            clusters[-1] += character
-        else:
-            clusters.append(character)
-        join_next = character == "\u200d"
-    return clusters
-
-
-def split_text_for_stickers(text: str, max_clusters: int = 2) -> list[str]:
-    """Keep very short text intact; split longer text into contiguous, readable pieces."""
-    normalized = " ".join((text or "").split())
-    if not normalized:
-        return []
-    if max_clusters < 1:
-        raise ValueError("max_clusters must be a positive integer")
-    clusters = _grapheme_clusters(normalized)
-    if len(clusters) <= max_clusters:
-        return [normalized]
-    return [
-        "".join(clusters[index:index + max_clusters])
-        for index in range(0, len(clusters), max_clusters)
-    ]
-
-
-def _encode_webm(frames: Iterable[Image.Image]) -> bytes:
+def _encode_webm(frames: Iterable[Image.Image], *, size: int = CANVAS_SIZE) -> bytes:
+    if size < 1:
+        raise ValueError("Video dimensions must be positive.")
     executable = _ffmpeg_executable()
     with tempfile.TemporaryDirectory(prefix="animated-text-sticker-") as temp_dir:
         raw_path = Path(temp_dir) / "frames.rgba"
         output_path = Path(temp_dir) / "sticker.webm"
         with raw_path.open("wb") as raw_file:
             for frame in frames:
-                if frame.size != (CANVAS_SIZE, CANVAS_SIZE):
-                    frame = frame.resize((CANVAS_SIZE, CANVAS_SIZE), Image.Resampling.LANCZOS)
+                if frame.size != (size, size):
+                    frame = frame.resize((size, size), Image.Resampling.LANCZOS)
                 raw_file.write(frame.convert("RGBA").tobytes())
 
         if not raw_path.exists() or raw_path.stat().st_size == 0:
@@ -607,7 +574,7 @@ def _encode_webm(frames: Iterable[Image.Image]) -> bytes:
             output_path.unlink(missing_ok=True)
             command = [
                 executable, "-hide_banner", "-loglevel", "error", "-y",
-                "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{CANVAS_SIZE}x{CANVAS_SIZE}",
+                "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{size}x{size}",
                 "-framerate", str(FPS), "-i", str(raw_path), "-an", "-frames:v", str(FRAME_COUNT),
                 "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-auto-alt-ref", "0",
                 "-deadline", "good", "-cpu-used", "5", "-b:v", f"{bitrate_kbps}k", "-crf", str(crf),
@@ -643,11 +610,35 @@ def render_single_webm(style: Style) -> bytes:
     return _encode_webm(frames)
 
 
-def render_pack_webm(style: Style) -> list[bytes]:
-    """Render one video sticker for each text segment; never create a fixed-size pack."""
+def render_single_custom_emoji_webm(style: Style, color_override: str | None = None) -> bytes:
+    """Render the complete text into a Telegram-compliant 100×100 custom emoji."""
     normalized = style.normalized()
-    segments = split_text_for_stickers(normalized.text)
+    if not normalized.text:
+        raise ValueError("Custom emoji text cannot be empty.")
+    frames = (
+        render_frame(
+            normalized,
+            time_seconds=index / FPS,
+            size=CUSTOM_EMOJI_SIZE,
+            color_override=color_override,
+        )
+        for index in range(FRAME_COUNT)
+    )
+    return _encode_webm(frames, size=CUSTOM_EMOJI_SIZE)
+
+
+def render_pack_webm(style: Style) -> list[bytes]:
+    """Render three custom emoji variants, each containing the full original text."""
+    normalized = style.normalized()
+    if not normalized.text:
+        return []
+    base_color = PALETTES[normalized.color]
+    variants: tuple[str | None, ...] = (
+        None,
+        _variant_hex(base_color, 1),
+        _variant_hex(base_color, 2),
+    )
     return [
-        render_single_webm(replace(normalized, text=segment))
-        for segment in segments
+        render_single_custom_emoji_webm(normalized, color_override=color)
+        for color in variants
     ]

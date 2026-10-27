@@ -1,14 +1,14 @@
 # EmojiTitleBot | Text from Emojis
 
-EmojiTitleBot turns a short text line into animated Telegram video stickers. Two-character text such as `Hi` stays as one sticker, while longer text is split into contiguous pieces (for example, `Hola` becomes `Ho` + `la`). The editor keeps the selected appearance for the next text, previews the design as a looping GIF, and creates a text-named `addstickers` pack. The existing free daily allowance, referral bonuses, and Telegram Stars PRO subscription remain in place.
+EmojiTitleBot turns a short text line into an animated Telegram **custom emoji pack**. Each pack contains three 100×100 VP9 WebM custom emoji variants, and every variant preserves the complete text rather than splitting it into character fragments. The editor keeps the selected appearance for the next text, previews the design as a looping GIF, and creates a text-named `addemoji` pack. The existing free daily allowance, referral bonuses, and Telegram Stars PRO subscription remain in place.
 
 ## Features
 
 - Welcome and user-facing reply copy aligned with the reference video.
 - Animated GIF preview that updates when users change font, color, shape, or animation.
-- Text-length-adaptive pack count: no splitting for two-character text; longer text is split into contiguous two-character segments.
-- Regular video stickers rendered as transparent VP9 WebM at 512 × 512, 30 FPS, and two seconds per loop, with a 256 KB size guard per item.
-- High-quality gradient rendering, including a moving Rainbow palette, with a complete-text sample sticker sent to chat after pack creation.
+- Fixed-size custom emoji packs containing three full-text design variants (not character-split fragments).
+- Custom emoji rendered as transparent VP9 WebM at exactly 100 × 100, 30 FPS, and two seconds per loop, with a 256 KB size guard per item.
+- High-quality gradient rendering, including a moving Rainbow palette; after creation the bot previews the result using a real custom-emoji message entity rather than sending a regular sticker.
 - Three free packs per user per UTC day, plus one-time referral bonus credits.
 - PRO recurring subscription billed with 100 Telegram Stars per 30-day period; PRO permits unlimited pack creation and uses the supplied text as the pack title.
 - Payment verification through Telegram pre-checkout and successful-payment updates, with unique charge IDs persisted to prevent duplicate entitlement grants.
@@ -65,7 +65,7 @@ If required settings are missing, the HTTP service can remain available for Rend
 
 ## Telegram payments and platform constraints
 
-Digital goods must be sold using Telegram Stars (XTR). PRO uses Telegram's 30-day recurring Stars subscription period. The app only activates PRO after a successful-payment update, not just after pre-checkout approval. Telegram Premium may be needed to add or use custom emoji sets; that is separate from this bot's PRO subscription.
+Digital goods must be sold using Telegram Stars (XTR). PRO uses Telegram's 30-day recurring Stars subscription period. The app only activates PRO after a successful-payment update, not just after pre-checkout approval. Custom emoji packs use Telegram's `custom_emoji` sticker-set type and the `t.me/addemoji/` deep link. Telegram Premium may be needed to add or use custom emoji sets; that is separate from this bot's PRO subscription.
 
 ## Local setup and tests
 

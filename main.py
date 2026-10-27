@@ -14,13 +14,13 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaAnimation, InputSticker, LabeledPrice, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaAnimation, InputSticker, LabeledPrice, MessageEntity, Sticker, Update
 from telegram.constants import ChatType
 from telegram.error import TelegramError
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
 
 from database import DAILY_LIMIT, UsageStore
-from sticker_engine import ANIMATION_OPTIONS, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_pack_webm, render_preview_gif, render_single_webm, split_text_for_stickers
+from sticker_engine import ANIMATION_OPTIONS, CUSTOM_EMOJI_COUNT, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_pack_webm, render_preview_gif
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -163,7 +163,7 @@ class BotService:
         # The reference uses the same right-pointing hand on both sides of each setting.
         left_arrow = "👉🏻"
         right_arrow = "👉🏻"
-        create_label = "⌛ Creating Sticker Set..." if creating else "✅ Create Sticker Set"
+        create_label = "⌛ Creating Emoji Pack..." if creating else "✅ Create Emoji Pack"
         return InlineKeyboardMarkup([
             [InlineKeyboardButton(left_arrow, callback_data="font:-1"),
              InlineKeyboardButton(style.font, callback_data="noop"),
@@ -271,7 +271,7 @@ class BotService:
         message = update.effective_message
         if message:
             await message.reply_text(
-                "Send any short text to open the animated preview. Use the arrows to change its font, color, shape, and animation, then tap *Create Sticker Set*.\n\n"
+                "Send any short text to open the animated preview. Use the arrows to change its font, color, shape, and animation, then tap *Create Emoji Pack*.\n\n"
                 "Commands: /start, /help, /pro, /cancel" + ("\n/admin — administrator usage stats" if update.effective_user and update.effective_user.id in self.admin_ids else ""),
                 parse_mode="Markdown",
             )
@@ -550,10 +550,10 @@ class BotService:
                 pass
 
     async def _prepare_stickers(self, bot, user_id: int, webm_files: list[bytes]) -> list[InputSticker]:
-        """Upload an adaptive number of regular video stickers and build the set payload."""
-        if not webm_files or len(webm_files) > 50:
+        """Upload the three 100×100 video assets used by a custom-emoji pack."""
+        if len(webm_files) != CUSTOM_EMOJI_COUNT:
             raise RuntimeError(
-                f"renderer returned {len(webm_files)} files; expected between 1 and 50"
+                f"renderer returned {len(webm_files)} files; expected exactly {CUSTOM_EMOJI_COUNT} custom emoji"
             )
 
         stickers: list[InputSticker] = []
@@ -653,25 +653,23 @@ class BotService:
                 pack_name = f"{slug}_{suffix}_by_{bot_username}"
                 pack_title = style.text.strip()[:64] if is_pro else f"Created in 👉 @{bot_username}"[:64]
 
-                expected_segments = split_text_for_stickers(style.text)
                 webm_files = await asyncio.to_thread(render_pack_webm, style)
-                if not webm_files or len(webm_files) != len(expected_segments):
+                if len(webm_files) != CUSTOM_EMOJI_COUNT:
                     raise RuntimeError(
-                        f"renderer returned {len(webm_files)} sticker(s) for "
-                        f"{len(expected_segments)} text segment(s)"
+                        f"renderer returned {len(webm_files)} custom emoji; "
+                        f"expected exactly {CUSTOM_EMOJI_COUNT}"
                     )
-                # The reference sends the complete text as a sample sticker, while
-                # the pack itself contains the individually readable text segments.
-                sample_webm = await asyncio.to_thread(render_single_webm, style)
                 stickers = await self._prepare_stickers(context.bot, user.id, webm_files)
                 await context.bot.create_new_sticker_set(
                     user_id=user.id,
                     name=pack_name,
                     title=pack_title,
                     stickers=stickers,
+                    sticker_type=Sticker.CUSTOM_EMOJI,
+                    needs_repainting=False,
                 )
                 pack_created = True
-                pack_url = f"https://t.me/addstickers/{pack_name}"
+                pack_url = f"https://t.me/addemoji/{pack_name}"
                 self.sessions.pop(user.id, None)
                 self.session_message_ids.pop(user.id, None)
                 self.last_styles[user.id] = style
@@ -683,14 +681,30 @@ class BotService:
                         logger.debug("Could not remove completed editor keyboard for user_id=%s", user.id)
 
                 try:
-                    await context.bot.send_sticker(
-                        chat_id=user.id,
-                        sticker=InputFile(sample_webm, filename="text-sample.webm"),
+                    # Send the first item as a true inline custom emoji, not as a
+                    # separately uploaded regular sticker message.
+                    sticker_set = await context.bot.get_sticker_set(name=pack_name)
+                    custom_emoji_id = next(
+                        (item.custom_emoji_id for item in sticker_set.stickers if item.custom_emoji_id),
+                        None,
                     )
+                    if custom_emoji_id:
+                        await context.bot.send_message(
+                            chat_id=user.id,
+                            text=STICKER_EMOJI,
+                            entities=[MessageEntity(
+                                type=MessageEntity.CUSTOM_EMOJI,
+                                offset=0,
+                                length=len(STICKER_EMOJI.encode("utf-16-le")) // 2,
+                                custom_emoji_id=custom_emoji_id,
+                            )],
+                        )
+                    else:
+                        logger.warning("Custom emoji pack was created but Telegram returned no custom_emoji_id for user_id=%s", user.id)
                 except Exception:
-                    # The pack already exists; a sample delivery failure must not
-                    # undo the successful creation or consume the quota twice.
-                    logger.exception("Pack created but sample sticker could not be sent to user_id=%s", user.id)
+                    # The pack already exists; a preview-send failure must not
+                    # undo it or consume/release quota a second time.
+                    logger.exception("Pack created but custom emoji preview could not be sent to user_id=%s", user.id)
 
                 if is_pro:
                     pro_note = "💎 PRO subscription active: unlimited pack creation and custom pack titles."
@@ -717,7 +731,7 @@ class BotService:
                     except TelegramError:
                         logger.exception("Pack was created but confirmation could not be sent for user_id=%s", user.id)
                 logger.info(
-                    "Created text sticker pack for user_id=%s; stickers=%s; daily_count=%s; pro=%s",
+                    "Created custom emoji pack for user_id=%s; emoji_count=%s; daily_count=%s; pro=%s",
                     user.id, len(webm_files), count, is_pro,
                 )
             except Exception as exc:
@@ -739,7 +753,7 @@ class BotService:
                             logger.debug("Could not restore editor keyboard after failure for user_id=%s", user.id)
                 logger.exception("Pack creation failed for user_id=%s", user.id)
                 error_hint = (
-                    "Telegram could not accept this sticker pack. Please try another text or design."
+                    "Telegram could not accept this custom emoji pack. Please try another text or design."
                     if isinstance(exc, TelegramError)
                     else "The animation could not be encoded. Please try again with shorter text."
                 )

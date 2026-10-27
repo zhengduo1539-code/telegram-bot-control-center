@@ -5,6 +5,8 @@ from PIL import Image, ImageFont
 from sticker_engine import (
     ANIMATION_OPTIONS,
     CANVAS_SIZE,
+    CUSTOM_EMOJI_COUNT,
+    CUSTOM_EMOJI_SIZE,
     DURATION_SECONDS,
     FPS,
     FONT_OPTIONS,
@@ -14,7 +16,6 @@ from sticker_engine import (
     render_frame,
     render_preview_gif,
     render_preview_png,
-    split_text_for_stickers,
     _font,
 )
 
@@ -95,22 +96,32 @@ def test_preview_is_wide_white_looping_gif_with_full_width_artwork():
         assert 140 <= artwork_width <= 240
 
 
-def test_text_segmentation_matches_reference_and_preserves_the_text():
-    assert split_text_for_stickers("Hi") == ["Hi"]
-    assert split_text_for_stickers("OK") == ["OK"]
-    assert split_text_for_stickers("Hola") == ["Ho", "la"]
-    assert split_text_for_stickers("Hello") == ["He", "ll", "o"]
-    assert "".join(split_text_for_stickers("Hello world")) == "Hello world"
+def test_custom_emoji_pack_keeps_the_full_text_in_all_three_variants(monkeypatch):
+    import sticker_engine
+
+    rendered = []
+
+    def fake_render(style, color_override=None):
+        rendered.append((style.text, color_override))
+        return f"webm-{len(rendered)}".encode()
+
+    monkeypatch.setattr(sticker_engine, "render_single_custom_emoji_webm", fake_render)
+    pack = sticker_engine.render_pack_webm(Style(text="Hello", color="Cyan"))
+
+    assert len(pack) == CUSTOM_EMOJI_COUNT == 3
+    assert [text for text, _color in rendered] == ["Hello", "Hello", "Hello"]
+    assert len({color for _text, color in rendered}) == 3
 
 
-def test_video_pack_uses_dynamic_512px_telegram_compatible_webm_files():
+def test_video_pack_uses_three_100px_custom_emoji_webm_files():
     from sticker_engine import MAX_WEBM_BYTES, render_pack_webm
 
-    assert CANVAS_SIZE == 512
+    assert CANVAS_SIZE == 512  # standalone preview media remains sticker-sized
+    assert CUSTOM_EMOJI_SIZE == 100
     assert FPS == 30
     assert DURATION_SECONDS == 2
     pack = render_pack_webm(Style(text="Test", color="Cyan", animation="Float"))
-    assert len(pack) == len(split_text_for_stickers("Test")) == 2
+    assert len(pack) == CUSTOM_EMOJI_COUNT == 3
     assert all(item.startswith(b"\x1aE\xdf\xa3") for item in pack)
     assert all(0 < len(item) <= MAX_WEBM_BYTES for item in pack)
 
