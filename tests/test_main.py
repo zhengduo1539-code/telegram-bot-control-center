@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.constants import ChatType
 
 from main import BotService, STICKER_EMOJI
-from sticker_engine import Style, split_text_for_stickers
+from sticker_engine import CUSTOM_EMOJI_COUNT, Style
 
 
 def test_start_welcome_matches_reference_copy():
@@ -61,33 +61,35 @@ def test_editor_keyboard_matches_reference_arrows_and_create_action():
     for row in keyboard.inline_keyboard[:4]:
         assert row[0].text == "👉🏻"
         assert row[2].text == "👉🏻"
-    assert keyboard.inline_keyboard[-1][0].text == "✅ Create Sticker Set"
+    assert keyboard.inline_keyboard[-1][0].text == "✅ Create Emoji Pack"
     assert keyboard.inline_keyboard[-1][0].callback_data == "create"
 
     loading = BotService._keyboard(Style(text="Hello").normalized(), creating=True)
-    assert loading.inline_keyboard[-1][0].text == "⌛ Creating Sticker Set..."
+    assert loading.inline_keyboard[-1][0].text == "⌛ Creating Emoji Pack..."
 
 
-def test_pack_configuration_is_text_length_adaptive():
+def test_pack_configuration_uses_three_custom_emoji_variants():
     assert STICKER_EMOJI == "✨"
-    assert split_text_for_stickers("Hi") == ["Hi"]
-    assert split_text_for_stickers("Hola") == ["Ho", "la"]
+    assert CUSTOM_EMOJI_COUNT == 3
 
 
-def test_prepare_stickers_accepts_a_variable_number_of_segments():
+def test_prepare_stickers_uploads_three_custom_emoji_assets():
     service = BotService()
     bot = SimpleNamespace(
         upload_sticker_file=AsyncMock(side_effect=[
             SimpleNamespace(file_id="file-one"),
             SimpleNamespace(file_id="file-two"),
+            SimpleNamespace(file_id="file-three"),
         ])
     )
 
-    stickers = asyncio.run(service._prepare_stickers(bot, 123456, [b"webm-one", b"webm-two"]))
+    stickers = asyncio.run(service._prepare_stickers(
+        bot, 123456, [b"webm-one", b"webm-two", b"webm-three"]
+    ))
 
-    assert len(stickers) == 2
-    assert [sticker.sticker for sticker in stickers] == ["file-one", "file-two"]
-    assert [sticker.emoji_list for sticker in stickers] == [("✨",), ("✨",)]
+    assert len(stickers) == 3
+    assert [sticker.sticker for sticker in stickers] == ["file-one", "file-two", "file-three"]
+    assert [sticker.emoji_list for sticker in stickers] == [("✨",), ("✨",), ("✨",)]
     assert all(sticker.format == "video" for sticker in stickers)
 
 
