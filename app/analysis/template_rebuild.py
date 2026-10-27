@@ -205,13 +205,19 @@ def _path_json(contour, scale: float) -> dict[str, Any]:
 
 
 def _primary_color(root: dict[str, Any]) -> list[float]:
-    counts: Counter[str] = Counter()
+    fill_counts: Counter[str] = Counter()
+    stroke_counts: Counter[str] = Counter()
     for node in _walk(root):
-        if node.get("ty") not in {"fl", "st"} or not isinstance(node.get("c"), dict):
+        kind = node.get("ty")
+        if kind not in {"fl", "st"} or not isinstance(node.get("c"), dict):
             continue
         found: list[str] = []
         _colors_from_property(node["c"], found)
-        counts.update(color for color in found if color)
+        target = fill_counts if kind == "fl" else stroke_counts
+        target.update(color for color in found if color)
+    # Prefer the fill palette over outline colors. Use stroke color only for
+    # templates that have no fill definitions.
+    counts = fill_counts or stroke_counts
     if not counts:
         return [1.0, 0.55, 0.16, 1.0]
     value = counts.most_common(1)[0][0].lstrip("#")
