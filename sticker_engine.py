@@ -44,8 +44,14 @@ PALETTE_GRADIENTS: dict[str, tuple[str, str]] = {
 FONT_OPTIONS: tuple[str, ...] = (
     "Raleway italic", "Arial", "Roboto", "Madefor", "Monaco", "Impact", "Rubik",
 )
-SHAPE_OPTIONS: tuple[str, ...] = ("Pill", "Heart", "Rounded", "Circle", "Star", "None")
-ANIMATION_OPTIONS: tuple[str, ...] = ("Wave", "Pulse", "Bounce", "Float", "Shake", "Tilt", "None")
+# These are stable local IDs for the three shape/animation states visible in the
+# supplied recording. They intentionally do not assert the source bot's hidden
+# option names; the clip does not show a complete cycle.
+SHAPE_OPTIONS: tuple[str, ...] = ("shape_0", "shape_1", "shape_2")
+ANIMATION_OPTIONS: tuple[str, ...] = ("anim_0", "anim_1", "anim_2")
+
+_LEGACY_SHAPE_IDS = {"Pill": "shape_0", "Circle": "shape_1", "Heart": "shape_2"}
+_LEGACY_ANIMATION_IDS = {"Wave": "anim_0", "None": "anim_1", "Float": "anim_2"}
 
 _FONT_FILES: dict[str, tuple[str, ...]] = {
     "Raleway italic": ("/usr/share/fonts/truetype/raleway/Raleway-Italic.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf"),
@@ -61,11 +67,11 @@ _FONT_FILES: dict[str, tuple[str, ...]] = {
 @dataclass(frozen=True, slots=True)
 class Style:
     text: str
-    # Defaults are taken from the original @EmojiTitleBot editor appearance.
+    # The default visual state matches the start of the supplied editor recording.
     font: str = "Raleway italic"
     color: str = "Orange"
-    shape: str = "Pill"
-    animation: str = "Wave"
+    shape: str = "shape_0"
+    animation: str = "anim_0"
 
     def normalized(self) -> "Style":
         return replace(
@@ -73,8 +79,14 @@ class Style:
             text=" ".join(self.text.split())[:20],
             font=self.font if self.font in FONT_OPTIONS else FONT_OPTIONS[0],
             color=self.color if self.color in PALETTES else next(iter(PALETTES)),
-            shape=self.shape if self.shape in SHAPE_OPTIONS else SHAPE_OPTIONS[0],
-            animation=self.animation if self.animation in ANIMATION_OPTIONS else ANIMATION_OPTIONS[0],
+            shape=(
+                self.shape if self.shape in SHAPE_OPTIONS
+                else _LEGACY_SHAPE_IDS.get(self.shape, SHAPE_OPTIONS[0])
+            ),
+            animation=(
+                self.animation if self.animation in ANIMATION_OPTIONS
+                else _LEGACY_ANIMATION_IDS.get(self.animation, ANIMATION_OPTIONS[0])
+            ),
         )
 
 
@@ -271,12 +283,12 @@ def _shape_mask(
 ) -> Image.Image:
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
-    if shape == "None":
-        return mask
-    if shape == "Pill":
+    if shape == "shape_0":
         _draw_wavy_pill_mask(draw, box, phase, max(0.8, wave_amount))
-    else:
-        _draw_shape(draw, shape, box, 255)  # type: ignore[arg-type]
+    elif shape == "shape_1":
+        draw.ellipse(box, fill=255)
+    elif shape == "shape_2":
+        _draw_shape(draw, "Heart", box, 255)
     return mask
 
 
@@ -288,23 +300,7 @@ def _text_color(first: tuple[int, int, int], second: tuple[int, int, int]) -> tu
 def _draw_shape(draw: ImageDraw.ImageDraw, shape: str, box: tuple[int, int, int, int], color: tuple[int, int, int, int] | int) -> None:
     left, top, right, bottom = box
     w, h = right - left, bottom - top
-    if shape == "None":
-        return
-    if shape == "Circle":
-        draw.ellipse(box, fill=color)
-    elif shape == "Rounded":
-        draw.rounded_rectangle(box, radius=max(4, int(min(w, h) * 0.24)), fill=color)
-    elif shape == "Pill":
-        draw.rounded_rectangle(box, radius=max(4, int(h * 0.48)), fill=color)
-    elif shape == "Star":
-        cx, cy = (left + right) / 2, (top + bottom) / 2
-        points = []
-        for i in range(10):
-            radius = min(w, h) * (0.49 if i % 2 == 0 else 0.22)
-            angle = -math.pi / 2 + i * math.pi / 5
-            points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
-        draw.polygon(points, fill=color)
-    elif shape == "Heart":
+    if shape == "Heart":
         cx, cy = (left + right) / 2, (top + bottom) / 2
         points = []
         for step in range(96):
@@ -354,22 +350,21 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
     )
     phase = (time_seconds / DURATION_SECONDS) * (2 * math.pi)
     palette_first, palette_second = _palette_pair(style.color, color_override)
-    shape_phase = phase if style.animation == "Wave" else 0.0
-    shape_amplitude = box_h * 0.075 if style.animation == "Wave" and style.shape == "Pill" else 0.8
+    shape_phase = phase if style.animation == "anim_0" else 0.0
+    shape_amplitude = box_h * 0.075 if style.animation == "anim_0" and style.shape == "shape_0" else 0.8
     mask = _shape_mask((large_size, large_size), style.shape, box, shape_phase, shape_amplitude)
-    if style.shape != "None":
-        gradient = _gradient_layer(
-            large_size,
-            large_size,
-            palette_first,
-            palette_second,
-            phase if style.animation != "None" else 0.0,
-            rainbow=style.color == "Rainbow" and color_override is None,
-        )
-        gradient.putalpha(mask)
-        image.alpha_composite(gradient)
+    gradient = _gradient_layer(
+        large_size,
+        large_size,
+        palette_first,
+        palette_second,
+        phase if style.animation != "anim_1" else 0.0,
+        rainbow=style.color == "Rainbow" and color_override is None,
+    )
+    gradient.putalpha(mask)
+    image.alpha_composite(gradient)
 
-    text_color = palette_first + (255,) if style.shape == "None" else _text_color(palette_first, palette_second)
+    text_color = _text_color(palette_first, palette_second)
     if text_color[:3] == (255, 255, 255):
         draw.text(
             (center + large_size * 0.006, center + large_size * 0.012),
@@ -390,20 +385,11 @@ def render_frame(style: Style, time_seconds: float = 0.0, size: int = CANVAS_SIZ
 
     phase = (time_seconds / DURATION_SECONDS) * (2 * math.pi)
     factor, dx, dy, angle = 1.0, 0.0, 0.0, 0.0
-    if style.animation == "Pulse":
-        factor = 0.92 + 0.08 * (0.5 + 0.5 * math.sin(phase))
-    elif style.animation == "Bounce":
-        dy = -large_size * 0.045 * abs(math.sin(phase))
-    elif style.animation == "Wave":
+    if style.animation == "anim_0":
         dx = large_size * 0.012 * math.sin(phase)
-    elif style.animation == "Float":
-        dy = -large_size * 0.045 * math.sin(phase)
-    elif style.animation == "Shake":
-        dx = large_size * 0.035 * math.sin(phase * 3.0)
-    elif style.animation == "Tilt":
-        angle = 11.0 * math.sin(phase)
-    elif style.animation == "None":
-        pass
+    elif style.animation == "anim_2":
+        # The visible down-arrow state is represented by a gentle downward bob.
+        dy = large_size * 0.045 * abs(math.sin(phase))
 
     if abs(angle) > 0.1:
         image = image.rotate(angle, resample=Image.Resampling.BICUBIC, center=(center, center))
@@ -452,19 +438,11 @@ def _render_preview_frame(style: Style, time_seconds: float) -> Image.Image:
     phase = (time_seconds / DURATION_SECONDS) * (2 * math.pi)
     pulse = 1.0
     dx = dy = angle = 0.0
-    if style.animation == "Pulse":
-        pulse = 0.95 + 0.05 * (0.5 + 0.5 * math.sin(phase))
-    elif style.animation == "Bounce":
-        dy = -4.0 * abs(math.sin(phase))
-    elif style.animation == "Wave":
+    if style.animation == "anim_0":
         dx = 2.0 * math.sin(phase)
-    elif style.animation == "Float":
-        dy = 3.0 * math.sin(phase)
-    elif style.animation == "Shake":
-        dx = 2.5 * math.sin(phase * 3.0)
-    elif style.animation == "Tilt":
-        angle = 3.5 * math.sin(phase)
-    elif style.animation == "None":
+    elif style.animation == "anim_2":
+        dy = 4.0 * abs(math.sin(phase))
+    else:
         pulse, dx, dy, angle = 1.0, 0.0, 0.0, 0.0
 
     # The source's capsule has moderate side padding and stays compact within
@@ -477,25 +455,24 @@ def _render_preview_frame(style: Style, time_seconds: float) -> Image.Image:
     badge_y = center_y - badge_h / 2
     box = (int(badge_x), int(badge_y), int(badge_x + badge_w), int(badge_y + badge_h))
     palette_first, palette_second = _palette_pair(style.color)
-    if style.shape != "None":
-        mask = _shape_mask(
-            (width, height),
-            style.shape,
-            box,
-            phase if style.animation == "Wave" else 0.0,
-            badge_h * 0.08 if style.animation == "Wave" and style.shape == "Pill" else 0.8,
-        )
-        gradient = _gradient_layer(
-            width,
-            height,
-            palette_first,
-            palette_second,
-            phase if style.animation != "None" else 0.0,
-            rainbow=style.color == "Rainbow",
-        )
-        gradient.putalpha(mask)
-        content.alpha_composite(gradient)
-    text_color = palette_first + (255,) if style.shape == "None" else _text_color(palette_first, palette_second)
+    mask = _shape_mask(
+        (width, height),
+        style.shape,
+        box,
+        phase if style.animation == "anim_0" else 0.0,
+        badge_h * 0.08 if style.animation == "anim_0" and style.shape == "shape_0" else 0.8,
+    )
+    gradient = _gradient_layer(
+        width,
+        height,
+        palette_first,
+        palette_second,
+        phase if style.animation != "anim_1" else 0.0,
+        rainbow=style.color == "Rainbow",
+    )
+    gradient.putalpha(mask)
+    content.alpha_composite(gradient)
+    text_color = _text_color(palette_first, palette_second)
     draw = ImageDraw.Draw(content)
     if text_color[:3] == (255, 255, 255):
         draw.text((center_x + 1.2, center_y + 1.4), text, font=chosen_font, anchor="mm", fill=(0, 0, 0, 65))
