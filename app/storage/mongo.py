@@ -14,6 +14,7 @@ from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
 ANALYSIS_TTL_SECONDS = 30 * 24 * 60 * 60
 PACK_SESSION_TTL_SECONDS = 12 * 60 * 60
 USER_TTL_SECONDS = 180 * 24 * 60 * 60
+TEMPLATE_TTL_SECONDS = 180 * 24 * 60 * 60
 
 
 class MongoStore:
@@ -37,6 +38,8 @@ class MongoStore:
         await self.db.assets.create_index([("created_at", ASCENDING)], expireAfterSeconds=ANALYSIS_TTL_SECONDS, name="asset_ttl")
         await self.db.pack_sessions.create_index([("created_at", ASCENDING)], expireAfterSeconds=PACK_SESSION_TTL_SECONDS, name="pack_session_ttl")
         await self.db.pack_sessions.create_index([("user_id", ASCENDING)], name="pack_session_owner")
+        await self.db.templates.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)], name="user_template_history")
+        await self.db.templates.create_index([("created_at", ASCENDING)], expireAfterSeconds=TEMPLATE_TTL_SECONDS, name="template_ttl")
         self.connected = True
 
     async def close(self) -> None:
@@ -94,6 +97,7 @@ class MongoStore:
         report: dict[str, Any],
         emoji: str = "",
         source_member: str = "",
+        custom_emoji_id: str = "",
     ) -> None:
         await self.db.assets.insert_one(
             {
@@ -105,10 +109,66 @@ class MongoStore:
                 "format": format_name[:16],
                 "emoji": emoji[:32],
                 "source_member": source_member[:512],
+                "custom_emoji_id": custom_emoji_id[:64],
                 "report": report,
                 "created_at": datetime.now(timezone.utc),
             }
         )
+
+    async def save_template(
+        self,
+        template_id: str,
+        user_id: int,
+        file_id: str,
+        file_unique_id: str,
+        source_asset_id: str,
+        custom_emoji_id: str,
+        source_member: str,
+        format_name: str,
+        emoji: str,
+        report: dict[str, Any],
+        source: str,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        await self.db.templates.replace_one(
+            {"_id": template_id},
+            {
+                "_id": template_id,
+                "user_id": int(user_id),
+                "file_id": file_id,
+                "file_unique_id": file_unique_id,
+                "source_asset_id": source_asset_id[:64],
+                "custom_emoji_id": custom_emoji_id[:64],
+                "source_member": source_member[:512],
+                "format": format_name[:16],
+                "emoji": emoji[:32],
+                "report": report,
+                "source": source[:32],
+                "created_at": now,
+                "last_used_at": now,
+            },
+            upsert=True,
+        )
+
+    async def get_template(self, template_id: str, user_id: int) -> dict[str, Any] | None:
+        return await self.db.templates.find_one(
+            {"_id": template_id, "user_id": int(user_id)},
+            {"_id": False},
+        )
+
+    async def touch_template(self, template_id: str, user_id: int) -> None:
+        await self.db.templates.update_one(
+            {"_id": template_id, "user_id": int(user_id)},
+            {"$set": {"last_used_at": datetime.now(timezone.utc)}},
+        )
+
+    async def recent_templates(self, user_id: int, limit: int = 10) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 20))
+        cursor = self.db.templates.find(
+            {"user_id": int(user_id)},
+            {"_id": True, "custom_emoji_id": True, "format": True, "emoji": True, "source": True, "created_at": True},
+        ).sort("created_at", DESCENDING).limit(safe_limit)
+        return await cursor.to_list(length=safe_limit)
 
     async def get_asset(self, asset_id: str, user_id: int) -> dict[str, Any] | None:
         return await self.db.assets.find_one(

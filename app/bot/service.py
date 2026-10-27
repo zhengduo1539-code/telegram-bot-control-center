@@ -28,6 +28,7 @@ from telegram.ext import (
 )
 
 from app.analysis.animation import AnimationError, analyze_animation, change_tgs_speed, recolor_tgs, replace_text_tgs
+from app.analysis.template_rebuild import rebuild_tgs_text_from_template
 from app.config import Settings
 from app.storage.mongo import MongoStore
 from app.telegram.links import normalize_custom_emoji_id, parse_pack_link
@@ -102,6 +103,8 @@ def _report_text(report: dict[str, Any], asset_id: str) -> str:
         lines.append(html.escape(str(report["note"])))
     if report.get("sampled_frames") is not None:
         lines.append(f"Sampled video frames: <code>{report['sampled_frames']}</code>")
+    if report.get("custom_emoji_id"):
+        lines.append(f"Custom Emoji ID: <code>{html.escape(str(report['custom_emoji_id']))}</code>")
     lines.append(f"Reference: <code>{asset_id}</code>")
     return "\n".join(lines)
 
@@ -161,6 +164,7 @@ class BotService:
                     BotCommand("recent", "Show recent analysis reports"),
                     BotCommand("id", "Analyze a custom animated emoji ID"),
                     BotCommand("cancel", "Cancel the current edit"),
+                    BotCommand("templates", "List your saved animation templates"),
                 ]
             )
             self.status, self.reason, self.ready = "ready", "MongoDB and Telegram are connected.", True
@@ -178,7 +182,8 @@ class BotService:
         app.add_handler(CommandHandler("recent", self._recent_command))
         app.add_handler(CommandHandler("id", self._id_command))
         app.add_handler(CommandHandler("cancel", self._cancel_command))
-        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed|text|zip):"))
+        app.add_handler(CommandHandler("templates", self._templates_command))
+        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed|text|zip|template|use_template):"))
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, self._message))
         app.add_error_handler(self._error_handler)
 
@@ -235,8 +240,8 @@ class BotService:
             "👋 <b>Animated Emoji Analyzer & Rebuilder</b>\n\n"
             "Send a Telegram custom animated emoji, a sticker, a <code>t.me/addemoji/…</code> "
             "or <code>t.me/addstickers/…</code> link, or upload a .TGS/.WEBM/.WEBP file or ZIP template library.\n\n"
-            "I inspect animation metadata, colors, vector shape types, timing and keyframes where available. "
-            "TGS files can be recolored or speed-adjusted when the result satisfies Telegram's constraints.",
+            "Use <b>Create with this animation</b> to save a TGS motion/style template, then send your own text or supported Unicode symbol. "
+            "Editable source text is preserved exactly; vector-only designs use a font-outline reconstruction with adapted motion and colors.",
             parse_mode="HTML",
         )
 
@@ -250,7 +255,8 @@ class BotService:
                 "<code>https://t.me/addstickers/PACK</code> link to browse a pack, or upload a ZIP containing TGS/WEBM/WEBP files.\n"
                 "3. Select an item to inspect it, or use Export all to package the whole library.\n"
                 "4. Use <b>Original</b> to send it unchanged or <b>Export</b> to download the source file.\n"
-                "5. TGS items also offer conservative color and speed edits.\n\n"
+                "5. TGS items also offer conservative color and speed edits.\n"
+                "6. Tap <b>Create with this animation</b> to save a TGS template, send your own text, then reuse saved templates with /templates.\n\n"
                 "Only official Telegram pack links are accepted; arbitrary external URLs are not downloaded. "
                 "The bot stores analysis metadata and Telegram file IDs, not binary source files.",
                 parse_mode="HTML",
@@ -310,9 +316,170 @@ class BotService:
 
     async def _cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("pending_edit", None)
+        context.user_data.pop("pending_template", None)
         message = update.effective_message
         if message:
-            await message.reply_text("Edit cancelled.")
+            await message.reply_text("Current operation cancelled.")
+
+    async def _templates_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        message = update.effective_message
+        if not user or not message or not self.store:
+            return
+        templates = await self.store.recent_templates(user.id, limit=10)
+        if not templates:
+            await message.reply_text(
+                "You haven't saved an animation template yet. Send a TGS custom animated emoji, "
+                "inspect it, then tap <b>✨ Create with this animation</b>.",
+                parse_mode="HTML",
+            )
+            return
+        rows = []
+        for index, record in enumerate(templates, start=1):
+            label = str(record.get("emoji") or "🎞")
+            fmt = str(record.get("format") or "TGS")
+            custom_id = str(record.get("custom_emoji_id") or "")
+            if custom_id:
+                label = f"{label} · ID {custom_id[-6:]}"
+            rows.append([
+                InlineKeyboardButton(
+                    f"{index}. {label[:20]} · {fmt}",
+                    callback_data=f"use_template:{record['_id']}",
+                )
+            ])
+        await message.reply_text(
+            "<b>Your saved animation templates</b>\nChoose a template, then send the text or supported Unicode symbols to recreate.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+
+    async def _prompt_template_text(
+        self,
+        chat_id: int,
+        user_id: int,
+        template_id: str,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        if not self.store:
+            return
+        template = await self.store.get_template(template_id, user_id)
+        if not template:
+            await context.bot.send_message(chat_id=chat_id, text="That template has expired. Send the original animated emoji again.")
+            return
+        if str(template.get("format", "")).upper() != "TGS":
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="This template is not a TGS vector animation. Text reconstruction is currently supported for TGS templates.",
+            )
+            return
+        context.user_data.pop("pending_edit", None)
+        context.user_data["pending_template"] = {"template_id": template_id}
+        custom_id = str(template.get("custom_emoji_id") or "")
+        reference = f"\nSource Custom Emoji ID: <code>{html.escape(custom_id)}</code>" if custom_id else ""
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "<b>Animation template ready</b>\n"
+                "Send the text, ordinary emoji, or Unicode symbols you want to create (up to 20 characters).\n\n"
+                "I will preserve the original TGS text layer when possible. If the source lettering is vector outlines, "
+                "I will rebuild glyph outlines and adapt the source motion profile and dominant color; that result may not be pixel-identical."
+                f"{reference}\n\nUse /cancel to stop."
+            ),
+            parse_mode="HTML",
+        )
+
+    async def _consume_template_text(
+        self,
+        message: Any,
+        user_id: int,
+        context: ContextTypes.DEFAULT_TYPE,
+        pending: dict[str, Any],
+    ) -> None:
+        if not self.store:
+            return
+        template_id = str(pending.get("template_id") or "")
+        text_value = (message.text or message.caption or "").strip()
+        if not text_value:
+            await message.reply_text("Please send plain text or supported Unicode characters, or use /cancel.")
+            return
+        template = await self.store.get_template(template_id, user_id)
+        if not template:
+            context.user_data.pop("pending_template", None)
+            await message.reply_text("That template has expired. Save the animated emoji as a template again.")
+            return
+        if str(template.get("format", "")).upper() != "TGS":
+            context.user_data.pop("pending_template", None)
+            await message.reply_text("Only TGS vector animation templates can be rebuilt as text right now.")
+            return
+
+        output: bytes | None = None
+        try:
+            source_data = await self._download_asset_bytes(template, context)
+            output, rebuild_mode = await asyncio.to_thread(
+                rebuild_tgs_text_from_template,
+                source_data,
+                text_value,
+            )
+            # Upload as a sticker so Telegram displays the animated result. If Telegram
+            # rejects the generated TGS, also return the source file as a document.
+            sent = await context.bot.send_sticker(
+                chat_id=message.chat_id,
+                sticker=InputFile(BytesIO(output), filename="animated_text_variant.tgs"),
+            )
+            try:
+                report = await asyncio.to_thread(analyze_animation, output, "tgs")
+                output_sticker = getattr(sent, "sticker", None)
+                if output_sticker and getattr(output_sticker, "file_id", ""):
+                    variant_id = secrets.token_hex(5)
+                    await self.store.save_asset(
+                        asset_id=variant_id,
+                        user_id=user_id,
+                        file_id=str(output_sticker.file_id),
+                        file_unique_id=str(getattr(output_sticker, "file_unique_id", "") or ""),
+                        source="template_variant",
+                        format_name="TGS",
+                        report=report,
+                        emoji=str(getattr(output_sticker, "emoji", "") or ""),
+                    )
+            except (AnimationError, ValueError):
+                logger.info("Generated variant sent but its follow-up metadata could not be recorded.")
+            await self.store.touch_template(template_id, user_id)
+            context.user_data.pop("pending_template", None)
+            if rebuild_mode == "exact_text_layer":
+                explanation = (
+                    "✅ Created from the original editable text layer. Text was replaced while retaining its source timing and styling."
+                )
+            else:
+                explanation = (
+                    "✅ Created from your animation template. The dominant source color and an animated transform profile were adapted to vector text. "
+                    "Because the original has shape outlines rather than editable text, letter shapes/effects may differ from the source."
+                )
+            await message.reply_text(explanation)
+        except AnimationError as exc:
+            # Keep the template selected so the user can try a shorter/supported string.
+            await message.reply_text(f"Could not create that text variant: {html.escape(str(exc))}", parse_mode="HTML")
+        except PackImportError as exc:
+            context.user_data.pop("pending_template", None)
+            await message.reply_text(f"The saved ZIP template is no longer readable: {html.escape(str(exc))}", parse_mode="HTML")
+        except TelegramError:
+            logger.warning("Telegram could not download or deliver the template result for user_id=%s", user_id, exc_info=True)
+            if output is not None:
+                try:
+                    await context.bot.send_document(
+                        chat_id=message.chat_id,
+                        document=InputFile(BytesIO(output), filename="animated_text_variant.tgs"),
+                        caption="Generated TGS source. Telegram did not accept it as a sticker, so the source file is attached instead.",
+                    )
+                    await message.reply_text("Telegram did not accept this file as a sticker, so I returned the TGS source as a document.")
+                    context.user_data.pop("pending_template", None)
+                except TelegramError:
+                    await message.reply_text("Telegram could not deliver the generated TGS. Please retry with a shorter text.")
+            else:
+                await message.reply_text("Telegram could not retrieve the saved template file. Send the original animated emoji again and save it as a template.")
+                context.user_data.pop("pending_template", None)
+        except (OSError, ValueError):
+            logger.warning("Could not generate template text for user_id=%s", user_id, exc_info=True)
+            await message.reply_text("I couldn't retrieve the saved source or build the animation. Please re-save the source and retry.")
 
     async def _message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.effective_message
@@ -320,6 +487,11 @@ class BotService:
         if not message or not user or not self.store:
             return
         await self._touch_user(user.id, user.username)
+
+        pending_template = context.user_data.get("pending_template")
+        if pending_template:
+            await self._consume_template_text(message, user.id, context, pending_template)
+            return
 
         pending = context.user_data.get("pending_edit")
         if pending:
@@ -381,7 +553,13 @@ class BotService:
                 logger.warning("Telegram could not resolve a custom emoji for user_id=%s", user.id)
                 await message.reply_text("I couldn't retrieve that custom emoji. It may no longer be available.")
                 return
-            items = [_sticker_record(item) for item in stickers if getattr(item, "file_id", "")]
+            items = []
+            for index, sticker in enumerate(stickers):
+                if not getattr(sticker, "file_id", ""):
+                    continue
+                record = _sticker_record(sticker)
+                record["custom_emoji_id"] = custom_ids[index] if index < len(custom_ids) else ""
+                items.append(record)
             if not items:
                 await message.reply_text("Telegram returned no file for that custom emoji.")
             elif len(items) == 1:
@@ -461,7 +639,13 @@ class BotService:
                 text="Telegram could not resolve that ID. Confirm it is a custom_emoji_id, not a file_id or file_unique_id.",
             )
             return
-        items = [_sticker_record(sticker) for sticker in stickers if getattr(sticker, "file_id", "")]
+        items = []
+        for sticker in stickers:
+            if not getattr(sticker, "file_id", ""):
+                continue
+            record = _sticker_record(sticker)
+            record["custom_emoji_id"] = emoji_id
+            items.append(record)
         if not items:
             await context.bot.send_message(chat_id=chat_id, text="Telegram returned no item for that custom emoji ID.")
             return
@@ -549,6 +733,44 @@ class BotService:
         await query.answer()
         parts = query.data.split(":")
         action = parts[0]
+
+        if action == "template" and len(parts) == 2 and self.store:
+            asset = await self.store.get_asset(parts[1], user.id)
+            if not asset:
+                if query.message:
+                    await query.message.reply_text("That source analysis expired. Send the animated emoji again.")
+                return
+            if str(asset.get("format", "")).upper() != "TGS":
+                if query.message:
+                    await query.message.reply_text("Template-based text recreation currently requires a TGS vector animation.")
+                return
+            template_id = secrets.token_hex(6)
+            await self.store.save_template(
+                template_id=template_id,
+                user_id=user.id,
+                file_id=str(asset.get("file_id") or ""),
+                file_unique_id=str(asset.get("file_unique_id") or ""),
+                source_asset_id=str(asset.get("_id") or parts[1]),
+                custom_emoji_id=str(asset.get("custom_emoji_id") or ""),
+                source_member=str(asset.get("source_member") or ""),
+                format_name=str(asset.get("format") or "TGS"),
+                emoji=str(asset.get("emoji") or ""),
+                report=asset.get("report", {}) if isinstance(asset.get("report"), dict) else {},
+                source=str(asset.get("source") or "animated_emoji"),
+            )
+            if query.message:
+                await self._prompt_template_text(query.message.chat_id, user.id, template_id, context)
+            return
+
+        if action == "use_template" and len(parts) == 2 and self.store:
+            template = await self.store.get_template(parts[1], user.id)
+            if not template:
+                if query.message:
+                    await query.message.reply_text("That template expired or belongs to another user. Use /templates to see current templates.")
+                return
+            if query.message:
+                await self._prompt_template_text(query.message.chat_id, user.id, parts[1], context)
+            return
 
         if action == "zip" and len(parts) == 2 and self.store:
             session = await self.store.get_pack_session(parts[1], user.id)
@@ -670,6 +892,9 @@ class BotService:
         try:
             data = await self._download_item_bytes(item, context)
             report = await asyncio.to_thread(analyze_animation, data, _format_hint(item))
+            custom_emoji_id = str(item.get("custom_emoji_id") or "")
+            if custom_emoji_id:
+                report["custom_emoji_id"] = custom_emoji_id
             asset_id = secrets.token_hex(5)
             await self.store.save_asset(
                 asset_id=asset_id,
@@ -681,6 +906,7 @@ class BotService:
                 report=report,
                 emoji=str(item.get("emoji") or ""),
                 source_member=str(item.get("source_member") or ""),
+                custom_emoji_id=custom_emoji_id,
             )
         except AnimationError as exc:
             await context.bot.send_message(chat_id=chat_id, text=f"Could not analyze this animation: {html.escape(str(exc))}", parse_mode="HTML")
@@ -707,6 +933,9 @@ class BotService:
                 buttons.append([
                     InlineKeyboardButton("✍ Replace text", callback_data=f"text:{asset_id}")
                 ])
+            buttons.append([
+                InlineKeyboardButton("✨ Create with this animation", callback_data=f"template:{asset_id}")
+            ])
         await context.bot.send_message(
             chat_id=chat_id,
             text=_report_text(report, asset_id),

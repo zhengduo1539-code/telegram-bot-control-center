@@ -4,3 +4,4 @@ python-telegram-bot>=22.8,<23.0
 pymongo>=4.13,<5.0
 Pillow>=11.0,<13.0
 imageio-ffmpeg>=0.5,<1.0
+fonttools>=4.55,<5.0
