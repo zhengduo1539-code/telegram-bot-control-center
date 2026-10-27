@@ -1,16 +1,35 @@
 from app.config import Settings
 
 
-def test_defaults_keep_database_disabled(monkeypatch):
-    monkeypatch.delenv("BOT_TOKEN", raising=False)
-    monkeypatch.delenv("DATABASE_PATH", raising=False)
-    monkeypatch.delenv("MAX_CONCURRENT_RENDERS", raising=False)
+def test_settings_defaults_and_bounds(monkeypatch):
+    for key in ("BOT_TOKEN", "MONGODB_URI", "MONGODB_DATABASE", "PUBLIC_BASE_URL", "RENDER_EXTERNAL_URL", "WEBHOOK_SECRET", "MAX_DOWNLOAD_BYTES"):
+        monkeypatch.delenv(key, raising=False)
     settings = Settings.from_env()
     assert settings.bot_token == ""
-    assert settings.database_path is None
-    assert settings.max_concurrent_renders == 2
+    assert settings.mongodb_uri == ""
+    assert settings.mongodb_database == "emoji_rebuilder"
+    assert settings.max_download_bytes == 20 * 1024 * 1024
+    assert settings.public_base_url == ""
 
 
-def test_render_concurrency_is_bounded(monkeypatch):
-    monkeypatch.setenv("MAX_CONCURRENT_RENDERS", "100")
-    assert Settings.from_env().max_concurrent_renders == 4
+def test_render_url_is_used_as_public_base(monkeypatch):
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://example.onrender.com/")
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    settings = Settings.from_env()
+    assert settings.public_base_url == "https://example.onrender.com"
+
+
+def test_explicit_public_url_takes_precedence(monkeypatch):
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://public.example/")
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://service.onrender.com")
+    assert Settings.from_env().public_base_url == "https://public.example"
+
+
+def test_invalid_webhook_secret_is_rejected(monkeypatch):
+    monkeypatch.setenv("WEBHOOK_SECRET", "has spaces")
+    try:
+        Settings.from_env()
+    except ValueError as exc:
+        assert "WEBHOOK_SECRET" in str(exc)
+    else:
+        raise AssertionError("Invalid webhook secret should be rejected.")

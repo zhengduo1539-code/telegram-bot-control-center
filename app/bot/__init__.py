@@ -1,1 +1,1 @@
-"""Telegram bot handlers and runtime service."""
+"""Telegram bot runtime and handlers."""

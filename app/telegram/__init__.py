@@ -1,1 +1,1 @@
-"""Telegram Bot API adapters."""
+"""Telegram URL parsing and Bot API helpers."""
