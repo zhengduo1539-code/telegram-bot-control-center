@@ -251,3 +251,39 @@ def test_explicit_auth_source_is_passed_to_pymongo(monkeypatch):
     assert args == ("mongodb+srv://example.invalid/?appName=Cluster0",)
     assert kwargs["authSource"] == "custom_auth_db"
     assert "password" not in str(kwargs).lower()
+
+
+def test_style_preference_is_saved_compactly_and_loaded_from_user_state(mongo_store):
+    store, _, _, _ = mongo_store
+    preference = {
+        "font": "Monaco",
+        "color": "Rainbow",
+        "shape": "Heart",
+        "animation": "Pulse",
+    }
+    store.users.update_one.reset_mock()
+
+    store.save_style(12345, preference)
+
+    store.users.update_one.assert_called_once_with(
+        {"u": 12345},
+        {
+            "$set": {"s": {"f": "Monaco", "c": "Rainbow", "h": "Heart", "a": "Pulse"}},
+            "$setOnInsert": {"u": 12345, "b": 0, "p": __import__("database").EPOCH},
+        },
+        upsert=True,
+    )
+    store.users.find_one.return_value = {
+        "u": 12345,
+        "s": {"f": "Monaco", "c": "Rainbow", "h": "Heart", "a": "Pulse"},
+    }
+    assert store.get_style(12345) == preference
+
+
+def test_style_preference_rejects_partial_or_invalid_values(mongo_store):
+    store, _, _, _ = mongo_store
+    store.users.find_one.return_value = {"s": {"f": "Monaco", "c": "Rainbow"}}
+    assert store.get_style(12345) is None
+
+    with pytest.raises(ValueError):
+        store.save_style(12345, {"font": "Monaco"})

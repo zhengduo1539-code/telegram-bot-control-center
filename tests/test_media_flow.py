@@ -45,37 +45,53 @@ def test_preview_setting_edits_existing_message_using_uploaded_file_id(monkeypat
         edit_message_media=AsyncMock(),
     )
     update = SimpleNamespace(callback_query=query, effective_user=user)
-    uploaded = SimpleNamespace(
+    loading_upload = SimpleNamespace(
         message_id=200,
+        animation=SimpleNamespace(file_id="telegram-loading-file-id"),
+        delete=AsyncMock(),
+    )
+    preview_upload = SimpleNamespace(
+        message_id=201,
         animation=SimpleNamespace(file_id="telegram-preview-file-id"),
         delete=AsyncMock(),
     )
     bot = MagicMock()
-    bot.send_animation = AsyncMock(return_value=uploaded)
+    bot.send_animation = AsyncMock(side_effect=[loading_upload, preview_upload])
     context = SimpleNamespace(bot=bot)
 
     service.sessions[user.id] = Style(text="Hello").normalized()
     service.session_message_ids[user.id] = old_message.message_id
     service.store = MagicMock()
     service.store.get_count.return_value = 1
+    monkeypatch.setattr("main.render_loading_gif", lambda _style: b"GIF89a-test-loading")
     monkeypatch.setattr("main.render_preview_gif", lambda _style: b"GIF89a-test-preview")
 
     asyncio.run(service.on_callback(update, context))
 
-    bot.send_animation.assert_awaited_once()
-    send_kwargs = bot.send_animation.await_args.kwargs
-    assert send_kwargs["chat_id"] == user.id
-    assert send_kwargs["animation"].filename == "animated-text-preview.gif"
-    assert "caption" not in send_kwargs
-    assert "reply_markup" not in send_kwargs
-    uploaded.delete.assert_awaited_once()
-    query.edit_message_media.assert_awaited_once()
-    edit_kwargs = query.edit_message_media.await_args.kwargs
-    assert isinstance(edit_kwargs["media"], InputMediaAnimation)
-    assert edit_kwargs["media"].media == "telegram-preview-file-id"
-    assert edit_kwargs["reply_markup"] is not None
+    assert bot.send_animation.await_count == 2
+    uploads = bot.send_animation.await_args_list
+    assert [call.kwargs["chat_id"] for call in uploads] == [user.id, user.id]
+    assert uploads[0].kwargs["animation"].filename == "animated-text-loading.gif"
+    assert uploads[1].kwargs["animation"].filename == "animated-text-preview.gif"
+    assert all("caption" not in call.kwargs for call in uploads)
+    assert all("reply_markup" not in call.kwargs for call in uploads)
+    loading_upload.delete.assert_awaited_once()
+    preview_upload.delete.assert_awaited_once()
+    assert query.edit_message_media.await_count == 2
+    loading_edit, preview_edit = [call.kwargs for call in query.edit_message_media.await_args_list]
+    assert isinstance(loading_edit["media"], InputMediaAnimation)
+    assert loading_edit["media"].media == "telegram-loading-file-id"
+    assert loading_edit["media"].caption == "Choose the font, color, shape, and animation for your text"
+    assert loading_edit["reply_markup"] is not None
+    assert isinstance(preview_edit["media"], InputMediaAnimation)
+    assert preview_edit["media"].media == "telegram-preview-file-id"
+    assert preview_edit["media"].caption == loading_edit["media"].caption
+    assert preview_edit["reply_markup"] is not None
     assert service.session_message_ids[user.id] == old_message.message_id
     assert service.sessions[user.id].font != "Monaco"
+    service.store.save_style.assert_called_once_with(user.id, {
+        "font": "Arial", "color": "Orange", "shape": "Pill", "animation": "Wave"
+    })
 
 
 def test_create_pack_uses_custom_emoji_type_and_addemoji_link(monkeypatch):

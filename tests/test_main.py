@@ -124,3 +124,54 @@ def test_new_text_reuses_the_last_selected_appearance():
     assert selected.color == "Rainbow"
     assert selected.shape == "Heart"
     assert selected.animation == "Pulse"
+
+
+def test_selector_icons_match_reference_choices_and_arrows_are_identical():
+    default_style = Style(text="Hello").normalized()
+    keyboard = BotService._keyboard(default_style)
+    for row in keyboard.inline_keyboard[:4]:
+        assert row[0].text == "👉🏻"
+        assert row[2].text == "👉🏻"
+    assert keyboard.inline_keyboard[1][1].text == "💊"  # Orange
+    assert BotService._keyboard(Style(text="x", color="Pink").normalized()).inline_keyboard[1][1].text == "💋"
+    assert BotService._keyboard(Style(text="x", color="Lime").normalized()).inline_keyboard[1][1].text == "🟢🟡"
+    assert BotService._keyboard(Style(text="x", color="Rainbow").normalized()).inline_keyboard[1][1].text == "🌈"
+    assert BotService._keyboard(Style(text="x", shape="Heart").normalized()).inline_keyboard[2][1].text == "💟"
+    assert BotService._keyboard(Style(text="x", animation="Wave").normalized()).inline_keyboard[3][1].text == "🚩"
+    assert BotService._keyboard(Style(text="x", animation="Float").normalized()).inline_keyboard[3][1].text == "⬇️"
+    assert BotService._keyboard(Style(text="x", animation="Tilt").normalized()).inline_keyboard[3][1].text == "↕️"
+    assert BotService._keyboard(Style(text="x", animation="None").normalized()).inline_keyboard[3][1].text == "🚫"
+
+
+def test_new_text_loads_saved_appearance_after_service_restart(monkeypatch):
+    service = BotService()
+    service.bot_username = "EmojiTitleBot"
+    service.store = MagicMock()
+    service.store.register_user.return_value = False
+    service.store.get_style.return_value = {
+        "font": "Monaco",
+        "color": "Rainbow",
+        "shape": "Heart",
+        "animation": "Pulse",
+    }
+    service.store.get_count.return_value = 0
+    message = SimpleNamespace(
+        text="New",
+        chat=SimpleNamespace(type=ChatType.PRIVATE),
+        reply_text=AsyncMock(),
+        reply_animation=AsyncMock(return_value=SimpleNamespace(message_id=42)),
+    )
+    update = SimpleNamespace(effective_message=message, effective_user=SimpleNamespace(id=123456))
+    context = SimpleNamespace(bot=SimpleNamespace(), args=[])
+
+    with patch("main.render_preview_gif", return_value=b"GIF89a-test"):
+        asyncio.run(service.on_text(update, context))
+
+    selected = service.sessions[123456]
+    assert selected.text == "New"
+    assert (selected.font, selected.color, selected.shape, selected.animation) == (
+        "Monaco", "Rainbow", "Heart", "Pulse"
+    )
+    service.store.save_style.assert_called_once_with(123456, {
+        "font": "Monaco", "color": "Rainbow", "shape": "Heart", "animation": "Pulse"
+    })

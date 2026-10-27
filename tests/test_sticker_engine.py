@@ -14,6 +14,7 @@ from sticker_engine import (
     SHAPE_OPTIONS,
     Style,
     render_frame,
+    render_loading_gif,
     render_preview_gif,
     render_preview_png,
     _font,
@@ -130,3 +131,17 @@ def test_rainbow_palette_is_available():
     assert "Rainbow" in PALETTES
     preview = render_preview_gif(Style(text="Hi", color="Rainbow"))
     assert preview.startswith((b"GIF87a", b"GIF89a"))
+
+
+def test_loading_preview_is_a_centered_looping_spinner_on_white_card():
+    content = render_loading_gif(Style(text="Hello", color="Orange"))
+    assert content.startswith((b"GIF87a", b"GIF89a"))
+    with Image.open(BytesIO(content)) as image:
+        assert image.size == (660, 220)
+        assert image.n_frames >= 12
+        image.seek(0)
+        first = image.convert("RGB")
+        assert first.getpixel((0, 0)) == (255, 255, 255)
+        image.seek(image.n_frames // 2)
+        second = image.convert("RGB")
+        assert list(first.getdata()) != list(second.getdata())
