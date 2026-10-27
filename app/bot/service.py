@@ -28,6 +28,7 @@ from telegram.ext import (
 )
 
 from app.analysis.animation import AnimationError, analyze_animation, change_tgs_speed, recolor_tgs, replace_text_tgs
+from app.analysis.template_rebuild import rebuild_tgs_text_from_template
 from app.config import Settings
 from app.storage.mongo import MongoStore
 from app.telegram.links import normalize_custom_emoji_id, parse_pack_link
@@ -102,6 +103,8 @@ def _report_text(report: dict[str, Any], asset_id: str) -> str:
         lines.append(html.escape(str(report["note"])))
     if report.get("sampled_frames") is not None:
         lines.append(f"Sampled video frames: <code>{report['sampled_frames']}</code>")
+    if report.get("custom_emoji_id"):
+        lines.append(f"Custom Emoji ID: <code>{html.escape(str(report['custom_emoji_id']))}</code>")
     lines.append(f"Reference: <code>{asset_id}</code>")
     return "\n".join(lines)
 
@@ -161,6 +164,7 @@ class BotService:
                     BotCommand("recent", "Show recent analysis reports"),
                     BotCommand("id", "Analyze a custom animated emoji ID"),
                     BotCommand("cancel", "Cancel the current edit"),
+                    BotCommand("templates", "List your saved animation templates"),
                 ]
             )
             self.status, self.reason, self.ready = "ready", "MongoDB and Telegram are connected.", True
@@ -178,7 +182,8 @@ class BotService:
         app.add_handler(CommandHandler("recent", self._recent_command))
         app.add_handler(CommandHandler("id", self._id_command))
         app.add_handler(CommandHandler("cancel", self._cancel_command))
-        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed|text|zip):"))
+        app.add_handler(CommandHandler("templates", self._templates_command))
+        app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed|text|zip|template|use_template):"))
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, self._message))
         app.add_error_handler(self._error_handler)
 
@@ -235,8 +240,8 @@ class BotService:
             "👋 <b>Animated Emoji Analyzer & Rebuilder</b>\n\n"
             "Send a Telegram custom animated emoji, a sticker, a <code>t.me/addemoji/…</code> "
             "or <code>t.me/addstickers/…</code> link, or upload a .TGS/.WEBM/.WEBP file or ZIP template library.\n\n"
-            "I inspect animation metadata, colors, vector shape types, timing and keyframes where available. "
-            "TGS files can be recolored or speed-adjusted when the result satisfies Telegram's constraints.",
+            "Use <b>Create with this animation</b> to save a TGS motion/style template, then send your own text or supported Unicode symbol. "
+            "Editable source text is preserved exactly; vector-only designs use a font-outline reconstruction with adapted motion and colors.",
             parse_mode="HTML",
         )
 
@@ -310,9 +315,10 @@ class BotService:
 
     async def _cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("pending_edit", None)
+        context.user_data.pop("pending_template", None)
         message = update.effective_message
         if message:
-            await message.reply_text("Edit cancelled.")
+            await message.reply_text("Current operation cancelled.")
 
     async def _message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.effective_message
@@ -320,6 +326,11 @@ class BotService:
         if not message or not user or not self.store:
             return
         await self._touch_user(user.id, user.username)
+
+        pending_template = context.user_data.get("pending_template")
+        if pending_template:
+            await self._consume_template_text(message, user.id, context, pending_template)
+            return
 
         pending = context.user_data.get("pending_edit")
         if pending:
@@ -381,7 +392,13 @@ class BotService:
                 logger.warning("Telegram could not resolve a custom emoji for user_id=%s", user.id)
                 await message.reply_text("I couldn't retrieve that custom emoji. It may no longer be available.")
                 return
-            items = [_sticker_record(item) for item in stickers if getattr(item, "file_id", "")]
+            items = []
+            for index, sticker in enumerate(stickers):
+                if not getattr(sticker, "file_id", ""):
+                    continue
+                record = _sticker_record(sticker)
+                record["custom_emoji_id"] = custom_ids[index] if index < len(custom_ids) else ""
+                items.append(record)
             if not items:
                 await message.reply_text("Telegram returned no file for that custom emoji.")
             elif len(items) == 1:
@@ -461,7 +478,13 @@ class BotService:
                 text="Telegram could not resolve that ID. Confirm it is a custom_emoji_id, not a file_id or file_unique_id.",
             )
             return
-        items = [_sticker_record(sticker) for sticker in stickers if getattr(sticker, "file_id", "")]
+        items = []
+        for sticker in stickers:
+            if not getattr(sticker, "file_id", ""):
+                continue
+            record = _sticker_record(sticker)
+            record["custom_emoji_id"] = emoji_id
+            items.append(record)
         if not items:
             await context.bot.send_message(chat_id=chat_id, text="Telegram returned no item for that custom emoji ID.")
             return
@@ -670,6 +693,9 @@ class BotService:
         try:
             data = await self._download_item_bytes(item, context)
             report = await asyncio.to_thread(analyze_animation, data, _format_hint(item))
+            custom_emoji_id = str(item.get("custom_emoji_id") or "")
+            if custom_emoji_id:
+                report["custom_emoji_id"] = custom_emoji_id
             asset_id = secrets.token_hex(5)
             await self.store.save_asset(
                 asset_id=asset_id,
@@ -681,6 +707,7 @@ class BotService:
                 report=report,
                 emoji=str(item.get("emoji") or ""),
                 source_member=str(item.get("source_member") or ""),
+                custom_emoji_id=custom_emoji_id,
             )
         except AnimationError as exc:
             await context.bot.send_message(chat_id=chat_id, text=f"Could not analyze this animation: {html.escape(str(exc))}", parse_mode="HTML")
@@ -707,6 +734,9 @@ class BotService:
                 buttons.append([
                     InlineKeyboardButton("✍ Replace text", callback_data=f"text:{asset_id}")
                 ])
+            buttons.append([
+                InlineKeyboardButton("✨ Create with this animation", callback_data=f"template:{asset_id}")
+            ])
         await context.bot.send_message(
             chat_id=chat_id,
             text=_report_text(report, asset_id),
