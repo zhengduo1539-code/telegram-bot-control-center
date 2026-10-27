@@ -1,83 +1,61 @@
-# EmojiTitleBot | Text from Emojis
+# Telegram Animated Custom Emoji Generator
 
-EmojiTitleBot turns a short text line into an animated Telegram **custom emoji pack**. Each pack contains three 100×100 VP9 WebM custom emoji variants, and every variant preserves the complete text rather than splitting it into character fragments. The editor keeps the selected appearance for the next text, previews the design as a looping GIF, and creates a text-named `addemoji` pack. The existing free daily allowance, referral bonuses, and Telegram Stars PRO subscription remain in place.
+A free, quota-free, Telegram bot that turns short text into animated **custom emoji packs**. It uses a live GIF preview and an inline customization menu, then creates a Telegram custom-emoji set with animated `.tgs` vector assets.
 
 ## Features
 
-- Welcome and user-facing reply copy aligned with the reference video.
-- Animated GIF preview that updates when users change font, color, shape, or animation.
-- Shape and animation selectors expose only the three visual states seen in the supplied recording; option IDs are local renderer identifiers, not claims about the source bot's undisclosed internal names. Additional states are not inferred from incomplete footage.
-- Fixed-size custom emoji packs containing three full-text design variants (not character-split fragments).
-- Custom emoji rendered as transparent VP9 WebM at exactly 100 × 100, 30 FPS, and two seconds per loop, with a 256 KB size guard per item.
-- High-quality gradient rendering, including a moving Rainbow palette; after creation the bot previews the result using a real custom-emoji message entity rather than sending a regular sticker.
-- Three free packs per user per UTC day, plus one-time referral bonus credits.
-- PRO recurring subscription billed with 100 Telegram Stars per 30-day period; PRO permits unlimited pack creation and uses the supplied text as the pack title.
-- Payment verification through Telegram pre-checkout and successful-payment updates, with unique charge IDs persisted to prevent duplicate entitlement grants.
-- MongoDB daily quota records with atomic increments and TTL cleanup; compact user entitlement and payment records.
-- Safe migration from the previous quota schema, strict quota-document validation where permissions allow, and bounded user-provided identifiers.
-- /health readiness endpoint (including a MongoDB ping) and /healthz for Render health checks.
-- HTTP client INFO logs are disabled for httpx and httpcore because Telegram Bot API request URLs contain the bot token.
-- A single Render Web Service runs FastAPI health endpoints and Telegram long polling in the same process.
+- Interactive inline menu: Raleway Italic, Arial, Roboto, Madefor, Monaco, Impact, Rubik, Comic Sans; vibrant color palettes; three visual shape states; Heartbeat, Wave and Pop motion states.
+- Re-rendered animated GIF preview when a setting changes.
+- Three complete-text custom emoji variants per pack.
+- Telegram Bot API call uses `sticker_type="custom_emoji"` and `InputSticker(format="animated")` for `.tgs` data.
+- Direct pack URL uses `https://t.me/addemoji/<short_name>`.
+- Progress updates during vector generation and publication.
+- No PRO plan, payment handlers, Stars invoices, referral credits, database, or daily limit.
+- FastAPI `/healthz` liveness endpoint for Render and `/health` readiness endpoint.
 
-## MongoDB collections
+## Important platform note
 
-### daily_usage
+The bot itself is free and has no paywall. Whether a user can add or use a custom emoji pack is still controlled by Telegram account features and Telegram Premium rules. The bot cannot remove Telegram's platform-level requirements.
 
-| Field | Meaning |
-| --- | --- |
-| u | Telegram user ID |
-| d | UTC day (YYYY-MM-DD) |
-| n | Free packs used that day (0–3) |
-| x | Expiration timestamp, cleaned by a TTL index |
+## Setup
 
-The startup migration renames the old quota fields (user_id, day, count, expires_at) to the compact schema without resetting quota. A unique (u, d) index protects each daily record.
+1. Create a bot with BotFather and copy its token.
+2. Set `BOT_TOKEN` in Render's environment (or your local shell). No MongoDB settings are needed.
+3. Deploy as a Render Web Service with Python.
+4. Build command: `pip install -r requirements.txt`
+5. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+6. Health check path: `/healthz`
 
-### `extra_usage`
+Locally:
 
-Stores PRO and referral-bonus pack usage beyond the three free daily slots. It has a unique `(u, d)` index and a TTL index. Using a separate collection keeps the historic `daily_usage` validator and existing quota data compatible with database accounts that do not have `collMod` permission. Usage shown in bot replies and admin statistics combines both buckets.
+```bash
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+# Set BOT_TOKEN in your environment
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-### user_state
+## Use
 
-One small record per user stores the bonus-pack balance, PRO expiry, and the referrer ID when present. New-user registration is idempotent; repeated /start messages do not award repeated referral credits.
+Send `/start`, then send text of at most 20 characters. Use the inline arrows to adjust font, color, shape, and motion. Tap **Create Custom Emoji Pack**. The bot produces three full-text animated custom emojis and replies with an `addemoji` link and share button.
 
-### star_payments
+## Technical profile
 
-Stores the Telegram payment charge ID, user ID, amount, payload and subscription expiry. A unique charge-ID index prevents duplicate Stars updates from granting PRO multiple times. This also preserves charge references needed for payment support or refunds.
+- `.tgs`: gzip-compressed Lottie vector JSON, 512×512 canvas, 60 FPS, 180 frames (3 seconds max), loop-safe animation and a hard 64 KiB file size guard.
+- Text is converted to vector glyph contours with fontTools so the `.tgs` is self-contained and does not rely on the Telegram client having the selected font installed.
+- Monaco, Impact, Madefor, and Comic Sans use their exact typeface if installed; otherwise a compatible local fallback is used. Madefor is mapped to Montserrat on the default free deployment because its proprietary font is not bundled.
+- GIF preview is rendered locally with Pillow. CPU-heavy rendering runs in worker threads, not in the Telegram event loop.
+- Preferences and edit sessions are held in memory. Restarting the process clears active sessions and cached user preferences; the bot does not persist user data.
 
-## Required environment variables
-
-Set these in Render Dashboard → Service → Environment. Do not put live tokens or database credentials in GitHub or chat messages.
-
-- BOT_TOKEN: token issued by BotFather.
-- ADMIN_IDS: one or more numeric Telegram user IDs separated by commas, spaces or semicolons.
-- MONGODB_URI: MongoDB connection URI with Atlas network access configured.
-- MONGODB_DATABASE (optional): database name override; defaults to animated_text_creator if the URI has no database path.
-- MONGODB_AUTH_SOURCE (optional): authentication database override, only if required by the working URI.
-
-If required settings are missing, the HTTP service can remain available for Render's /healthz probe while Telegram polling stays disabled; /health returns HTTP 503 until the bot and database are ready. The URI is passed to PyMongo without logging its credentials.
-
-## Render configuration
-
-- Runtime: Python
-- Build command: pip install -r requirements.txt
-- Start command: uvicorn main:app --host 0.0.0.0 --port $PORT
-- Render health check: /healthz
-- UptimeRobot URL: https://YOUR-SERVICE.onrender.com/health
-
-## Telegram payments and platform constraints
-
-Digital goods must be sold using Telegram Stars (XTR). PRO uses Telegram's 30-day recurring Stars subscription period. The app only activates PRO after a successful-payment update, not just after pre-checkout approval. Custom emoji packs use Telegram's `custom_emoji` sticker-set type and the `t.me/addemoji/` deep link. Telegram Premium may be needed to add or use custom emoji sets; that is separate from this bot's PRO subscription.
-
-## Local setup and tests
-
-Create a virtual environment, install requirements-dev.txt, and set environment variables in your shell. Production intentionally reads environment variables directly and does not auto-load .env.
-
-Run the service:
-
-    uvicorn main:app --host 0.0.0.0 --port 8000
+## Validation
 
 Run tests:
 
-    pytest -q
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
 
-The quota resets at 00:00 UTC. If rendering or Telegram upload fails before a pack is created, the quota reservation is released; if a referral bonus was used for that attempt, it is restored.
+A successful local structural validation proves the TGS gzip/Lottie envelope, canvas, timing, and size constraints. Final acceptance by Telegram still requires testing with a real bot token and a Telegram client.

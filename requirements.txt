@@ -1,10 +1,8 @@
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 python-telegram-bot>=22.8,<23.0
-pymongo>=4.13,<5.0
 Pillow>=11.0,<13.0
-imageio-ffmpeg>=0.6,<1.0
-# Exact reference typefaces (SIL Open Font License; downloaded at build time)
+fonttools>=4.58,<5.0
 fontpkg==0.2.2
 fontpkg-raleway==4.26
 fontpkg-arimo==1.341

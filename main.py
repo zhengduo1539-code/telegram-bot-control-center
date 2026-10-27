@@ -1,4 +1,9 @@
-"""EmojiTitleBot: FastAPI health endpoint + Telegram long polling."""
+"""EmojiTitleBot-style Telegram Custom Animated Emoji generator.
+
+Free, quota-free implementation: no MongoDB, subscriptions, invoices, Stars,
+PRO branches, or payment handlers. FastAPI is used only for Render health probes;
+Telegram updates are received through long polling.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -8,882 +13,431 @@ import re
 import secrets
 import time
 from contextlib import asynccontextmanager
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass, replace
+from io import BytesIO
 from urllib.parse import quote
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputMediaAnimation, InputSticker, LabeledPrice, MessageEntity, Sticker, Update
-from telegram.constants import ChatType
-from telegram.error import TelegramError
-from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, PreCheckoutQueryHandler, filters
-
-from database import DAILY_LIMIT, UsageStore
-from sticker_engine import ANIMATION_OPTIONS, CUSTOM_EMOJI_COUNT, FONT_OPTIONS, PALETTES, SHAPE_OPTIONS, Style, render_loading_gif, render_pack_webm, render_preview_gif
-
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from telegram import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputFile,
+    InputMediaAnimation,
+    InputSticker,
+    Sticker,
+    Update,
+)
+from telegram.error import BadRequest, TelegramError
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
 )
 
-# httpx logs full request URLs at INFO. Telegram Bot API URLs contain the bot
-# token in the path, so keep HTTP client request logs above INFO to avoid
-# writing credentials into Render logs.
+from naming import make_pack_name
+
+from emoji_engine import (
+    ANIMATION_ICONS,
+    ANIMATION_OPTIONS,
+    COLOR_ICONS,
+    COLOR_OPTIONS,
+    FONT_OPTIONS,
+    PALETTES,
+    SHAPE_ICONS,
+    SHAPE_OPTIONS,
+    Style,
+    generate_pack,
+    render_preview_gif,
+)
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# httpx request URLs contain the bot token in the path; never log them at INFO.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-logger = logging.getLogger("emojititlebot")
-SERVICE_NAME = "EmojiTitleBot | Text from Emojis"
-PRO_PRICE_STARS = 100
-PRO_PERIOD_SECONDS = 30 * 24 * 60 * 60
-STICKER_EMOJI = "✨"
+logger = logging.getLogger("emoji_title_bot")
+SERVICE_NAME = "Animated Custom Emoji Generator"
+CALLBACK_PREFIX = "e"
+MAX_TEXT_LENGTH = 20
 
 
-def parse_admin_ids(value: str | None) -> set[int]:
-    ids: set[int] = set()
-    for token in re.split(r"[\s,;]+", value or ""):
-        token = token.strip()
-        if token.isdigit():
-            ids.add(int(token))
-    return ids
+@dataclass(slots=True)
+class EditorSession:
+    token: str
+    owner_id: int
+    chat_id: int
+    message_id: int | None
+    style: Style
+    created_at: float
+    lock: asyncio.Lock
+    creating: bool = False
 
 
 class BotService:
     def __init__(self) -> None:
         self.token = os.getenv("BOT_TOKEN", "").strip()
-        self.mongo_uri = os.getenv("MONGODB_URI", "").strip()
-        self.mongo_database = os.getenv("MONGODB_DATABASE", "").strip()
-        self.mongo_auth_source = os.getenv("MONGODB_AUTH_SOURCE", "").strip()
-        self.admin_ids = parse_admin_ids(os.getenv("ADMIN_IDS"))
         self.status = "not_configured"
-        self.status_reason = "Set BOT_TOKEN, ADMIN_IDS and MONGODB_URI in Render Environment to enable the bot."
-        self.store: UsageStore | None = None
+        self.status_reason = "Set BOT_TOKEN in the Render environment to enable Telegram polling."
         self.application: Application | None = None
         self.bot_username = ""
-        self.sessions: dict[int, Style] = {}
-        # Keep style preferences in memory so the next text starts with the last selected appearance.
+        self.sessions: dict[str, EditorSession] = {}
         self.last_styles: dict[int, Style] = {}
-        self.session_message_ids: dict[int, int] = {}
-        self.preview_updates: set[int] = set()
-        self.locks: dict[int, asyncio.Lock] = {}
+        self.ready = False
 
     async def start(self) -> None:
-        missing = [key for key, value in (("BOT_TOKEN", self.token), ("MONGODB_URI", self.mongo_uri)) if not value]
-        if not self.admin_ids:
-            missing.append("ADMIN_IDS (at least one numeric Telegram user ID)")
-        if missing:
+        if not self.token:
             self.status = "not_configured"
-            self.status_reason = "Missing required environment variable(s): " + ", ".join(missing)
-            logger.warning("Bot polling not started; missing environment variables: %s", ", ".join(missing))
+            logger.warning("Telegram polling disabled: BOT_TOKEN is not configured.")
             return
         try:
-            store = UsageStore(
-                self.mongo_uri,
-                database_name=self.mongo_database or None,
-                auth_source=self.mongo_auth_source or None,
-            )
-            self.store = store
-            await asyncio.to_thread(store.initialize)
             application = ApplicationBuilder().token(self.token).build()
             self.application = application
             application.bot_data["service"] = self
             application.add_handler(CommandHandler("start", self.cmd_start))
             application.add_handler(CommandHandler("help", self.cmd_help))
             application.add_handler(CommandHandler("cancel", self.cmd_cancel))
-            application.add_handler(CommandHandler("admin", self.cmd_admin))
-            application.add_handler(CommandHandler("pro", self.cmd_pro))
-            application.add_handler(PreCheckoutQueryHandler(self.on_precheckout))
-            application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, self.on_successful_payment))
-            application.add_handler(CallbackQueryHandler(self.on_callback))
+            application.add_handler(CallbackQueryHandler(self.on_callback, pattern=r"^e:"))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_text))
             await application.initialize()
             me = await application.bot.get_me()
             self.bot_username = me.username or ""
             await application.bot.set_my_commands([
-                BotCommand("start", "Start EmojiTitleBot"),
-                BotCommand("help", "How to create emoji packs"),
-                BotCommand("pro", "Get PRO with Telegram Stars"),
-                BotCommand("cancel", "Cancel current creation"),
+                BotCommand("start", "Start the Custom Emoji generator"),
+                BotCommand("help", "How to create animated custom emojis"),
+                BotCommand("cancel", "Cancel the current editor"),
             ])
-            await application.bot.delete_webhook(drop_pending_updates=False)
             await application.start()
             if application.updater is None:
-                raise RuntimeError("Telegram polling updater is unavailable.")
-            await application.updater.start_polling(drop_pending_updates=False, allowed_updates=Update.ALL_TYPES)
-            self.status = "running"
-            self.status_reason = ""
-            logger.info("Telegram bot started successfully as @%s", self.bot_username)
+                raise RuntimeError("Telegram Updater is unavailable; polling cannot start.")
+            await application.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+            self.ready = True
+            self.status = "ok"
+            self.status_reason = "Telegram long polling is running."
+            logger.info("Telegram polling started for @%s", self.bot_username)
         except Exception as exc:
+            self.ready = False
             self.status = "error"
-            self.status_reason = f"Bot startup failed ({type(exc).__name__}). Check Render application logs."
-            logger.exception("Bot startup failed; health server will remain available")
-            if self.store:
-                await asyncio.to_thread(self.store.close)
-                self.store = None
+            self.status_reason = f"Telegram startup failed: {type(exc).__name__}"
+            logger.exception("Failed to start Telegram polling")
+            await self.stop()
 
     async def stop(self) -> None:
-        application = self.application
-        if application is not None:
-            try:
-                if application.updater is not None and application.updater.running:
-                    await application.updater.stop()
-                if application.running:
-                    await application.stop()
-                await application.shutdown()
-            except Exception:
-                logger.exception("Error while shutting down the Telegram bot")
-            self.application = None
-        if self.store is not None:
-            await asyncio.to_thread(self.store.close)
-            self.store = None
-
-    @staticmethod
-    def _private_chat(update: Update) -> bool:
-        message = update.effective_message
-        return bool(message and message.chat and message.chat.type == ChatType.PRIVATE)
-
-    def _style_caption(self, style: Style, count: int | None = None) -> str:
-        return "Choose the font, color, shape, and animation for your text"
-
-    async def _upload_animation_file_id(self, bot, user_id: int, data: bytes, filename: str) -> str:
-        """Upload an animation temporarily and return its reusable Telegram file_id."""
-        uploaded = await bot.send_animation(
-            chat_id=user_id,
-            animation=InputFile(data, filename=filename),
-        )
-        animation = getattr(uploaded, "animation", None)
-        file_id = getattr(animation, "file_id", None)
-        try:
-            await uploaded.delete()
-        except Exception:
-            logger.debug("Temporary animation message could not be deleted for user_id=%s", user_id)
-        if not isinstance(file_id, str) or not file_id:
-            raise RuntimeError(f"Telegram did not return a file_id for {filename}")
-        return file_id
-
-    async def _persist_style_preference(self, user_id: int, style: Style) -> None:
-        """Keep visual choices available for the next message and after a restart."""
-        self.last_styles[user_id] = style
-        if not self.store:
+        app = self.application
+        self.ready = False
+        if not app:
             return
-        preference = {
-            "font": style.font,
-            "color": style.color,
-            "shape": style.shape,
-            "animation": style.animation,
-        }
         try:
-            await asyncio.to_thread(self.store.save_style, user_id, preference)
+            if app.updater and app.updater.running:
+                await app.updater.stop()
         except Exception:
-            # A preference write must never make preview editing or pack creation fail.
-            logger.exception("Could not persist style preference for user_id=%s", user_id)
-    @staticmethod
-    def _keyboard(style: Style, *, creating: bool = False) -> InlineKeyboardMarkup:
-        color_icons = {
-            "Orange": "💊", "Pink": "💋", "Lime": "🟢🟡",
-            "Violet": "💜", "Cyan": "🔵🟢", "Gold": "🟡🟠",
-            "Rainbow": "🌈",
-        }
-        # These IDs describe the three icon states visible in the recording;
-        # source-side names and any unshown states are intentionally not inferred.
-        shape_icons = {
-            "shape_0": "🎟️", "shape_1": "🟣", "shape_2": "💟",
-        }
-        animation_icons = {
-            "anim_0": "🚩", "anim_1": "🚫", "anim_2": "⬇️",
-        }
-        # The reference uses the same right-pointing hand on both sides of each setting.
-        left_arrow = "👉🏻"
-        right_arrow = "👉🏻"
-        create_label = "⌛ Creating Emoji Pack..." if creating else "✅ Create Emoji Pack"
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton(left_arrow, callback_data="font:-1"),
-             InlineKeyboardButton(style.font, callback_data="noop"),
-             InlineKeyboardButton(right_arrow, callback_data="font:1")],
-            [InlineKeyboardButton(left_arrow, callback_data="color:-1"),
-             InlineKeyboardButton(color_icons.get(style.color, "🎨"), callback_data="noop"),
-             InlineKeyboardButton(right_arrow, callback_data="color:1")],
-            [InlineKeyboardButton(left_arrow, callback_data="shape:-1"),
-             InlineKeyboardButton(shape_icons.get(style.shape, "◈"), callback_data="noop"),
-             InlineKeyboardButton(right_arrow, callback_data="shape:1")],
-            [InlineKeyboardButton(left_arrow, callback_data="anim:-1"),
-             InlineKeyboardButton(animation_icons.get(style.animation, "✨"), callback_data="noop"),
-             InlineKeyboardButton(right_arrow, callback_data="anim:1")],
-            [InlineKeyboardButton(create_label, callback_data="create")],
-        ])
-
-    def _referral_url(self, user_id: int) -> str:
-        username = re.sub(r"[^A-Za-z0-9_]", "", self.bot_username) or "EmojiTitleBot_bot"
-        return f"https://t.me/{username}?start=ref_{user_id}"
-
-    def _share_url(self, user_id: int) -> str:
-        referral = self._referral_url(user_id)
-        text = quote("Create your own animated emoji pack with EmojiTitleBot!")
-        return f"https://t.me/share/url?url={quote(referral, safe='')}&text={text}"
-
-    def _account_keyboard(self, user_id: int, *, include_invite: bool = False) -> InlineKeyboardMarkup:
-        rows = [[InlineKeyboardButton("⭐ Get PRO — 100 Stars", callback_data="get_pro")]]
-        rows.append([
-            InlineKeyboardButton(
-                "👥 Invite friend" if include_invite else "🔗 Share",
-                url=self._share_url(user_id),
-            )
-        ])
-        return InlineKeyboardMarkup(rows)
-
-    @staticmethod
-    def _time_until_utc_reset(now: datetime | None = None) -> tuple[int, int]:
-        current = now or datetime.now(timezone.utc)
-        if current.tzinfo is None:
-            current = current.replace(tzinfo=timezone.utc)
-        current = current.astimezone(timezone.utc)
-        next_day = current.date() + timedelta(days=1)
-        reset_at = datetime.combine(next_day, datetime.min.time(), tzinfo=timezone.utc)
-        seconds = max(0, int((reset_at - current).total_seconds()))
-        total_minutes = (seconds + 59) // 60
-        return total_minutes // 60, total_minutes % 60
-
-    def _limit_message(self, user_id: int, now: datetime | None = None) -> str:
-        hours, minutes = self._time_until_utc_reset(now)
-        return (
-            "You have reached the limit of 3 packs per day.\n"
-            f"You can create a new pack in {hours} hours in {minutes} minutes.\n\n"
-            "With 💎 PRO subscription you get:\n"
-            "- Unlimited pack creation\n"
-            "- Your text as the pack title instead of bot signature\n\n"
-            "Or invite a friend to get +1 free pack!\n"
-            f"{self._referral_url(user_id)}"
-        )
+            logger.exception("Error stopping Telegram updater")
+        try:
+            if app.running:
+                await app.stop()
+        except Exception:
+            logger.exception("Error stopping Telegram application")
+        try:
+            await app.shutdown()
+        except Exception:
+            logger.exception("Error shutting down Telegram application")
+        self.application = None
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        message, user = update.effective_message, update.effective_user
-        if not message or not user:
+        if not update.effective_message:
             return
-
-        referrer_id = None
-        if context.args:
-            match = re.fullmatch(r"ref_(\d{1,20})", context.args[0])
-            if match:
-                candidate = int(match.group(1))
-                if candidate != user.id:
-                    referrer_id = candidate
-
-        referral_rewarded = False
-        if self.store:
-            try:
-                referral_rewarded = await asyncio.to_thread(
-                    self.store.register_user, user.id, referrer_id
-                )
-            except Exception:
-                logger.exception("Could not register Telegram user_id=%s", user.id)
-
-        if referral_rewarded and referrer_id is not None:
-            try:
-                account = await asyncio.to_thread(self.store.get_account, referrer_id)
-                await context.bot.send_message(
-                    chat_id=referrer_id,
-                    text=(
-                        "Your friend joined the bot! 🎉\n"
-                        f"+1 free pack added. You have {account['bonus_count']} bonus packs."
-                    ),
-                    reply_markup=self._account_keyboard(referrer_id),
-                )
-            except TelegramError:
-                logger.warning("Could not notify referrer user_id=%s", referrer_id)
-            except Exception:
-                logger.exception("Could not update referral notification for user_id=%s", referrer_id)
-
-        username = self.bot_username or "EmojiTitleBot"
-        await message.reply_text(
-            f"👋 Hello! I'm @{username}. I can convert any text into beautiful animated emoji text. "
-            "Just send me your text and I will create a custom emoji pack for you!"
+        text = (
+            "👋 Hello! I turn short text into animated Telegram Custom Emojis.\n\n"
+            "Send me a word, name, or short phrase to open the editor.\n"
+            "Choose a font, color, shape, and animation, preview the result, then create your pack.\n\n"
+            "No bot subscription, quota, or payment is required. Telegram's own Premium rules for using custom emojis still apply."
         )
+        await update.effective_message.reply_text(text)
 
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        message = update.effective_message
-        if message:
-            await message.reply_text(
-                "Send any short text to open the animated preview. Use the arrows to change its font, color, shape, and animation, then tap *Create Emoji Pack*.\n\n"
-                "Commands: /start, /help, /pro, /cancel" + ("\n/admin — administrator usage stats" if update.effective_user and update.effective_user.id in self.admin_ids else ""),
-                parse_mode="Markdown",
-            )
-
-    async def _send_pro_invoice(self, chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not self.store or self.status != "running":
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="The payment service is temporarily unavailable. Please try again later.",
-            )
-            return
-        payload = f"pro:{user_id}:{secrets.token_urlsafe(12)}"
-        await context.bot.send_invoice(
-            chat_id=chat_id,
-            title="PRO Subscription",
-            description="Unlimited animated emoji pack creation and custom pack titles for 30 days.",
-            payload=payload,
-            provider_token="",
-            currency="XTR",
-            prices=[LabeledPrice("PRO — 30 days", PRO_PRICE_STARS)],
-            subscription_period=PRO_PERIOD_SECONDS,
-            start_parameter="emoji-pro",
-        )
-
-    async def cmd_pro(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        message, user = update.effective_message, update.effective_user
-        if not message or not user:
-            return
-        if not self._private_chat(update):
-            await message.reply_text("Please open me in a private chat to subscribe to PRO.")
-            return
-        try:
-            await self._send_pro_invoice(message.chat_id, user.id, context)
-        except TelegramError:
-            logger.exception("Could not send PRO invoice to user_id=%s", user.id)
-            await message.reply_text("I couldn't open the Telegram Stars invoice. Please try again later.")
-
-    async def on_precheckout(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        query = update.pre_checkout_query
-        if not query:
-            return
-        match = re.fullmatch(r"pro:(\d{1,20}):([A-Za-z0-9_-]{8,64})", query.invoice_payload)
-        approved = bool(
-            match
-            and int(match.group(1)) == query.from_user.id
-            and query.currency == "XTR"
-            and query.total_amount == PRO_PRICE_STARS
-        )
-        try:
-            await query.answer(
-                ok=approved,
-                error_message=None if approved else "This PRO invoice is not valid for your account. Please open a new invoice from the bot.",
-            )
-        except TelegramError:
-            logger.exception("Could not answer a Stars pre-checkout query")
-
-    async def on_successful_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        message, user = update.effective_message, update.effective_user
-        payment = message.successful_payment if message else None
-        if not message or not user or not payment or not self.store:
-            return
-        payload_match = re.fullmatch(r"pro:(\d{1,20}):([A-Za-z0-9_-]{8,64})", payment.invoice_payload)
-        if (
-            not payload_match
-            or int(payload_match.group(1)) != user.id
-            or payment.currency != "XTR"
-            or payment.total_amount != PRO_PRICE_STARS
-        ):
-            logger.warning("Ignoring invalid PRO payment details for user_id=%s", user.id)
-            await message.reply_text("We couldn't verify this PRO payment. Please contact support with your Telegram receipt.")
-            return
-        expires_at = payment.subscription_expiration_date or (
-            datetime.now(timezone.utc) + timedelta(seconds=PRO_PERIOD_SECONDS)
-        )
-        try:
-            applied = await asyncio.to_thread(
-                self.store.record_pro_payment,
-                user_id=user.id,
-                charge_id=payment.telegram_payment_charge_id,
-                amount=payment.total_amount,
-                payload=payment.invoice_payload,
-                expires_at=expires_at,
-            )
-            if not applied:
-                await message.reply_text("This Telegram Stars payment has already been processed.")
-                return
-            await message.reply_text(
-                "🎉 PRO subscription activated!\n"
-                "You now have unlimited pack creation and custom pack titles while your subscription is active.",
-                reply_markup=self._account_keyboard(user.id),
-            )
-        except Exception:
-            logger.exception("Could not persist PRO payment for user_id=%s", user.id)
-            await message.reply_text(
-                "Telegram confirmed your payment, but activation needs attention. "
-                "Please contact support and keep your Telegram receipt."
+        if update.effective_message:
+            await update.effective_message.reply_text(
+                "How it works:\n"
+                "1. Send text (up to 20 characters).\n"
+                "2. Use the inline arrows to change the font, color, shape, and animation.\n"
+                "3. Watch the updated GIF preview.\n"
+                "4. Tap ✅ Create Custom Emoji Pack.\n\n"
+                "The bot creates a Telegram custom-emoji set using animated .tgs vector files. "
+                "It has no PRO plan, payment handlers, or daily creation limit."
             )
 
     async def cmd_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
-        if user:
-            self.sessions.pop(user.id, None)
-            self.session_message_ids.pop(user.id, None)
-        if update.effective_message:
-            await update.effective_message.reply_text("Creation cancelled. Send another text whenever you're ready.")
-
-    async def cmd_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        message, user = update.effective_message, update.effective_user
-        if not message or not user:
+        if not user or not update.effective_message:
             return
-        if user.id not in self.admin_ids:
-            await message.reply_text("This command is available to administrators only.")
-            return
-        if not self.store:
-            await message.reply_text("Database is not connected. Check MONGODB_URI in Render.")
-            return
-        try:
-            stats = await asyncio.to_thread(self.store.today_stats)
-            await message.reply_text(
-                "🛠 *Admin Status*\n"
-                f"Bot: {self.status}\n"
-                f"Packs created today (UTC): {stats['packs_today']}\n"
-                f"Users with usage today: {stats['users_today']}\n"
-                f"Daily free limit: {DAILY_LIMIT} packs/user",
-                parse_mode="Markdown",
-            )
-        except Exception:
-            logger.exception("Unable to load admin stats")
-            await message.reply_text("Could not load statistics right now. Check application logs.")
+        for token, session in list(self.sessions.items()):
+            if session.owner_id == user.id:
+                self.sessions.pop(token, None)
+        await update.effective_message.reply_text("Current editor sessions cleared. Send new text to start again.")
 
     async def on_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        message, user = update.effective_message, update.effective_user
-        if not message or not user or message.text is None:
+        message = update.effective_message
+        user = update.effective_user
+        if not message or not user or not message.text:
             return
-        if not self._private_chat(update):
-            await message.reply_text("Please open me in a private chat to create your custom emoji pack.")
+        raw_text = " ".join(message.text.split())
+        if not raw_text:
+            await message.reply_text("Please send some text or a short phrase to animate.")
             return
-        text = " ".join(message.text.strip().split())
-        if not text:
-            await message.reply_text("Please send some text to design.")
-            return
-        if len(text) > 20:
-            await message.reply_text("Please keep text to 20 characters or fewer so it remains readable as a custom emoji.")
-            return
-        if self.store:
-            try:
-                await asyncio.to_thread(self.store.register_user, user.id, None)
-            except Exception:
-                logger.exception("Could not register text creator user_id=%s", user.id)
-        previous_style = self.sessions.get(user.id) or self.last_styles.get(user.id)
-        if previous_style is None and self.store:
-            try:
-                saved_style = await asyncio.to_thread(self.store.get_style, user.id)
-                if saved_style:
-                    previous_style = Style(text="", **saved_style).normalized()
-            except Exception:
-                logger.exception("Could not load saved style preference for user_id=%s", user.id)
-        style = replace(previous_style, text=text).normalized() if previous_style else Style(text=text).normalized()
-        self.sessions[user.id] = style
-        self.last_styles[user.id] = style
-        count = 0
-        if self.store:
-            try:
-                count = await asyncio.to_thread(self.store.get_count, user.id)
-            except Exception:
-                logger.exception("Could not read daily count for user %s", user.id)
-        try:
-            preview_gif = await asyncio.to_thread(render_preview_gif, style)
-            previous_message_id = self.session_message_ids.get(user.id)
-            if previous_message_id:
-                try:
-                    await context.bot.edit_message_reply_markup(chat_id=user.id, message_id=previous_message_id, reply_markup=None)
-                except TelegramError:
-                    pass
-            preview = await message.reply_animation(
-                animation=InputFile(preview_gif, filename="animated-text-preview.gif"),
-                caption=self._style_caption(style, count),
-                reply_markup=self._keyboard(style),
+        if len(raw_text) > MAX_TEXT_LENGTH:
+            await message.reply_text(
+                f"Please keep the text to {MAX_TEXT_LENGTH} characters or fewer so it stays readable in the emoji."
             )
-            self.session_message_ids[user.id] = preview.message_id
-            await self._persist_style_preference(user.id, style)
+            return
+
+        previous = self.last_styles.get(user.id)
+        style = replace(previous, text=raw_text).normalized() if previous else Style(text=raw_text).normalized()
+        token = secrets.token_hex(4)
+        session = EditorSession(
+            token=token, owner_id=user.id, chat_id=message.chat_id,
+            message_id=None, style=style, created_at=time.monotonic(), lock=asyncio.Lock(),
+        )
+        self.sessions[token] = session
+        try:
+            gif = await asyncio.to_thread(render_preview_gif, style)
+            preview = await message.reply_animation(
+                animation=InputFile(BytesIO(gif), filename="custom-emoji-preview.gif"),
+                caption=self._preview_caption(style),
+                reply_markup=self._keyboard(session),
+                write_timeout=30,
+            )
+            session.message_id = preview.message_id
+            self.last_styles[user.id] = style
+            self._prune_sessions()
         except Exception:
-            logger.exception("Preview render failed for user %s", user.id)
-            await message.reply_text("I couldn't render that preview. Try a shorter text using basic letters and numbers.")
+            logger.exception("Could not create or send preview for user %s", user.id)
+            await message.reply_text("I couldn't render the preview. Please try a shorter text or another font.")
+
+    @staticmethod
+    def _preview_caption(style: Style) -> str:
+        return f"✨ {style.text}\nChoose the font, color, shape, and animation for your text."
+
+    def _keyboard(self, session: EditorSession, *, creating: bool = False) -> InlineKeyboardMarkup:
+        style = session.style
+        tok = session.token
+
+        def button(label: str, field: str, action: str) -> InlineKeyboardButton:
+            return InlineKeyboardButton(label, callback_data=f"{CALLBACK_PREFIX}:{tok}:{field}:{action}")
+
+        rows = [
+            [button("👉🏻", "f", "-"), button(style.font, "f", "+"), button("👉🏻", "f", "+")],
+            [button("👉🏻", "c", "-"), button(COLOR_ICONS[style.color], "c", "+"), button("👉🏻", "c", "+")],
+            [button("👉🏻", "s", "-"), button(SHAPE_ICONS[style.shape], "s", "+"), button("👉🏻", "s", "+")],
+            [button("👉🏻", "a", "-"), button(ANIMATION_ICONS[style.animation], "a", "+"), button("👉🏻", "a", "+")],
+        ]
+        rows.append([
+            InlineKeyboardButton(
+                "⏳ Creating Custom Emojis…" if creating else "✅ Create Custom Emoji Pack",
+                callback_data=f"{CALLBACK_PREFIX}:{tok}:create:0",
+            )
+        ])
+        return InlineKeyboardMarkup(rows)
 
     async def on_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         user = update.effective_user
         if not query or not user or not query.data:
             return
-        if query.data == "noop":
-            await query.answer()
-            return
-        if query.data == "get_pro":
-            await query.answer("Opening Telegram Stars payment…")
-            try:
-                await self._send_pro_invoice(user.id, user.id, context)
-            except TelegramError:
-                logger.exception("Could not send PRO invoice to user_id=%s", user.id)
-                if query.message:
-                    await query.message.reply_text("Unable to open the Telegram Stars invoice. Please try again later.")
-            return
-        current_message_id = self.session_message_ids.get(user.id)
-        if current_message_id and query.message and query.message.message_id != current_message_id:
-            await query.answer("This editor has been replaced. Use the latest preview.", show_alert=True)
-            return
-        if user.id in self.preview_updates:
-            await query.answer("Preview is updating. Please wait.")
-            return
-        if query.data == "create":
-            await self._create_pack(update, context)
-            return
-        style = self.sessions.get(user.id)
-        if not style:
-            await query.answer("Send text first to start a new design.", show_alert=True)
-            return
-        if query.data == "cancel":
-            self.sessions.pop(user.id, None)
-            self.session_message_ids.pop(user.id, None)
-            await query.answer("Cancelled")
-            try:
-                await query.edit_message_caption(caption="Creation cancelled. Send another text whenever you're ready.", reply_markup=None)
-            except TelegramError:
-                pass
-            return
-        if query.data == "change":
-            await query.answer("Send your new text in the chat.")
-            if query.message:
-                await query.message.reply_text("Send the new text (up to 20 characters).")
-            return
-        previous_style = style
         try:
-            key, direction = query.data.split(":", 1)
-            delta = int(direction)
-            if key == "font":
-                options = FONT_OPTIONS
-                style = replace(style, font=options[(options.index(style.font) + delta) % len(options)])
-            elif key == "color":
-                options = tuple(PALETTES)
-                style = replace(style, color=options[(options.index(style.color) + delta) % len(options)])
-            elif key == "shape":
-                options = SHAPE_OPTIONS
-                style = replace(style, shape=options[(options.index(style.shape) + delta) % len(options)])
-            elif key == "anim":
-                options = ANIMATION_OPTIONS
-                style = replace(style, animation=options[(options.index(style.animation) + delta) % len(options)])
-            else:
-                await query.answer("Unknown option", show_alert=True)
-                return
+            _, token, field, action = query.data.split(":", 3)
+        except ValueError:
+            await query.answer("This button is invalid. Send your text again.", show_alert=True)
+            return
+        session = self.sessions.get(token)
+        if not session:
+            await query.answer("This editor has expired. Send your text again.", show_alert=True)
+            return
+        if session.owner_id != user.id:
+            await query.answer("Only the person who opened this editor can use it.", show_alert=True)
+            return
 
-            if not query.message:
-                await query.answer("This preview is no longer available. Send your text again.", show_alert=True)
+        if field == "create":
+            if session.creating:
+                await query.answer("Your Custom Animated Emoji Pack is already being created.")
                 return
-            active_pack_lock = self.locks.get(user.id)
-            if active_pack_lock and active_pack_lock.locked():
-                await query.answer("A pack is being created. Please wait.")
-                return
+            session.creating = True
+            await query.answer("Preparing your Custom Animated Emoji Pack…")
+            await self._create_pack(query, session)
+            return
 
-            # Serialize this user's preview updates. Keep the previous style as
-            # the active state until the new GIF is successfully displayed.
-            self.preview_updates.add(user.id)
-            loading_shown = False
-            await query.answer()
+        options_by_field: dict[str, tuple[str, ...]] = {
+            "f": FONT_OPTIONS, "c": COLOR_OPTIONS, "s": SHAPE_OPTIONS, "a": ANIMATION_OPTIONS,
+        }
+        style_field = {"f": "font", "c": "color", "s": "shape", "a": "animation"}.get(field)
+        options = options_by_field.get(field)
+        if not style_field or not options:
+            await query.answer("Unknown setting.", show_alert=True)
+            return
+        async with session.lock:
+            current = getattr(session.style, style_field)
+            current_index = options.index(current) if current in options else 0
+            delta = -1 if action == "-" else 1
+            selected = options[(current_index + delta) % len(options)]
+            session.style = replace(session.style, **{style_field: selected}).normalized()
+            self.last_styles[user.id] = session.style
+            await query.answer("Updating preview…")
             try:
-                count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
-                loading_gif = await asyncio.to_thread(render_loading_gif, style)
-                loading_file_id = await self._upload_animation_file_id(
-                    context.bot, user.id, loading_gif, "animated-text-loading.gif"
-                )
+                gif = await asyncio.to_thread(render_preview_gif, session.style)
                 await query.edit_message_media(
                     media=InputMediaAnimation(
-                        media=loading_file_id,
-                        caption=self._style_caption(style, count),
+                        media=InputFile(BytesIO(gif), filename="custom-emoji-preview.gif"),
+                        caption=self._preview_caption(session.style),
                     ),
-                    reply_markup=self._keyboard(style),
+                    reply_markup=self._keyboard(session),
+                    read_timeout=30,
+                    write_timeout=30,
                 )
-                loading_shown = True
-
-                preview_gif = await asyncio.to_thread(render_preview_gif, style)
-                preview_file_id = await self._upload_animation_file_id(
-                    context.bot, user.id, preview_gif, "animated-text-preview.gif"
-                )
-                await query.edit_message_media(
-                    media=InputMediaAnimation(
-                        media=preview_file_id,
-                        caption=self._style_caption(style, count),
-                    ),
-                    reply_markup=self._keyboard(style),
-                )
-                self.sessions[user.id] = style
-                await self._persist_style_preference(user.id, style)
+                session.message_id = query.message.message_id if query.message else session.message_id
+            except BadRequest as exc:
+                if "message is not modified" not in str(exc).lower():
+                    logger.warning("Preview update was rejected: %s", exc)
+                    if query.message:
+                        await query.message.reply_text("Couldn't update the preview. Please try another setting.")
+            except TelegramError:
+                logger.exception("Telegram failed to update preview")
+                if query.message:
+                    await query.message.reply_text("Telegram couldn't update the preview. Please try again.")
             except Exception:
-                logger.exception("Could not update preview for user %s", user.id)
-                # If rendering failed after the spinner was shown, restore the
-                # previous design in the same message instead of leaving a spinner.
-                if loading_shown:
-                    try:
-                        previous_gif = await asyncio.to_thread(render_preview_gif, previous_style)
-                        previous_file_id = await self._upload_animation_file_id(
-                            context.bot, user.id, previous_gif, "animated-text-preview-restore.gif"
-                        )
-                        previous_count = await asyncio.to_thread(self.store.get_count, user.id) if self.store else 0
-                        await query.edit_message_media(
-                            media=InputMediaAnimation(
-                                media=previous_file_id,
-                                caption=self._style_caption(previous_style, previous_count),
-                            ),
-                            reply_markup=self._keyboard(previous_style),
-                        )
-                    except Exception:
-                        logger.exception("Could not restore previous preview for user_id=%s", user.id)
-            finally:
-                self.preview_updates.discard(user.id)
-        except Exception:
-            logger.exception("Could not process preview selector for user %s", user.id)
-            self.preview_updates.discard(user.id)
-
-    async def _prepare_stickers(self, bot, user_id: int, webm_files: list[bytes]) -> list[InputSticker]:
-        """Upload the three 100×100 video assets used by a custom-emoji pack."""
-        if len(webm_files) != CUSTOM_EMOJI_COUNT:
-            raise RuntimeError(
-                f"renderer returned {len(webm_files)} files; expected exactly {CUSTOM_EMOJI_COUNT} custom emoji"
-            )
-
-        stickers: list[InputSticker] = []
-        for index, data in enumerate(webm_files, start=1):
-            uploaded = await bot.upload_sticker_file(
-                user_id=user_id,
-                sticker=InputFile(data, filename=f"text_{index}.webm"),
-                sticker_format="video",
-            )
-            file_id = getattr(uploaded, "file_id", None)
-            if not isinstance(file_id, str) or not file_id:
-                raise RuntimeError(f"Telegram did not return a file_id for sticker {index}")
-            stickers.append(
-                InputSticker(
-                    sticker=file_id,
-                    emoji_list=[STICKER_EMOJI],
-                    format="video",
-                )
-            )
-        return stickers
-
-    async def _create_pack(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        query, user = update.callback_query, update.effective_user
-        if not query or not user:
-            return
-        style = self.sessions.get(user.id)
-        if style is None:
-            await query.answer("Send text first to start a new design.", show_alert=True)
-            return
-        if not self.store or self.status != "running":
-            await query.answer("The bot is not fully configured. Please try again later.", show_alert=True)
-            return
-
-        lock = self.locks.setdefault(user.id, asyncio.Lock())
-        if lock.locked():
-            await query.answer("Your pack is already being created.")
-            return
-
-        async with lock:
-            quota_time = datetime.now(timezone.utc)
-            account = await asyncio.to_thread(self.store.get_account, user.id, quota_time)
-            is_pro = bool(account["is_pro"])
-            bonus_used = False
-            reserved_over_limit = False
-
-            # Preserve existing free-quota, PRO and referral-credit behavior.
-            count = await asyncio.to_thread(self.store.reserve, user.id, quota_time)
-            if count is None and is_pro:
-                count = await asyncio.to_thread(
-                    self.store.reserve, user.id, quota_time, allow_over_limit=True
-                )
-                reserved_over_limit = count is not None
-
-            if count is None and not is_pro:
-                bonus_used = await asyncio.to_thread(self.store.consume_bonus, user.id)
-                if bonus_used:
-                    count = await asyncio.to_thread(
-                        self.store.reserve, user.id, quota_time, allow_over_limit=True
-                    )
-                    reserved_over_limit = count is not None
-                    if count is None:
-                        await asyncio.to_thread(self.store.add_bonus, user.id)
-                        bonus_used = False
-
-            if count is None:
-                await query.answer("Daily free limit reached.", show_alert=True)
+                logger.exception("Failed to render preview update")
                 if query.message:
-                    await query.message.reply_text(
-                        self._limit_message(user.id, quota_time),
-                        reply_markup=self._account_keyboard(user.id, include_invite=True),
-                    )
-                return
+                    await query.message.reply_text("Preview render failed. Try another setting.")
 
-            pack_created = False
+    async def _create_pack(self, query, session: EditorSession) -> None:
+        if not self.application or not self.bot_username:
+            session.creating = False
+            await query.message.reply_text("The Telegram bot is not ready yet. Please try again shortly.")
+            return
+        async with session.lock:
+            status = await query.message.reply_text("⏳ Preparing your Custom Animated Emoji Pack…")
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue[str] = asyncio.Queue()
+
+            def progress(text: str) -> None:
+                loop.call_soon_threadsafe(queue.put_nowait, text)
+
+            task = asyncio.create_task(asyncio.to_thread(generate_pack, session.style, progress))
+            last_text = ""
+            last_edit = 0.0
             try:
-                await query.answer()
-                if query.message:
+                while not task.done():
                     try:
-                        await query.edit_message_reply_markup(
-                            reply_markup=self._keyboard(style, creating=True)
-                        )
-                    except TelegramError:
-                        logger.debug("Could not show pack-creation state for user_id=%s", user.id)
-
-                used_count = await asyncio.to_thread(self.store.get_count, user.id, quota_time)
-                bot_username = re.sub(
-                    r"[^A-Za-z0-9_]", "",
-                    self.bot_username or context.bot.username or "EmojiTitleBot",
-                ) or "EmojiTitleBot"
-
-                # Make the pack recognizable by its text, with Telegram's required bot suffix.
-                slug = re.sub(r"[^A-Za-z0-9]", "", style.text)
-                if not slug or not slug[0].isalpha():
-                    slug = f"Text{slug}"
-                slug = slug[:20]
-                suffix = secrets.token_hex(3)[:5]
-                pack_name = f"{slug}_{suffix}_by_{bot_username}"
-                pack_title = style.text.strip()[:64] if is_pro else f"Created in 👉 @{bot_username}"[:64]
-
-                webm_files = await asyncio.to_thread(render_pack_webm, style)
-                if len(webm_files) != CUSTOM_EMOJI_COUNT:
-                    raise RuntimeError(
-                        f"renderer returned {len(webm_files)} custom emoji; "
-                        f"expected exactly {CUSTOM_EMOJI_COUNT}"
-                    )
-                stickers = await self._prepare_stickers(context.bot, user.id, webm_files)
-                await context.bot.create_new_sticker_set(
-                    user_id=user.id,
+                        progress_text = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
+                    now = time.monotonic()
+                    if progress_text != last_text and now - last_edit >= 0.8:
+                        try:
+                            await status.edit_text("⏳ " + progress_text)
+                            last_text, last_edit = progress_text, now
+                        except TelegramError:
+                            pass
+                assets = await task
+                await status.edit_text("📦 Uploading the Custom Animated Emojis to Telegram…")
+                pack_name = self._pack_name(session.style.text)
+                title = (session.style.text + " • Custom Emojis")[:64]
+                stickers = [
+                    InputSticker(sticker=data, emoji_list=["✨"], format="animated")
+                    for data in assets
+                ]
+                await self.application.bot.create_new_sticker_set(
+                    user_id=session.owner_id,
                     name=pack_name,
-                    title=pack_title,
+                    title=title,
                     stickers=stickers,
                     sticker_type=Sticker.CUSTOM_EMOJI,
                     needs_repainting=False,
+                    read_timeout=60,
+                    write_timeout=60,
+                    connect_timeout=20,
+                    pool_timeout=20,
                 )
-                pack_created = True
-                pack_url = f"https://t.me/addemoji/{pack_name}"
-                self.sessions.pop(user.id, None)
-                self.session_message_ids.pop(user.id, None)
-                self.last_styles[user.id] = style
-
-                if query.message:
-                    try:
-                        await query.edit_message_reply_markup(reply_markup=None)
-                    except TelegramError:
-                        logger.debug("Could not remove completed editor keyboard for user_id=%s", user.id)
-
-                try:
-                    # Send the first item as a true inline custom emoji, not as a
-                    # separately uploaded regular sticker message.
-                    sticker_set = await context.bot.get_sticker_set(name=pack_name)
-                    custom_emoji_id = next(
-                        (item.custom_emoji_id for item in sticker_set.stickers if item.custom_emoji_id),
-                        None,
-                    )
-                    if custom_emoji_id:
-                        await context.bot.send_message(
-                            chat_id=user.id,
-                            text=STICKER_EMOJI,
-                            entities=[MessageEntity(
-                                type=MessageEntity.CUSTOM_EMOJI,
-                                offset=0,
-                                length=len(STICKER_EMOJI.encode("utf-16-le")) // 2,
-                                custom_emoji_id=custom_emoji_id,
-                            )],
-                        )
-                    else:
-                        logger.warning("Custom emoji pack was created but Telegram returned no custom_emoji_id for user_id=%s", user.id)
-                except Exception:
-                    # The pack already exists; a preview-send failure must not
-                    # undo it or consume/release quota a second time.
-                    logger.exception("Pack created but custom emoji preview could not be sent to user_id=%s", user.id)
-
-                if is_pro:
-                    pro_note = "💎 PRO subscription active: unlimited pack creation and custom pack titles."
-                else:
-                    pro_note = (
-                        "With 💎 PRO subscription:\n"
-                        "• Unlimited pack creation\n"
-                        "• Your text as the pack title instead of bot link"
-                    )
-                confirmation = (
-                    "Your Emojipack has been created!\n"
-                    "You can now use it in any chat. Don't forget to add it to your collection to avoid losing it.\n"
-                    f"{pack_url}\n\n"
-                    f"Used: {used_count} of {DAILY_LIMIT} free packs today\n"
-                    f"{pro_note}\n\n"
-                    f"Emojipack with {len(webm_files)} emoji for Telegram Premium subscribers."
+                pack_link = f"https://t.me/addemoji/{pack_name}"
+                share_url = "https://t.me/share/url?url=" + quote(pack_link, safe="") + "&text=" + quote(
+                    f"Check out my Custom Animated Emoji Pack: {session.style.text}", safe=""
                 )
-                if query.message:
-                    try:
-                        await query.message.reply_text(
-                            confirmation,
-                            reply_markup=self._account_keyboard(user.id),
-                        )
-                    except TelegramError:
-                        logger.exception("Pack was created but confirmation could not be sent for user_id=%s", user.id)
-                logger.info(
-                    "Created custom emoji pack for user_id=%s; emoji_count=%s; daily_count=%s; pro=%s",
-                    user.id, len(webm_files), count, is_pro,
+                result_keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ Add Custom Emojis", url=pack_link)],
+                    [InlineKeyboardButton("↗️ Share Pack", url=share_url)],
+                ])
+                await status.edit_text("✅ Custom Animated Emojis created successfully!")
+                await query.message.reply_text(
+                    "🎉 Your Custom Animated Emoji Pack has been created!\n\n"
+                    "You can add the pack to your Telegram collection and use its custom emojis in chats supported by your account.\n\n"
+                    f"🔗 Pack link: {pack_link}\n\n"
+                    "This bot has no PRO subscription, payment requirement, or daily creation quota. "
+                    "Telegram Premium availability rules are controlled by Telegram itself.",
+                    reply_markup=result_keyboard,
+                    disable_web_page_preview=True,
                 )
+                self.last_styles[session.owner_id] = session.style
+                self.sessions.pop(session.token, None)
             except Exception as exc:
-                if not pack_created:
-                    await asyncio.to_thread(
-                        self.store.release,
-                        user.id,
-                        quota_time,
-                        allow_over_limit=reserved_over_limit,
-                    )
-                    if bonus_used:
-                        await asyncio.to_thread(self.store.add_bonus, user.id)
-                    if query.message:
-                        try:
-                            await query.edit_message_reply_markup(
-                                reply_markup=self._keyboard(style)
-                            )
-                        except TelegramError:
-                            logger.debug("Could not restore editor keyboard after failure for user_id=%s", user.id)
-                logger.exception("Pack creation failed for user_id=%s", user.id)
-                error_hint = (
-                    "Telegram could not accept this custom emoji pack. Please try another text or design."
-                    if isinstance(exc, TelegramError)
-                    else "The animation could not be encoded. Please try again with shorter text."
-                )
+                session.creating = False
+                logger.exception("Failed to create custom emoji pack for user %s", session.owner_id)
                 try:
-                    if query.message:
-                        await query.message.reply_text(
-                            f"⚠️ {error_hint}\nYour free credit has been restored if the pack was not created. Please try again."
-                        )
+                    await status.edit_text(
+                        "⚠️ I couldn't publish the Custom Animated Emoji Pack.\n\n"
+                        f"Reason: {self._safe_error(exc)}\n\n"
+                        "Your text and selected settings are preserved. Please tap Create again or try a shorter text."
+                    )
                 except TelegramError:
-                    logger.warning("Could not send pack failure notice to user_id=%s", user.id)
+                    pass
+
+    def _pack_name(self, text: str) -> str:
+        return make_pack_name(text, self.bot_username)
+
+    @staticmethod
+    def _safe_error(exc: Exception) -> str:
+        message = str(exc).replace("\n", " ").strip()
+        # Never echo token-bearing Telegram API URLs to users or logs in error payloads.
+        message = re.sub(r"https?://api\.telegram\.org/bot[^\s]+", "Telegram API request", message)
+        return (message or type(exc).__name__)[:260]
+
+    def _prune_sessions(self) -> None:
+        cutoff = time.monotonic() - 2 * 60 * 60
+        for token, session in list(self.sessions.items()):
+            if session.created_at < cutoff:
+                self.sessions.pop(token, None)
+        # Keep in-memory preferences bounded during high-volume use.
+        if len(self.last_styles) > 5000:
+            for user_id in list(self.last_styles)[:1000]:
+                self.last_styles.pop(user_id, None)
+
+
+service = BotService()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    service = BotService()
-    app.state.bot_service = service
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
-    if render_url:
-        logger.info("Health endpoint: %s/health", render_url)
-    else:
-        logger.info("Health endpoint path: /health")
     await service.start()
-    yield
-    await service.stop()
+    app.state.bot_service = service
+    try:
+        yield
+    finally:
+        await service.stop()
 
 
-app = FastAPI(title=SERVICE_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request) -> HTMLResponse:
-    service: BotService = request.app.state.bot_service
-    status_text = "Running" if service.status == "running" else "Setup required"
-    description = "Send a short text to EmojiTitleBot in Telegram to create an animated custom-emoji pack." if service.status == "running" else "Add BOT_TOKEN, ADMIN_IDS and MONGODB_URI in Render Environment, then restart the service."
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{SERVICE_NAME}</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a1020;color:#edf2ff;font:16px/1.6 system-ui,sans-serif;padding:24px}}main{{max-width:620px;background:#111a2d;border:1px solid #293653;border-radius:22px;padding:36px;box-shadow:0 24px 70px #0005}}.tag{{display:inline-block;border:1px solid #67508d;border-radius:999px;padding:4px 10px;color:#d9baff;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}}h1{{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:20px 0 12px}}p{{color:#b9c5de}}code{{color:#e4c9ff}}</style></head><body><main><span class="tag">{status_text}</span><h1>👋 EmojiTitleBot</h1><p>{description}</p><p>Free allowance: <strong>3 packs per user, UTC day</strong>. PRO unlocks unlimited pack creation and custom pack titles, with Telegram Stars billing.</p><p>Health endpoint: <code>/health</code></p></main></body></html>"""
-    return HTMLResponse(html)
-
-
-@app.get("/healthz")
-async def healthz(request: Request) -> dict[str, str]:
-    service: BotService = request.app.state.bot_service
-    return {"status": "ok", "service": "animated-text-creator", "bot": service.status}
+app = FastAPI(title=SERVICE_NAME, version="2.0.0", lifespan=lifespan)
 
 
 @app.get("/health")
-async def health(request: Request) -> JSONResponse:
-    service: BotService = request.app.state.bot_service
-    if service.status != "running" or service.store is None:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "not_ready", "service": "animated-text-creator", "bot": service.status, "detail": service.status_reason},
-        )
-    try:
-        await asyncio.to_thread(service.store.ping)
-    except Exception:
-        logger.exception("Readiness check could not reach MongoDB")
-        return JSONResponse(
-            status_code=503,
-            content={"status": "degraded", "service": "animated-text-creator", "bot": "running", "database": "disconnected"},
-        )
-    return JSONResponse(status_code=200, content={"status": "ok", "service": "animated-text-creator", "bot": "running", "database": "connected"})
+async def health() -> JSONResponse:
+    body = {"service": SERVICE_NAME, "status": service.status, "telegram_ready": service.ready}
+    return JSONResponse(body, status_code=200 if service.ready else 503)
+
+
+@app.get("/healthz")
+async def healthz() -> JSONResponse:
+    # Liveness endpoint is intentionally independent of Telegram availability so Render
+    # can start the web process while BOT_TOKEN is being configured.
+    return JSONResponse({"status": "ok", "service": SERVICE_NAME})

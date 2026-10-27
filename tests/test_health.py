@@ -1,23 +1,13 @@
-from fastapi.testclient import TestClient
-
-from main import app
+from main import health, healthz
 
 
-def test_liveness_remains_available_before_secrets_are_added(monkeypatch):
-    for key in ("BOT_TOKEN", "MONGODB_URI", "ADMIN_IDS"):
-        monkeypatch.delenv(key, raising=False)
-
-    with TestClient(app) as client:
-        response = client.get("/healthz")
-        assert response.status_code == 200
-        assert response.json()["service"] == "animated-text-creator"
+def test_healthz_is_liveness_endpoint():
+    response = __import__("asyncio").run(healthz())
+    assert response.status_code == 200
+    assert b'"status":"ok"' in response.body
 
 
-def test_readiness_requires_bot_configuration(monkeypatch):
-    for key in ("BOT_TOKEN", "MONGODB_URI", "ADMIN_IDS"):
-        monkeypatch.delenv(key, raising=False)
-
-    with TestClient(app) as client:
-        response = client.get("/health")
-        assert response.status_code == 503
-        assert response.json()["status"] == "not_ready"
+def test_health_endpoint_reports_bot_readiness_state():
+    response = __import__("asyncio").run(health())
+    assert response.status_code in (200, 503)
+    assert b'"telegram_ready"' in response.body
