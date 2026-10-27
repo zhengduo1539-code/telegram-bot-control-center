@@ -234,7 +234,7 @@ class BotService:
         await message.reply_text(
             "👋 <b>Animated Emoji Analyzer & Rebuilder</b>\n\n"
             "Send a Telegram custom animated emoji, a sticker, a <code>t.me/addemoji/…</code> "
-            "or <code>t.me/addstickers/…</code> link, or upload a .TGS/.WEBM file.\n\n"
+            "or <code>t.me/addstickers/…</code> link, or upload a .TGS/.WEBM/.WEBP file or ZIP template library.\n\n"
             "I inspect animation metadata, colors, vector shape types, timing and keyframes where available. "
             "TGS files can be recolored or speed-adjusted when the result satisfies Telegram's constraints.",
             parse_mode="HTML",
@@ -247,8 +247,8 @@ class BotService:
                 "<b>How to use</b>\n"
                 "1. Send an animated custom emoji or animated sticker.\n"
                 "2. Paste an <code>https://t.me/addemoji/PACK</code> or "
-                "<code>https://t.me/addstickers/PACK</code> link to browse a pack.\n"
-                "3. Select an item to inspect it.\n"
+                "<code>https://t.me/addstickers/PACK</code> link to browse a pack, or upload a ZIP containing TGS/WEBM/WEBP files.\n"
+                "3. Select an item to inspect it, or use Export all to package the whole library.\n"
                 "4. Use <b>Original</b> to send it unchanged or <b>Export</b> to download the source file.\n"
                 "5. TGS items also offer conservative color and speed edits.\n\n"
                 "Only official Telegram pack links are accepted; arbitrary external URLs are not downloaded. "
