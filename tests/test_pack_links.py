@@ -1,4 +1,4 @@
-from app.telegram.links import parse_pack_link
+from app.telegram.links import normalize_custom_emoji_id, parse_pack_link
 
 
 def test_parse_custom_emoji_pack_link():
@@ -22,3 +22,11 @@ def test_rejects_arbitrary_hosts_and_invalid_paths():
     assert parse_pack_link("https://t.me/some/path") is None
     assert parse_pack_link("https://t.me/addemoji/") is None
     assert parse_pack_link("javascript://t.me/addemoji/Pack") is None
+
+
+def test_normalize_custom_emoji_id():
+    assert normalize_custom_emoji_id("5368324170671202286") == "5368324170671202286"
+    assert normalize_custom_emoji_id(" 5368324170671202286 ") == "5368324170671202286"
+    assert normalize_custom_emoji_id("123") is None
+    assert normalize_custom_emoji_id("not-an-id") is None
+    assert normalize_custom_emoji_id("5368324170671202286\n") == "5368324170671202286"
