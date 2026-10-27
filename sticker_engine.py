@@ -539,6 +539,43 @@ def render_preview_gif(style: Style) -> bytes:
 
 
 
+def render_loading_gif(style: Style) -> bytes:
+    """Render the small centered spinner shown while a selector updates the preview."""
+    style = style.normalized()
+    width, height = 660, 220
+    frame_count = 16
+    frames: list[Image.Image] = []
+    center_x, center_y = width // 2, height // 2
+    radius = 13
+    spinner_color = (112, 112, 112)
+    for index in range(frame_count):
+        frame = Image.new("RGB", (width, height), (255, 255, 255))
+        draw = ImageDraw.Draw(frame)
+        start_angle = index * (360 / frame_count)
+        draw.arc(
+            (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
+            start=start_angle,
+            end=start_angle + 265,
+            fill=spinner_color,
+            width=4,
+        )
+        frames.append(frame)
+
+    output = io.BytesIO()
+    frames[0].save(
+        output,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=55,
+        loop=0,
+        disposal=2,
+        optimize=True,
+    )
+    data = output.getvalue()
+    if not data or not data.startswith((b"GIF87a", b"GIF89a")):
+        raise RuntimeError("Could not render the loading preview.")
+    return data
 def _ffmpeg_executable() -> str:
     try:
         import imageio_ffmpeg
