@@ -162,6 +162,7 @@ class BotService:
         app.add_handler(CommandHandler("help", self._help_command))
         app.add_handler(CommandHandler("status", self._status_command))
         app.add_handler(CommandHandler("recent", self._recent_command))
+        app.add_handler(CommandHandler("cancel", self._cancel_command))
         app.add_handler(CallbackQueryHandler(self._callback, pattern=r"^(page|item|original|export|color|speed):"))
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, self._message))
         app.add_error_handler(self._error_handler)
@@ -268,6 +269,12 @@ class BotService:
             emoji = html.escape(str(record.get("emoji", "") or "🎞"))
             lines.append(f"{emoji} <code>{short_id}</code> — <code>{fmt}</code>")
         await message.reply_text("\n".join(lines), parse_mode="HTML")
+
+    async def _cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        context.user_data.pop("pending_edit", None)
+        message = update.effective_message
+        if message:
+            await message.reply_text("Edit cancelled.")
 
     async def _message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.effective_message
