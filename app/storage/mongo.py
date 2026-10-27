@@ -13,6 +13,7 @@ from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
 
 ANALYSIS_TTL_SECONDS = 30 * 24 * 60 * 60
 PACK_SESSION_TTL_SECONDS = 12 * 60 * 60
+USER_TTL_SECONDS = 180 * 24 * 60 * 60
 
 
 class MongoStore:
@@ -31,6 +32,7 @@ class MongoStore:
     async def connect(self) -> None:
         await self._client.admin.command("ping")
         await self.db.users.create_index([("user_id", ASCENDING)], unique=True, name="user_id_unique")
+        await self.db.users.create_index([("last_seen", ASCENDING)], expireAfterSeconds=USER_TTL_SECONDS, name="inactive_user_ttl")
         await self.db.assets.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)], name="user_asset_history")
         await self.db.assets.create_index([("created_at", ASCENDING)], expireAfterSeconds=ANALYSIS_TTL_SECONDS, name="asset_ttl")
         await self.db.pack_sessions.create_index([("created_at", ASCENDING)], expireAfterSeconds=PACK_SESSION_TTL_SECONDS, name="pack_session_ttl")
