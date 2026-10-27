@@ -71,6 +71,37 @@ def _walk(node: Any):
             yield from _walk(value)
 
 
+def _text_documents(layer: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return editable Lottie text document states for a single text layer."""
+    text_block = layer.get("t")
+    if not isinstance(text_block, dict):
+        return []
+    data_block = text_block.get("d")
+    if not isinstance(data_block, dict):
+        return []
+    keyframes = data_block.get("k")
+    if not isinstance(keyframes, list):
+        return []
+    documents: list[dict[str, Any]] = []
+    for keyframe in keyframes:
+        if not isinstance(keyframe, dict):
+            continue
+        document = keyframe.get("s")
+        if isinstance(document, dict) and isinstance(document.get("t"), str):
+            documents.append(document)
+    return documents
+
+
+def _editable_text_layers(root: dict[str, Any]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    found: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+    for node in _walk(root):
+        if node.get("ty") == 5:
+            documents = _text_documents(node)
+            if documents:
+                found.append((node, documents))
+    return found
+
+
 def _rgb_hex(values: list[float]) -> str | None:
     if len(values) < 3 or not all(isinstance(x, (int, float)) and math.isfinite(float(x)) for x in values[:3]):
         return None
@@ -103,6 +134,14 @@ def _colors_from_property(value: Any, output: list[str]) -> None:
 
 def _analyze_tgs(data: bytes) -> dict[str, Any]:
     root = _load_tgs(data)
+    text_layers = [node for node in _walk(root) if node.get("ty") == 5]
+    editable_text_layers = _editable_text_layers(root)
+    text_contents = list(dict.fromkeys(
+        document["t"][:40]
+        for _, documents in editable_text_layers
+        for document in documents
+        if document.get("t")
+    ))[:5]
     fr = float(root.get("fr", 0) or 0)
     ip = float(root.get("ip", 0) or 0)
     op = float(root.get("op", 0) or 0)
@@ -138,6 +177,10 @@ def _analyze_tgs(data: bytes) -> dict[str, Any]:
         "keyframe_count": keyframes,
         "effect_count": effect_count,
         "colors": list(dict.fromkeys(colors))[:16],
+        "text_layer_count": len(text_layers),
+        "editable_text_layer_count": len(editable_text_layers),
+        "text_contents": text_contents,
+        "text_replace_supported": len(editable_text_layers) == 1,
         "editable": True,
         "exact_reuse": True,
         "source_bytes": len(data),
@@ -319,6 +362,44 @@ def recolor_tgs(data: bytes, hex_color: str) -> bytes:
             changed += 1
     if not changed:
         raise AnimationError("No editable fill, stroke, or gradient color properties were found in this TGS file.")
+    return _emit_tgs(root)
+
+
+def replace_text_tgs(data: bytes, replacement_text: str) -> bytes:
+    """Replace text only when the TGS contains exactly one editable Lottie text layer.
+
+    Shape outlines are not guessed or reverse-engineered: changing those reliably
+    requires rebuilding the glyph paths, which is a different operation.
+    """
+    text = (replacement_text or "").strip()
+    if not text:
+        raise AnimationError("Replacement text cannot be empty.")
+    if len(text) > 20:
+        raise AnimationError("Replacement text must be 20 characters or fewer.")
+    if any(ord(char) < 32 or ord(char) == 127 for char in text):
+        raise AnimationError("Replacement text cannot contain control characters.")
+
+    root = _load_tgs(data)
+    layers = _editable_text_layers(root)
+    if not layers:
+        raise AnimationError(
+            "This animation has no editable Lottie text layer. Its lettering is likely converted to vector shapes; "
+            "the bot cannot safely replace those letters while preserving the original animation exactly."
+        )
+    if len(layers) != 1:
+        raise AnimationError(
+            f"This animation contains {len(layers)} editable text layers. "
+            "Automatic replacement is stopped so unrelated text is not accidentally changed."
+        )
+
+    _, documents = layers[0]
+    changed = 0
+    for document in documents:
+        if isinstance(document.get("t"), str):
+            document["t"] = text
+            changed += 1
+    if not changed:
+        raise AnimationError("No editable text values were found in the selected layer.")
     return _emit_tgs(root)
 
 
