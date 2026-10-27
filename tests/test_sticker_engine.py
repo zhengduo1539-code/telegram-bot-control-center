@@ -71,6 +71,35 @@ def test_style_normalization_clamps_text_and_options():
     assert style.animation == ANIMATION_OPTIONS[0]
 
 
+def test_three_observed_shape_states_render_distinct_results():
+    from PIL import ImageChops
+
+    frames = [
+        render_frame(Style(text="Hello", shape=shape, animation="anim_1"), time_seconds=0.0, size=220)
+        for shape in SHAPE_OPTIONS
+    ]
+    assert all(frame.size == (220, 220) for frame in frames)
+    assert ImageChops.difference(frames[0], frames[1]).getbbox() is not None
+    assert ImageChops.difference(frames[1], frames[2]).getbbox() is not None
+    assert ImageChops.difference(frames[0], frames[2]).getbbox() is not None
+
+
+def test_three_observed_animation_states_have_distinct_motion_contracts():
+    from PIL import ImageChops
+
+    still_early = render_frame(Style(text="Hello", animation="anim_1"), time_seconds=0.0, size=220)
+    still_later = render_frame(Style(text="Hello", animation="anim_1"), time_seconds=0.5, size=220)
+    assert ImageChops.difference(still_early, still_later).getbbox() is None
+
+    pennant_early = render_frame(Style(text="Hello", animation="anim_0"), time_seconds=0.0, size=220)
+    pennant_later = render_frame(Style(text="Hello", animation="anim_0"), time_seconds=0.35, size=220)
+    assert ImageChops.difference(pennant_early, pennant_later).getbbox() is not None
+
+    down_early = render_frame(Style(text="Hello", animation="anim_2"), time_seconds=0.0, size=220)
+    down_later = render_frame(Style(text="Hello", animation="anim_2"), time_seconds=0.5, size=220)
+    assert ImageChops.difference(down_early, down_later).getbbox() is not None
+
+
 def test_frame_is_transparent_and_text_fitted_instead_of_full_canvas_tile():
     frame = render_frame(Style(text="Hello"), time_seconds=0.25, size=100)
     assert frame.size == (100, 100)
