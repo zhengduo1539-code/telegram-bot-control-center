@@ -235,19 +235,36 @@ def _keyframe_count(prop: Any) -> int:
     return 0
 
 
-def _motion_profile(root: dict[str, Any]) -> dict[str, Any] | None:
-    candidates = []
+def _motion_profiles(root: dict[str, Any]) -> list[dict[str, Any]]:
+    # Telegram emoji often convert each animated glyph to a group with its own
+    # "tr" transform. Prefer those profiles, in original order, so new text can
+    # inherit per-character bounce/rotation timing instead of moving in lockstep.
+    group_profiles = []
+    for order, node in enumerate(_walk(root)):
+        if node.get("ty") != "tr":
+            continue
+        profile = {key: node[key] for key in ("p", "s", "r", "o") if key in node}
+        score = sum(_keyframe_count(profile.get(key)) for key in ("p", "s", "r", "o"))
+        if score:
+            group_profiles.append((order, score, copy.deepcopy(profile)))
+    if group_profiles:
+        group_profiles.sort(key=lambda entry: entry[0])
+        return [entry[2] for entry in group_profiles[:24]]
+
+    # If there are no individually animated groups, use the best animated
+    # shape-layer transform as a shared source motion profile.
+    layer_profiles = []
     for order, layer in enumerate(_iter_layers(root)):
         if layer.get("ty") != 4 or not isinstance(layer.get("ks"), dict):
             continue
         ks = layer["ks"]
         score = sum(_keyframe_count(ks.get(key)) for key in ("p", "s", "r", "o"))
         if score:
-            candidates.append((score, -order, ks))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
-    return copy.deepcopy(candidates[0][2])
+            layer_profiles.append((score, -order, {key: ks[key] for key in ("p", "s", "r", "o") if key in ks}))
+    if not layer_profiles:
+        return []
+    layer_profiles.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+    return [copy.deepcopy(layer_profiles[0][2])]
 
 
 def _animated_keys(prop: Any):
@@ -317,7 +334,10 @@ def _scale_for_glyph(prop: Any) -> dict[str, Any]:
         if isinstance(frame, dict):
             for key in ("s", "e"):
                 if key in frame:
-                    frame[key] = convert(frame[key])
+                    converted = convert(frame[key])
+                    if isinstance(converted, list) and len(converted) == 2:
+                        converted = [converted[0], converted[1], 100.0]
+                    frame[key] = converted
     return result
 
 
@@ -399,7 +419,7 @@ def rebuild_tgs_text_from_template(data: bytes, text: str) -> tuple[bytes, str]:
     total_width = advance_em * em_pixels
     cursor = (512.0 - total_width) / 2.0
     color = _primary_color(root)
-    profile = _motion_profile(root)
+    profiles = _motion_profiles(root)
     metrics = []
     min_y, max_y = 0.0, 0.0
     for glyph in glyphs:
@@ -415,6 +435,7 @@ def rebuild_tgs_text_from_template(data: bytes, text: str) -> tuple[bytes, str]:
 
     layers = []
     for index, (glyph, factor) in enumerate(metrics, start=1):
+        profile = profiles[(index - 1) % len(profiles)] if profiles else None
         layers.append(_glyph_layer(index, glyph["char"], glyph["contours"], factor, color, cursor, baseline_y, profile, root))
         cursor += glyph["advance"] * factor
     root["layers"] = layers
