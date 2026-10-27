@@ -8,7 +8,7 @@ from main import BotService, STICKER_EMOJI
 from sticker_engine import CUSTOM_EMOJI_COUNT, Style
 
 
-def test_prepare_stickers_uploads_variable_media_and_uses_returned_file_ids():
+def test_prepare_stickers_uploads_three_custom_emoji_assets_and_uses_returned_file_ids():
     service = BotService()
     bot = MagicMock()
     bot.upload_sticker_file = AsyncMock(
@@ -23,9 +23,9 @@ def test_prepare_stickers_uploads_variable_media_and_uses_returned_file_ids():
 
     assert len(stickers) == CUSTOM_EMOJI_COUNT == 3
     assert [sticker.sticker for sticker in stickers] == [
-        f"telegram-file-{index}" for index in range(len(segments))
+        f"telegram-file-{index}" for index in range(CUSTOM_EMOJI_COUNT)
     ]
-    assert [sticker.emoji_list for sticker in stickers] == [(STICKER_EMOJI,)] * len(segments)
+    assert [sticker.emoji_list for sticker in stickers] == [(STICKER_EMOJI,)] * CUSTOM_EMOJI_COUNT
     assert all(sticker.format == "video" for sticker in stickers)
     assert bot.upload_sticker_file.await_count == CUSTOM_EMOJI_COUNT
     for index, call in enumerate(bot.upload_sticker_file.await_args_list, start=1):
