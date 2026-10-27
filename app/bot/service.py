@@ -251,7 +251,7 @@ class BotService:
                 "3. Select an item to inspect it.\n"
                 "4. Use <b>Original</b> to send it unchanged or <b>Export</b> to download the source file.\n"
                 "5. TGS items also offer conservative color and speed edits.\n\n"
-                "Only Telegram pack links are accepted; arbitrary external URLs are not downloaded. "
+                "Only official Telegram pack links are accepted; arbitrary external URLs are not downloaded. "
                 "The bot stores analysis metadata and Telegram file IDs, not binary source files.",
                 parse_mode="HTML",
             )
@@ -760,7 +760,7 @@ class BotService:
                 document=InputFile(BytesIO(data), filename=filename),
                 caption="Original source file. The binary file is delivered through Telegram and is not stored in MongoDB.",
             )
-        except (TelegramError, AnimationError, OSError):
+        except (TelegramError, AnimationError, PackImportError, OSError):
             logger.warning("Could not export asset for user_id=%s", user_id, exc_info=True)
             await context.bot.send_message(chat_id=chat_id, text="Could not export this original file. It may have expired or become unavailable.")
 
@@ -923,7 +923,7 @@ class BotService:
         except AnimationError as exc:
             await message.reply_text(f"Edit could not be applied: {html.escape(str(exc))}", parse_mode="HTML")
             return
-        except (TelegramError, OSError):
+        except (TelegramError, PackImportError, OSError):
             logger.warning("Could not load TGS source for edit; user_id=%s", user_id, exc_info=True)
             context.user_data.pop("pending_edit", None)
             await message.reply_text("The source file is no longer available. Analyze it again to retry.")
