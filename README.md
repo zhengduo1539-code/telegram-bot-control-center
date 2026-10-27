@@ -1,41 +1,52 @@
-# Telegram Animated Custom Emoji Generator
+# Telegram Animated Emoji & Sticker Generator
 
-A free Telegram bot that turns short text into animated custom emoji packs using a live GIF preview and an inline customization editor. Pack generation uses vector outlines, fontTools, Pillow and Telegram-compatible animated TGS files.
+A Python Telegram bot that converts short text into vector-animated TGS assets and publishes either a Custom Emoji Pack or a Regular Animated Sticker Pack through the Telegram Bot API.
 
-## Features
+## Highlights
 
-- Inline customization for eight font labels, seven color palettes, three visual shape states, and Heartbeat, Wave and Pop motion.
-- A live animated GIF preview that is refreshed after a setting changes.
-- Three complete-text animated custom emoji variants per pack.
-- Telegram Bot API calls use custom_emoji as the sticker-set type and animated as the InputSticker format.
-- Pack links use the addemoji deep link.
-- Progress status during vector generation and publication.
-- No PRO subscription, payment handler, Telegram Stars invoice, referral credits, database dependency, or daily quota.
-- FastAPI health endpoints for Render. Both GET and HEAD are supported at /health and /healthz.
+- Custom vector animation engine built on fontTools, Pillow and a constrained Lottie/TGS exporter.
+- Inline editor for font, color palette, shape, motion and output pack type.
+- GIF previews and TGS assets are handled in memory; generated binary files are not stored on disk.
+- Telegram publishing is isolated behind app/telegram/sticker_api.py.
+- SQLite is optional and disabled unless DATABASE_PATH is set. If enabled, it stores pack metadata only—not generated files or chat history.
+- CPU work is bounded by MAX_CONCURRENT_RENDERS.
+- No AI API, paid rendering API, PRO tier, payments, subscriptions, referral credits or daily quota.
+- FastAPI health endpoints for Render at /health and /healthz; both accept GET and HEAD.
+
+## Architecture
+
+app/
+- main.py: FastAPI lifecycle and health endpoints
+- config.py: environment-backed settings
+- bot/service.py: Telegram handlers and editor sessions
+- telegram/sticker_api.py: Telegram Bot API publishing adapter
+- storage/pack_registry.py: optional metadata-only SQLite registry
+
+The animation engine and pack-name helper remain in the dedicated root modules emoji_engine.py and naming.py. main.py remains the Render-compatible entry point.
+
+The engine does not call external AI or rendering services. The Telegram Bot API is used to publish packs and return their deep links.
 
 ## Setup
 
-1. Create a Telegram bot with BotFather.
-2. Set BOT_TOKEN in the Render service environment. No MongoDB variables are required.
-3. Set the Render build command to: pip install -r requirements.txt
-4. Set the start command to: uvicorn main:app --host 0.0.0.0 --port $PORT
-5. Set the health check path to: /healthz
+1. Create a bot with BotFather.
+2. Set BOT_TOKEN in the Render environment.
+3. Build command: pip install -r requirements.txt
+4. Start command: uvicorn main:app --host 0.0.0.0 --port $PORT
+5. Health check path: /healthz
 
-Locally, install requirements.txt and set BOT_TOKEN in your environment before starting Uvicorn.
+Optional environment values are shown in .env.example. Leave DATABASE_PATH empty to disable SQLite. If pack history is needed, configure a path on persistent storage; the database is not required for generation.
 
-## Custom emoji asset profile
+## Telegram animation constraints
 
-- TGS vector canvas: 512 by 512.
-- Frame rate: 60 FPS.
-- Duration: 3 seconds, looping.
-- Each generated TGS asset must be smaller than 64 KiB.
-- Text is converted to vector glyph outlines so the selected font does not need to exist on the recipient's Telegram client.
-- Font families that are proprietary or unavailable on the host use documented compatible system-font fallbacks.
+Generated TGS assets target a 512 × 512 canvas, 60 FPS, a looping animation of at most 3 seconds, and a compressed size below 64 KiB. The validator checks the gzip/Lottie envelope and key constraints before the file is uploaded.
 
-## Notes
-
-Bot-level generation is free. Telegram account-level rules for adding or using custom emojis are set by Telegram and are not bypassed by this bot. The source validates the TGS envelope, canvas, timing and size; final acceptance still needs a live Telegram upload using the configured bot token.
+The same TGS rendering pipeline can publish a regular animated sticker pack (addstickers) or a custom emoji pack (addemoji). Telegram account-level access rules for custom emoji remain controlled by Telegram. A successful local test cannot guarantee Telegram will accept every design, so a real upload with a configured test bot is part of release verification.
 
 ## Tests
 
-Install requirements-dev.txt and run pytest -q. No real Telegram token is needed for the local structural tests.
+Install development requirements and run:
+
+    python -m compileall -q main.py app emoji_engine.py naming.py
+    python -m pytest -q
+
+Tests cover rendering constraints, pack naming, adapter behavior and optional SQLite behavior. Tests do not require a real Bot API token.
