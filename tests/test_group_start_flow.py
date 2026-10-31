@@ -11,7 +11,7 @@ from handlers.base import (
     cmd_start,
     parse_group_start_payload,
 )
-from handlers.schedule_wizard import WIZARD_CONTENT, enter_wizard
+from handlers.schedule_wizard import WIZARD_CONTENT, WIZARD_INTRO, cb_wizard_continue, enter_wizard
 
 
 def test_group_start_payload_round_trips_negative_chat_id():
@@ -111,9 +111,13 @@ def test_schedule_wizard_preselects_linked_group_and_skips_picker():
     async def scenario():
         chat_id = -1001234567890
         target_chat = SimpleNamespace(id=chat_id, title="Publisher Group", type="supergroup")
+        bot = SimpleNamespace(
+            get_me=AsyncMock(return_value=SimpleNamespace(username="ScheduleBot"))
+        )
         query = SimpleNamespace(
             message=SimpleNamespace(chat_id=123456789, message_id=55),
             from_user=SimpleNamespace(id=123456789),
+            get_bot=lambda: bot,
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
         )
@@ -121,10 +125,10 @@ def test_schedule_wizard_preselects_linked_group_and_skips_picker():
         context = SimpleNamespace(
             user_data={"launch_chat": {"chat_id": chat_id, "title": "Publisher Group"}},
             application=SimpleNamespace(bot_data={}),
-            bot=object(),
+            bot=bot,
         )
 
-        with patch(
+        with patch("handlers.schedule_wizard.resolve_user_language", new=AsyncMock(return_value="en")), patch(
             "handlers.schedule_wizard.ensure_chat_access",
             new=AsyncMock(return_value=target_chat),
         ) as access, patch(
@@ -132,6 +136,9 @@ def test_schedule_wizard_preselects_linked_group_and_skips_picker():
             new=AsyncMock(side_effect=AssertionError("group picker should be bypassed")),
         ):
             state = await enter_wizard(update, context)
+            assert state == WIZARD_INTRO
+            assert "launch_chat" in context.user_data
+            state = await cb_wizard_continue(update, context)
 
         assert state == WIZARD_CONTENT
         access.assert_awaited_once_with(context.bot, chat_id, 123456789)
