@@ -73,7 +73,7 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"{translate(language, 'lang_title')}\n\n"
         f"{translate(language, 'lang_prompt')}\n\n"
         f"Current language: {current_name}",
-        reply_markup=language_keyboard(),
+        reply_markup=language_keyboard(language),
     )
 
 
