@@ -1691,7 +1691,7 @@ async def cb_mp_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYP
     language = await resolve_user_language(context, query.from_user.id)
     await _edit(
         query,
-        mp_tr(language, "manual_id"),
+        mp_tr(language, "manual_id_prompt"),
         nav_keyboard(back_data=CB_BACK_MP_MENU),
     )
     return MP_CHAT_ID
@@ -1759,7 +1759,7 @@ async def _mp_prompt_add_item(
 ) -> None:
     pm = _pm(context)
     language = await resolve_user_language(context, update.effective_user.id)
-    title = pm.get("mp_chat_title", "Selected group")
+    title = escape_markdown(pm.get("mp_chat_title", "Selected group"), version=1)
     await _mp_reply_or_edit(
         update,
         mp_tr(language, "add_prompt", group=title),
@@ -1899,7 +1899,7 @@ async def cb_mp_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def _mp_prompt_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     pm = _pm(context)
     language = await resolve_user_language(context, update.effective_user.id)
-    title = pm.get("mp_chat_title", "Selected group")
+    title = escape_markdown(pm.get("mp_chat_title", "Selected group"), version=1)
     await _mp_reply_or_edit(
         update,
         mp_tr(language, "interval_prompt", group=title),
@@ -2186,7 +2186,7 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await query.answer(mp_tr(language, "access_error"), show_alert=True)
         return MP_CONFIRM
 
-    await query.answer("Checking and saving…")
+    await query.answer()
     try:
         db = await get_db()
         pool = await db[COL_MEDIA_POOLS].find_one(
@@ -2266,11 +2266,7 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return MP_MENU
 
     title = pm.get("mp_chat_title", str(chat_id))
-    first_display = (
-        f"{mp_tr(language, 'start_now')} (~1 minute)"
-        if first_run == "now"
-        else first_run
-    )
+    first_display = mp_tr(language, "start_now") if first_run == "now" else first_run
     interval_label = pm.get("interval_label") or f"{value} {mp_tr(language, unit)}"
     auto_delete_label = (
         f"{auto_delete_hours} {mp_tr(language, 'hours')}"
@@ -2470,7 +2466,7 @@ async def _mp_manage_summary(
         int(group["chat_id"]): group.get("title") or str(group["chat_id"])
         for group in groups
     }
-    title = title_map.get(chat_id) or f"Chat {chat_id}"
+    title = escape_markdown(title_map.get(chat_id) or f"Chat {chat_id}", version=1)
     items = pool.get("items", [])
     total = len(items)
     remaining = sum(1 for item in items if not item.get("posted", False))
@@ -2534,7 +2530,7 @@ async def cb_back_mp_manage_details(update: Update, context: ContextTypes.DEFAUL
 async def cb_mp_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     language = await resolve_user_language(context, query.from_user.id)
-    title = _pm(context).get("mp_chat_title", "selected group")
+    title = escape_markdown(_pm(context).get("mp_chat_title", "selected group"), version=1)
     await _edit(
         query,
         mp_tr(language, "reset_confirm", group=title),
@@ -2572,7 +2568,7 @@ async def cb_mp_reset_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cb_mp_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     language = await resolve_user_language(context, query.from_user.id)
-    title = _pm(context).get("mp_chat_title", "selected group")
+    title = escape_markdown(_pm(context).get("mp_chat_title", "selected group"), version=1)
     await _edit(
         query,
         mp_tr(language, "clear_confirm", group=title),
@@ -2649,16 +2645,35 @@ async def cb_back_mp_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer("Cancelled.")
+    user_id = query.from_user.id if query.from_user else None
+    language = (
+        await resolve_user_language(context, user_id)
+        if user_id is not None
+        else "en"
+    )
+    is_media_pool = "mpwiz" in context.user_data
+    await query.answer()
     _clear(context)
     _clear_mp(context)
     chat_id = query.message.chat_id
-    user_id = query.from_user.id if query.from_user else None
-    await chat_cleanup.cleanup(context, chat_id, keep_message_id=query.message.message_id)
+    await chat_cleanup.cleanup(
+        context,
+        chat_id,
+        keep_message_id=query.message.message_id,
+    )
+    cancel_text = (
+        tr(language, "cancelled")
+        if is_media_pool
+        else "❌ *Cancelled.* Back to Main Menu."
+    )
     await query.edit_message_text(
-        "❌ *Cancelled.* Back to Main Menu.",
+        cancel_text,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu_keyboard(bot=context.bot, user_id=user_id),
+        reply_markup=main_menu_keyboard(
+            bot=context.bot,
+            user_id=user_id,
+            language=language if is_media_pool else "en",
+        ),
     )
     return ConversationHandler.END
 
