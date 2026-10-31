@@ -1526,8 +1526,8 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w["auto_delete"]:
         await update.message.reply_text(
             f"✅ Window: `{start}` → `{parsed}`\n\n"
-            "🗑 *Auto-Delete — After how many hours?*\n\n"
-            "Type a positive number (decimals OK, e.g. `24` or `0.5`):",
+            "🗑 *Auto-Delete — When should the post be deleted?*\n\n"
+            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=nav_keyboard(back_data=CB_BACK_TW),
         )
