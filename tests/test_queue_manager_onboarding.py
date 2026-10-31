@@ -309,7 +309,7 @@ def test_clear_queue_warning_explains_global_scope_and_preserves_published_posts
             assert state == queue.QM_MENU
             text = query.edit_message_text.await_args.args[0]
             assert "all queue records" in text.lower()
-            assert "all groups and channels" in text.lower()
+            assert "every group and channel linked to your account" in text.lower()
             assert "already published" in text.lower()
             callbacks = {
                 button.callback_data
