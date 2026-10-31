@@ -148,6 +148,7 @@ def test_selected_language_is_saved_and_temporary_keyboard_is_removed(monkeypatc
         )
         update = SimpleNamespace(
             effective_message=message,
+            effective_chat=SimpleNamespace(type="private"),
             effective_user=SimpleNamespace(id=123),
         )
         save = AsyncMock()
