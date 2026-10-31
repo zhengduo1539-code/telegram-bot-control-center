@@ -141,6 +141,8 @@ CB_MP_CUSTOM_INTERVAL = "mp:interval:custom"
 CB_MP_QUICK_PREFIX = "mp:quick:"
 CB_MP_FIRST_NOW    = "mp:first:now"
 CB_MP_FIRST_CUSTOM = "mp:first:custom"
+CB_BACK_MP_MANAGE = "mp:back:manage"
+CB_BACK_MP_DETAILS = "mp:back:details"
 
 # Back targets
 CB_BACK_QM_MENU         = "back:qm_menu"
@@ -1475,7 +1477,7 @@ def _mp_manage_picker_keyboard(
         )
         rows.append([
             InlineKeyboardButton(
-                f"🗂 {title[:28]} · {count} item(s)",
+                f"🗂 {(group_titles.get(chat_id) or f'Chat {chat_id}')[:28]} · {count} item(s)",
                 callback_data=f"{CB_MP_MANAGE_PICK}{chat_id}",
             )
         ])
@@ -2205,6 +2207,21 @@ async def cb_back_mp_first_run(update: Update, context: ContextTypes.DEFAULT_TYP
     return MP_SET_FIRST_RUN
 
 
+async def cb_mp_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    _clear_mp(context)
+    await query.answer()
+    await query.edit_message_text(
+        "🏠 Main Menu — choose an action",
+        reply_markup=main_menu_keyboard(
+            bot=context.bot,
+            user_id=query.from_user.id,
+            language=context.user_data.get("language", "en"),
+        ),
+    )
+    return ConversationHandler.END
+
+
 async def cb_mp_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -2592,25 +2609,31 @@ def build_queue_manager() -> ConversationHandler:
 
 
 def build_media_pool() -> ConversationHandler:
-    mp_tz_pattern  = r"^mptz:(?!page:).+"
+    mp_tz_pattern = r"^mptz:(?!page:).+"
     mp_tzp_pattern = r"^mptz:page:\d+$"
+    mp_pick_pattern = rf"^{re.escape(CB_MP_PICK)}-?\d+$"
+    mp_page_pattern = rf"^{re.escape(CB_MP_PAGE)}\d+$"
+    mp_manage_pick_pattern = rf"^{re.escape(CB_MP_MANAGE_PICK)}-?\d+$"
+    mp_manage_page_pattern = rf"^{re.escape(CB_MP_MANAGE_PAGE)}\d+$"
+    mp_quick_pattern = rf"^{re.escape(CB_MP_QUICK_PREFIX)}(15m|30m|1h|3h|6h|12h|24h)$"
 
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(enter_media_pool, pattern=f"^{CB_MEDIA_POOL}$")],
         states={
             MP_MENU: [
-                CallbackQueryHandler(cb_mp_add_item,      pattern=f"^{CB_MP_ADD_ITEM}$"),
-                CallbackQueryHandler(cb_mp_set_interval,  pattern=f"^{CB_MP_SET_INTERVAL}$"),
-                CallbackQueryHandler(cb_mp_view,          pattern=f"^{CB_MP_VIEW}$"),
-                CallbackQueryHandler(cb_mp_reset,         pattern=f"^{CB_MP_RESET}$"),
-                CallbackQueryHandler(cb_mp_reset_yes,     pattern=f"^{CB_MP_RESET_YES}$"),
-                CallbackQueryHandler(cb_mp_clear,         pattern=f"^{CB_MP_CLEAR}$"),
-                CallbackQueryHandler(cb_mp_clear_yes,     pattern=f"^{CB_MP_CLEAR_YES}$"),
-                CallbackQueryHandler(cb_back_mp_menu,     pattern=f"^{CB_BACK_MP_MENU}$"),
+                CallbackQueryHandler(cb_mp_add_item, pattern=f"^{CB_MP_ADD_ITEM}$"),
+                CallbackQueryHandler(cb_mp_set_interval, pattern=f"^{CB_MP_SET_INTERVAL}$"),
+                CallbackQueryHandler(cb_mp_view, pattern=f"^{CB_MP_VIEW}$"),
+                CallbackQueryHandler(cb_mp_manage, pattern=f"^{CB_MP_MANAGE}$"),
+                CallbackQueryHandler(cb_mp_main_menu, pattern=f"^{CB_MAIN_MENU}$"),
             ],
             MP_CHAT_ID: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_chat_id),
+                CallbackQueryHandler(cb_mp_group_pick, pattern=mp_pick_pattern),
+                CallbackQueryHandler(cb_mp_group_page, pattern=mp_page_pattern),
+                CallbackQueryHandler(cb_mp_manual_chat_id, pattern=f"^{CB_MP_MANUAL}$"),
+                CallbackQueryHandler(cb_mp_add_selected, pattern=f"^{CB_MP_ADD_SELECTED}$"),
                 CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_chat_id),
             ],
             MP_ADD_ITEM: [
                 MessageHandler(
@@ -2619,39 +2642,62 @@ def build_media_pool() -> ConversationHandler:
                      filters.VOICE) & ~filters.COMMAND,
                     recv_mp_item,
                 ),
-                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
+                CallbackQueryHandler(cb_mp_add_done, pattern=f"^{CB_MP_ADD_DONE}$"),
+                CallbackQueryHandler(cb_mp_add_schedule, pattern=f"^{CB_MP_ADD_SCHEDULE}$"),
             ],
             MP_SET_INTERVAL_VALUE: [
+                CallbackQueryHandler(cb_mp_quick_interval, pattern=mp_quick_pattern),
+                CallbackQueryHandler(cb_mp_custom_interval, pattern=f"^{CB_MP_CUSTOM_INTERVAL}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_interval_value),
                 CallbackQueryHandler(cb_back_mp_interval_value, pattern=f"^{CB_BACK_MP_IV}$"),
-                CallbackQueryHandler(cb_back_mp_menu,           pattern=f"^{CB_BACK_MP_MENU}$"),
+                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
             ],
             MP_SET_INTERVAL_UNIT: [
-                CallbackQueryHandler(cb_mp_interval_unit,       pattern=f"^({CB_MP_IU_MINUTES}|{CB_MP_IU_HOURS}|{CB_MP_IU_DAYS})$"),
-                CallbackQueryHandler(cb_back_mp_interval_unit,  pattern=f"^{CB_BACK_MP_IU}$"),
-                CallbackQueryHandler(cb_back_mp_menu,           pattern=f"^{CB_BACK_MP_MENU}$"),
+                CallbackQueryHandler(
+                    cb_mp_interval_unit,
+                    pattern=f"^({CB_MP_IU_MINUTES}|{CB_MP_IU_HOURS}|{CB_MP_IU_DAYS})$",
+                ),
+                CallbackQueryHandler(cb_back_mp_interval_unit, pattern=f"^{CB_BACK_MP_IU}$"),
+                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
             ],
             MP_SET_FIRST_RUN: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_first_run),
+                CallbackQueryHandler(cb_mp_first_now, pattern=f"^{CB_MP_FIRST_NOW}$"),
+                CallbackQueryHandler(cb_mp_first_custom, pattern=f"^{CB_MP_FIRST_CUSTOM}$"),
+                CallbackQueryHandler(cb_back_mp_interval_unit, pattern=f"^{CB_BACK_MP_IV}$"),
                 CallbackQueryHandler(cb_back_mp_first_run, pattern=f"^{CB_BACK_MP_FR}$"),
-                CallbackQueryHandler(cb_back_mp_menu,      pattern=f"^{CB_BACK_MP_MENU}$"),
+                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_first_run),
             ],
             MP_SET_TIMEZONE: [
-                CallbackQueryHandler(cb_mp_tz,             pattern=mp_tz_pattern),
-                CallbackQueryHandler(cb_mp_tz_page,        pattern=mp_tzp_pattern),
+                CallbackQueryHandler(cb_mp_tz, pattern=mp_tz_pattern),
+                CallbackQueryHandler(cb_mp_tz_page, pattern=mp_tzp_pattern),
                 CallbackQueryHandler(cb_back_mp_first_run, pattern=f"^{CB_BACK_MP_FR}$"),
-                CallbackQueryHandler(cb_back_mp_menu,      pattern=f"^{CB_BACK_MP_MENU}$"),
+                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
             ],
             MP_AUTO_DELETE: [
-                CallbackQueryHandler(cb_mp_ad_yes,    pattern=f"^{CB_MP_AD_YES}$"),
-                CallbackQueryHandler(cb_mp_ad_no,     pattern=f"^{CB_MP_AD_NO}$"),
-                CallbackQueryHandler(cb_back_mp_tz,   pattern=f"^{CB_BACK_MP_TZ}$"),
+                CallbackQueryHandler(cb_mp_ad_yes, pattern=f"^{CB_MP_AD_YES}$"),
+                CallbackQueryHandler(cb_mp_ad_no, pattern=f"^{CB_MP_AD_NO}$"),
+                CallbackQueryHandler(cb_back_mp_tz, pattern=f"^{CB_BACK_MP_TZ}$"),
                 CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_ad_hours),
             ],
             MP_CONFIRM: [
-                CallbackQueryHandler(cb_mp_confirm,   pattern=f"^{CB_MP_CONFIRM}$"),
-                CallbackQueryHandler(cb_back_mp_tz,   pattern=f"^{CB_BACK_MP_TZ}$"),
+                CallbackQueryHandler(cb_mp_confirm, pattern=f"^{CB_MP_CONFIRM}$"),
+                CallbackQueryHandler(cb_back_mp_tz, pattern=f"^{CB_BACK_MP_TZ}$"),
+                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
+            ],
+            MP_MANAGE_CHAT: [
+                CallbackQueryHandler(cb_mp_manage_pick, pattern=mp_manage_pick_pattern),
+                CallbackQueryHandler(cb_mp_manage_page, pattern=mp_manage_page_pattern),
+                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
+            ],
+            MP_MANAGE_ACTION: [
+                CallbackQueryHandler(cb_mp_reset, pattern=f"^{CB_MP_RESET}$"),
+                CallbackQueryHandler(cb_mp_reset_yes, pattern=f"^{CB_MP_RESET_YES}$"),
+                CallbackQueryHandler(cb_mp_clear, pattern=f"^{CB_MP_CLEAR}$"),
+                CallbackQueryHandler(cb_mp_clear_yes, pattern=f"^{CB_MP_CLEAR_YES}$"),
+                CallbackQueryHandler(cb_back_mp_manage, pattern=f"^{CB_BACK_MP_MANAGE}$"),
+                CallbackQueryHandler(cb_back_mp_manage_details, pattern=f"^{CB_BACK_MP_DETAILS}$"),
                 CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
             ],
         },
@@ -2663,3 +2709,4 @@ def build_media_pool() -> ConversationHandler:
         name="media_pool",
         persistent=False,
     )
+
