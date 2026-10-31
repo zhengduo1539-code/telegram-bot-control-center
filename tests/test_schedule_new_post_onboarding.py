@@ -112,4 +112,4 @@ def test_schedule_template_preview_shows_full_saved_content():
 def test_schedule_empty_template_preview_explains_manual_entry():
     preview = wizard._wizard_template_page_text([], 0)
     assert "No User Templates Found" in preview
-    assert "send your post content manually" in preview
+    assert "Send your post content manually" in preview
