@@ -663,7 +663,7 @@ def _wizard_template_page_text(templates: list[dict], page: int) -> str:
     """Show the complete saved content for the currently selected template."""
     if not templates:
         return (
-            "📝 *No User Templates Found*\\n\\n"
+            "📝 *No User Templates Found*\n\n"
             "You have not saved a template yet. Send your post content manually "
             "in this step, then save a post as a template from *My Posts* "
             "when it is available."
@@ -676,17 +676,17 @@ def _wizard_template_page_text(templates: list[dict], page: int) -> str:
     text = content.get("text") or ""
     lines = [
         f"📝 *User Template* · {page + 1}/{len(templates)}",
-        f"\\n📄 *Name:* {name}",
+        f"\n📄 *Name:* {name}",
         f"📎 *Content type:* {escape_markdown(str(media_type or 'Text'), version=1)}",
     ]
     if media_file_id:
         lines.append("🗂 *Media:* Saved Telegram media")
     if text:
-        lines.append(f"\\n📝 *Full content:*\\n{escape_markdown(str(text), version=1)}")
+        lines.append(f"\n📝 *Full content:*\n{escape_markdown(str(text), version=1)}")
     else:
-        lines.append("\\n_(No caption or text saved.)_")
-    lines.append("\\n\\nChoose *Use this Template* to load it, or browse another template.")
-    return "\\n".join(lines)
+        lines.append("\n_(No caption or text saved.)_")
+    lines.append("\n\nChoose *Use this Template* to load it, or browse another template.")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
