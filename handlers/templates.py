@@ -62,14 +62,14 @@ def _tmpl_list_keyboard(templates: list[dict], page: int, language: str = "en") 
         name = tmpl.get("name", "Unnamed")[:40]
         rows.append([
             InlineKeyboardButton(f"📄 {name}", callback_data=f"tmpl:view:{tid}"),
-            InlineKeyboardButton("🗑 Delete",  callback_data=f"{CB_TMPL_DEL}{tid}"),
+            InlineKeyboardButton(tr(language, "delete"), callback_data=f"{CB_TMPL_DEL}{tid}"),
         ])
 
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_TMPL_PAGE}{page - 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{CB_TMPL_PAGE}{page - 1}"))
     if end < total:
-        nav_row.append(InlineKeyboardButton("Next ▶️", callback_data=f"{CB_TMPL_PAGE}{page + 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{CB_TMPL_PAGE}{page + 1}"))
     if nav_row:
         rows.append(nav_row)
 
