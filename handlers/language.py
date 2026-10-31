@@ -98,7 +98,7 @@ async def handle_language_choice(
         logger.exception("Could not save language preference for user_id=%s", user.id)
         current = await resolve_user_language(context, user.id)
         await message.reply_text(
-            translate(current, "lang_saved").replace("✅", "⚠️"),
+            "⚠️ Could not save your language setting. Please try again.",
             reply_markup=ReplyKeyboardRemove(),
         )
         context.user_data.pop("awaiting_language_choice", None)
