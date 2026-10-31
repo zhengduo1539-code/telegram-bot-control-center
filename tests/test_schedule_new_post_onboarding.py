@@ -82,7 +82,7 @@ def test_continue_opens_existing_destination_picker(monkeypatch):
         callbacks = [button.callback_data for button in _buttons(
             query.edit_message_text.await_args.kwargs["reply_markup"]
         )]
-        assert callbacks == [f"{wizard.CB_CHAT_PICK_PREFIX}-1001234567890", wizard.CB_CANCEL]
+        assert callbacks == [f"{wizard.CB_CHAT_PICK_PREFIX}-1001234567890", wizard.CB_MANUAL_CHAT_ID, wizard.CB_CANCEL]
 
     asyncio.run(scenario())
 
