@@ -37,6 +37,8 @@ from telegram.ext import (
 from config import ADMIN_IDS
 from handlers.owner_panel import CB_OWNER_PANEL
 from handlers.permissions import ChatAccessError, ensure_chat_access
+from handlers.language import resolve_user_language
+from localization import translate as tr
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,7 @@ CB_SCHEDULE_NEW = "action:schedule_new"
 CB_MY_POSTS     = "action:my_posts"
 CB_MANAGE_QUEUE = "action:manage_queue"
 CB_MEDIA_POOL   = "action:media_pool"
+CB_LANGUAGE    = "nav:language"
 
 # My Posts action prefixes (prefix + 24-char ObjectId ≤ 64 bytes total)
 CB_MPP_PAGE    = "mpp:page:"     # + page number
@@ -135,41 +138,44 @@ def start_keyboard(bot: Bot) -> InlineKeyboardMarkup:
     ])
 
 
-def main_menu_keyboard(bot: Bot | None = None, user_id: int | None = None) -> InlineKeyboardMarkup:
+def main_menu_keyboard(
+    bot: Bot | None = None,
+    user_id: int | None = None,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
     rows = [
         [
-            InlineKeyboardButton("📅 Schedule New Post", callback_data=CB_SCHEDULE_NEW),
-            InlineKeyboardButton("📋 My Posts",          callback_data=CB_MY_POSTS),
+            InlineKeyboardButton(tr(language, "schedule_new"), callback_data=CB_SCHEDULE_NEW),
+            InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS),
         ],
         [
-            InlineKeyboardButton("🗂 Manage Queue", callback_data=CB_MANAGE_QUEUE),
-            InlineKeyboardButton("🎲 Media Pool",   callback_data=CB_MEDIA_POOL),
+            InlineKeyboardButton(tr(language, "manage_queue"), callback_data=CB_MANAGE_QUEUE),
+            InlineKeyboardButton(tr(language, "media_pool"), callback_data=CB_MEDIA_POOL),
         ],
         [
-            InlineKeyboardButton("📝 Templates",  callback_data=CB_TEMPLATES),
-            InlineKeyboardButton("📊 My Stats",   callback_data=CB_MY_STATS),
+            InlineKeyboardButton(tr(language, "templates"), callback_data=CB_TEMPLATES),
+            InlineKeyboardButton(tr(language, "my_stats"), callback_data=CB_MY_STATS),
         ],
         [
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
         ],
     ]
     if bot is not None:
         username = _bot_username(bot)
         rows.append([
             InlineKeyboardButton(
-                "➕ Add to my Group",
+                tr(language, "add_group"),
                 url=f"https://t.me/{username}?startgroup=true",
             ),
             InlineKeyboardButton(
-                "📢 Share Bot",
+                tr(language, "share_bot"),
                 url=f"https://t.me/share/url?url=https://t.me/{username}&text=Check out this Advanced Scheduler Bot!",
             ),
         ])
-    # Owner-only entry point — never shown to non-admin users. Every
-    # owner_panel.py handler re-checks ADMIN_IDS anyway as defense in depth.
     if user_id is not None and user_id in ADMIN_IDS:
         rows.append([
-            InlineKeyboardButton("🛠 Owner Panel", callback_data=CB_OWNER_PANEL),
+            InlineKeyboardButton(tr(language, "owner_panel"), callback_data=CB_OWNER_PANEL),
         ])
     return InlineKeyboardMarkup(rows)
 
@@ -371,15 +377,15 @@ async def _render_my_posts(
 # ---------------------------------------------------------------------------
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Redirect group /start requests to private chat; show the feature menu in PM."""
+    """Redirect group /start requests to private chat; show the localized menu in PM."""
     message = update.message
     if message is None:
         return MAIN_MENU
 
     chat = update.effective_chat
     user_id = update.effective_user.id if update.effective_user else None
+    language = await resolve_user_language(context, user_id)
 
-    # A group should never receive the private scheduling controls.
     if chat is not None and chat.type in ("group", "supergroup"):
         try:
             bot_user = await context.bot.get_me()
@@ -390,30 +396,24 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         except Exception:
             logger.exception("Could not create a private-chat deep link for group %s.", chat.id)
             await message.reply_text(
-                "⚠️ I couldn't open the private setup link right now. "
-                "Please open the bot's profile and press Start.",
+                "⚠️ " + tr(language, "group_start_body", group="this group"),
             )
             return ConversationHandler.END
 
         group_title = escape_markdown(chat.title or "this group", version=1)
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📩 Open Bot in Private Chat", url=private_url)]
+            [InlineKeyboardButton(tr(language, "open_private"), url=private_url)]
         ])
         await message.reply_text(
-            "👋 *Schedule this group with the bot*\n\n"
-            f"To create scheduled posts for *{group_title}*, continue in the bot's private chat.\n\n"
-            "Tap *📩 Open Bot in Private Chat* below. This group will be remembered "
-            "and automatically selected when you choose *📅 Schedule New Post*.\n\n"
-            "🔒 Your scheduling controls and confirmations will stay in the private chat.\n"
-            "ℹ️ Only a group administrator can create schedules for this group.",
+            f"{tr(language, 'group_start_title')}\\n\\n"
+            f"{tr(language, 'group_start_body', group=group_title)}\\n\\n"
+            f"🔒 {tr(language, 'private_setup_action')}\\n"
+            f"{tr(language, 'group_admin_note')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
         )
-        # Do not keep a conversation state inside the group.
         return ConversationHandler.END
 
-    # The deep-link is only a request to preselect a chat. Verify membership,
-    # administrator rights and the bot's publish permission before saving context.
     target_chat_id = parse_group_start_payload(context.args)
     context.user_data.pop("launch_chat", None)
     launch_notice = None
@@ -428,7 +428,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         except ChatAccessError as exc:
             launch_notice = (
                 "⚠️ *Group not linked:* "
-                f"{escape_markdown(str(exc), version=1)}\n\n"
+                f"{escape_markdown(str(exc), version=1)}\\n\\n"
                 "You can still choose a group manually, or ask a group administrator "
                 "to open this setup link."
             )
@@ -443,24 +443,21 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         linked = context.user_data["launch_chat"]
         safe_title = escape_markdown(str(linked["title"]), version=1)
         menu_text = (
-            "👋 *Private Setup*\n\n"
-            f"📍 *Selected Group:* {safe_title}\n\n"
-            "This group is linked to your session. Choose *📅 Schedule New Post* "
-            "to start creating a post; the bot will select this group automatically.\n\n"
-            "Choose another tool below whenever you need it."
+            f"{tr(language, 'private_setup_title')}\\n\\n"
+            f"{tr(language, 'private_setup_body', group=safe_title)}\\n\\n"
+            f"{tr(language, 'private_setup_action')}"
         )
     else:
-        menu_text = "🏠 *Main Menu* — choose an action:"
+        menu_text = tr(language, "menu_title")
         if launch_notice:
-            menu_text = f"{launch_notice}\n\n{menu_text}"
+            menu_text = f"{launch_notice}\\n\\n{menu_text}"
 
     await message.reply_text(
         menu_text,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu_keyboard(context.bot, user_id),
+        reply_markup=main_menu_keyboard(context.bot, user_id, language),
     )
     return MAIN_MENU
-
 
 async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show the help/feature guide."""
@@ -468,6 +465,7 @@ async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not query:
         return MAIN_MENU
     await query.answer()
+    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
     await query.edit_message_text(
         HELP_TEXT,
         parse_mode=ParseMode.MARKDOWN,
@@ -485,10 +483,11 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return MAIN_MENU
     await query.answer()
     user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
     await query.edit_message_text(
-        "🏠 *Main Menu* — choose an action:",
+        tr(language, "menu_title"),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu_keyboard(context.bot, user_id),
+        reply_markup=main_menu_keyboard(context.bot, user_id, language),
     )
     return MAIN_MENU
 
