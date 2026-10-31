@@ -2879,6 +2879,38 @@ async def cmd_mp_cancel(
     return ConversationHandler.END
 
 
+async def cmd_qm_cancel(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    """Handle /cancel in Queue Manager using the selected language."""
+    message = update.effective_message
+    user = update.effective_user
+    language = (
+        await resolve_user_language(context, user.id)
+        if user is not None
+        else "en"
+    )
+    context.user_data.pop("active_queue_manager", None)
+    _clear(context)
+    if message is None:
+        return ConversationHandler.END
+    chat_id = update.effective_chat.id if update.effective_chat else message.chat_id
+    await chat_cleanup.cleanup(
+        context,
+        chat_id,
+        keep_message_id=message.message_id,
+    )
+    await message.reply_text(
+        qm_tr(language, "cancelled"),
+        reply_markup=main_menu_keyboard(
+            bot=context.bot,
+            user_id=user.id if user is not None else None,
+            language=language,
+        ),
+    )
+    return ConversationHandler.END
+
 async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     user_id = query.from_user.id if query.from_user else None
@@ -3012,7 +3044,7 @@ def build_queue_manager() -> ConversationHandler:
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", cmd_cancel),
+            CommandHandler("cancel", cmd_qm_cancel),
             CallbackQueryHandler(cb_cancel_local, pattern=f"^{CB_CANCEL}$"),
         ],
         allow_reentry=True,
