@@ -251,7 +251,7 @@ def test_content_is_reviewed_as_one_fifo_item_before_it_is_added(monkeypatch):
         assert "Publisher Group" in review_text
         assert "My first queued post" in review_text
         assert "09:00 • 14:00" in review_text
-        assert "Asia/Bangkok" in review_text
+        assert "GMT+7:00 Thailand" in review_text
         add_to_queue.assert_not_awaited()
         review_callbacks = {
             button.callback_data
@@ -309,7 +309,7 @@ def test_clear_queue_warning_explains_global_scope_and_preserves_published_posts
             assert state == queue.QM_MENU
             text = query.edit_message_text.await_args.args[0]
             assert "all queue records" in text.lower()
-            assert "all your destinations" in text.lower()
+            assert "all groups and channels" in text.lower()
             assert "already published" in text.lower()
             callbacks = {
                 button.callback_data
