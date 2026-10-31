@@ -32,7 +32,11 @@ def _read_admin_ids() -> list[int]:
 
 TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip() or os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 MONGO_URI = os.getenv("MONGODB_URI", "").strip() or os.getenv("MONGO_URI", "").strip()
-MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "schedule_bot").strip() or "schedule_bot"
+MONGODB_DATABASE = (
+    os.getenv("SCHEDULE_BOT_DATABASE", "").strip()
+    or os.getenv("MONGODB_DATABASE", "schedule_bot").strip()
+    or "schedule_bot"
+)
 PORT = _read_port()
 ADMIN_IDS = _read_admin_ids()
 
