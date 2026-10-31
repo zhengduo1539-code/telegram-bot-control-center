@@ -383,3 +383,23 @@ def test_queue_cancel_command_uses_saved_language_and_returns_main_menu(monkeypa
         )
 
     asyncio.run(scenario())
+
+
+def test_queue_content_step_offers_user_templates_and_full_preview():
+    buttons = _buttons(queue._qm_content_keyboard("en"))
+    assert any(button.callback_data == queue.CB_QM_USE_TEMPLATE for button in buttons)
+    template = {
+        "_id": "0123456789abcdef01234567",
+        "name": "Daily Update",
+        "content": {"media_type": None, "media_file_id": None, "text": "Full saved update text"},
+    }
+    preview = queue._user_template_preview([template], 0, "queue")
+    assert "Daily Update" in preview
+    assert "Full saved update text" in preview
+
+
+def test_queue_empty_template_message_guides_manual_content():
+    preview = queue._user_template_preview([], 0, "queue")
+    assert "No User Templates Found" in preview
+    assert "send your text, photo" in preview
+    assert "Queue" in preview
