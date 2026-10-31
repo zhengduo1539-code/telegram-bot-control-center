@@ -96,35 +96,35 @@ async def enter_templates(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(
             f"❌ Error loading templates: `{str(exc).replace(chr(96), chr(39))}`",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]
+            ]),
         )
         return TMPL_MENU
 
     if not templates:
         await query.edit_message_text(
-            "📝 *My Templates*\n\n"
-            "No templates saved yet.\n\n"
-            "Go to *📋 My Posts* and tap *💾 Template #N* on any post to save it.",
+            tr(language, "templates_empty"),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]
+            ]),
         )
         return TMPL_MENU
 
     context.user_data["_tmpl_page"] = 0
     await query.edit_message_text(
-        f"📝 *My Templates* — {len(templates)} saved\n\n"
-        "💡 To use a template: *Schedule New Post → Step 2 → 📝 Use Template*",
+        f"{tr(language, 'templates_title')} — {len(templates)} saved",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_tmpl_list_keyboard(templates, 0, language),
     )
     return TMPL_MENU
 
-
 async def cb_tmpl_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     if not query or not query.from_user:
         return TMPL_MENU
-    page    = int((query.data or "0").replace(CB_TMPL_PAGE, "") or "0")
+    page = int((query.data or "0").replace(CB_TMPL_PAGE, "") or "0")
     user_id = query.from_user.id
     language = await resolve_user_language(context, user_id)
     try:
@@ -132,16 +132,15 @@ async def cb_tmpl_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception as exc:
         await query.answer(f"Error: {exc}", show_alert=True)
         return TMPL_MENU
+
     await query.answer()
     context.user_data["_tmpl_page"] = page
     await query.edit_message_text(
-        f"📝 *My Templates* — {len(templates)} saved\n\n"
-        "💡 To use a template: *Schedule New Post → Step 2 → 📝 Use Template*",
+        f"{tr(language, 'templates_title')} — {len(templates)} saved",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_tmpl_list_keyboard(templates, page, language),
     )
     return TMPL_MENU
-
 
 # ---------------------------------------------------------------------------
 # View / preview
