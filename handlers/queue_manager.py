@@ -132,8 +132,6 @@ CB_QM_CONFIRM_SLOTS = "qm:slots:confirm"
 CB_QM_CONFIRM_ADD  = "qm:confirm_add"
 CB_QM_AD_BACK = "qm:auto_delete:back"
 CB_QM_AP_BACK = "qm:auto_pin:back"
-CB_QM_AD_BACK = "qm:auto_delete:back"
-CB_QM_AP_BACK = "qm:auto_pin:back"
 CB_QM_USE_TEMPLATE = "qm:template:open"
 CB_QM_TMPL_PAGE = "qm:template:page:"
 CB_QM_TMPL_USE = "qm:template:use:"
@@ -2708,6 +2706,7 @@ async def cb_back_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     language = await resolve_user_language(context, query.from_user.id)
     pm = _pm(context)
     pm.pop("mp_ad_hours", None)
+    pm.pop("mp_ap_hours", None)
     page = pm.get("tz_page", 0)
     await query.answer()
     await query.edit_message_text(
