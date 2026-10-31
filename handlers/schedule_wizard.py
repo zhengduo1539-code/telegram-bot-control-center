@@ -838,7 +838,7 @@ async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     _w(context).setdefault("inline_buttons", [])
     await _edit(query,
-        "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
+        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
         _recurrence_keyboard(context.user_data.get("language", "en")),
     )
     return WIZARD_RECURRENCE
@@ -911,7 +911,7 @@ async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Finished adding buttons — move to recurrence."""
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
+        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
         _recurrence_keyboard(context.user_data.get("language", "en")),
     )
     return WIZARD_RECURRENCE
@@ -934,8 +934,7 @@ async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     _w(context)["recurrence_type"] = "once"
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
+        tr(context.user_data.get("language", "en"), "timezone_prompt"),
         _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
@@ -1010,8 +1009,7 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     _w(context)["interval_unit"] = unit
     await _edit(query,
         f"✅ Interval: every `{_w(context)['interval_value']} {unit}`\n\n"
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
+        tr(context.user_data.get("language", "en"), "timezone_prompt"),
         _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
@@ -1044,8 +1042,7 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return WIZARD_DOW_SELECT
     await _edit(query,
         f"✅ Days: `{', '.join(DOW_LABELS[d] for d in sorted(selected))}`\n\n"
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
+        tr(context.user_data.get("language", "en"), "timezone_prompt"),
         _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
@@ -1074,9 +1071,7 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     w.setdefault("time_window_enabled", False)
     await update.message.reply_text(
         f"✅ First run: `{text}` ({tz_str})\n\n"
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
-        "Tap a preset or type a custom number:",
+        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
     )
@@ -1186,9 +1181,7 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await query.answer()
     await query.edit_message_text(
         f"✅ First run: `{time_str}` ({tz_str})\n\n"
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
-        "Tap a preset or type a custom number:",
+        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
     )
@@ -1266,7 +1259,7 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return WIZARD_INTERVAL_UNIT
     else:
         await _edit(query,
-            "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
+            tr(context.user_data.get("language", "en"), "recurrence_prompt"),
             _recurrence_keyboard(context.user_data.get("language", "en")),
         )
         return WIZARD_RECURRENCE
@@ -1735,7 +1728,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cb_back_recurrence(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
+        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
         _recurrence_keyboard(context.user_data.get("language", "en")),
     )
     return WIZARD_RECURRENCE
@@ -1765,9 +1758,7 @@ async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TY
 async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
-        "Tap a preset or type a custom number:",
+        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
         _max_runs_keyboard(),
     )
     return WIZARD_MAX_RUNS
