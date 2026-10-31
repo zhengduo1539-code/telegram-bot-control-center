@@ -12,7 +12,7 @@
 1. Create a MongoDB Atlas database and a database user with read/write access.
 2. Configure Network Access for the Render service. Prefer a restricted allowlist where your hosting network permits it.
 3. Save the connection string as MONGODB_URI.
-4. Set MONGODB_DATABASE to schedule_bot.
+4. Set SCHEDULE_BOT_DATABASE to schedule_bot.
 
 ## 3. Render service
 
@@ -28,7 +28,7 @@ Connect this GitHub repository as a Render Web Service.
 
 The ASGI lifespan starts and stops Telegram polling on the same event loop as the HTTP service. Flask health endpoints are served through an ASGI adapter on the same port; do not start a second health server in this mode.
 
-Configure BOT_TOKEN, MONGODB_URI, ADMIN_IDS and optionally MONGODB_DATABASE and SCHEDULER_INTERVAL_SECS. Render supplies PORT.
+Configure BOT_TOKEN, MONGODB_URI, ADMIN_IDS and optionally SCHEDULE_BOT_DATABASE and SCHEDULER_INTERVAL_SECS. Render supplies PORT.
 
 ## 4. Verify the service
 
