@@ -31,6 +31,121 @@ def test_media_pool_menu_has_guided_actions_not_global_destructive_buttons():
     assert "🗑 Clear All" not in labels
 
 
+def test_media_pool_intro_keyboard_has_back_and_localized_continue():
+    keyboard = media_pool._mp_intro_keyboard("my")
+    buttons = [
+        button
+        for row in keyboard.inline_keyboard
+        for button in row
+    ]
+
+    from localization import translate
+
+    assert len(buttons) == 2
+    assert buttons[0].text == translate("my", "back")
+    assert buttons[0].callback_data == media_pool.CB_MAIN_MENU
+    assert buttons[1].text == translate_media_pool("my", "continue")
+    assert buttons[1].callback_data == media_pool.CB_MP_CONTINUE
+
+
+def test_media_pool_entry_shows_guide_and_continue_opens_existing_menu(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(
+            media_pool, "resolve_user_language", AsyncMock(return_value="my")
+        )
+        monkeypatch.setattr(media_pool.chat_cleanup, "reset", lambda *_: None)
+        monkeypatch.setattr(media_pool.chat_cleanup, "track", lambda *_: None)
+
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            message=SimpleNamespace(chat_id=42, message_id=88),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            user_data={},
+            application=SimpleNamespace(bot_data={}),
+        )
+        update = SimpleNamespace(callback_query=query)
+
+        state = await media_pool.enter_media_pool(update, context)
+
+        assert state == media_pool.MP_INTRO
+        assert context.user_data["active_media_pool"] is True
+        intro_text = query.edit_message_text.await_args.args[0]
+        assert intro_text == translate_media_pool("my", "onboarding")
+        intro_keyboard = query.edit_message_text.await_args.kwargs["reply_markup"]
+        intro_callbacks = [
+            button.callback_data
+            for row in intro_keyboard.inline_keyboard
+            for button in row
+        ]
+        assert media_pool.CB_MAIN_MENU in intro_callbacks
+        assert media_pool.CB_MP_CONTINUE in intro_callbacks
+
+        state = await media_pool.cb_mp_continue(update, context)
+
+        assert state == media_pool.MP_MENU
+        menu_text = query.edit_message_text.await_args.args[0]
+        assert menu_text == translate_media_pool("my", "menu_intro")
+        menu_keyboard = query.edit_message_text.await_args.kwargs["reply_markup"]
+        menu_callbacks = [
+            button.callback_data
+            for row in menu_keyboard.inline_keyboard
+            for button in row
+        ]
+        for callback in (
+            media_pool.CB_MP_ADD_ITEM,
+            media_pool.CB_MP_SET_INTERVAL,
+            media_pool.CB_MP_VIEW,
+            media_pool.CB_MP_MANAGE,
+        ):
+            assert callback in menu_callbacks
+
+    asyncio.run(scenario())
+
+
+def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(
+            media_pool, "resolve_user_language", AsyncMock(return_value="my")
+        )
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            user_data={
+                "language": "my",
+                "active_media_pool": True,
+                "mpwiz": {"mp_chat_id": -1001234567890},
+            },
+            bot=None,
+        )
+
+        state = await media_pool.cb_mp_main_menu(
+            SimpleNamespace(callback_query=query), context
+        )
+
+        from localization import translate
+
+        assert state == media_pool.ConversationHandler.END
+        assert "active_media_pool" not in context.user_data
+        assert "mpwiz" not in context.user_data
+        assert query.edit_message_text.await_args.args[0] == translate("my", "menu_title")
+        keyboard = query.edit_message_text.await_args.kwargs["reply_markup"]
+        callbacks = [
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+            if button.callback_data
+        ]
+        assert media_pool.CB_MEDIA_POOL in callbacks
+
+    asyncio.run(scenario())
+
+
 def test_media_pool_group_picker_shows_known_groups_and_manual_fallback():
     keyboard = media_pool._mp_group_picker_keyboard(
         [{
@@ -255,6 +370,8 @@ def test_clear_only_deletes_selected_pool_and_pauses_its_schedule(monkeypatch):
 def test_media_pool_conversation_registers_group_and_management_states():
     conversation = media_pool.build_media_pool()
 
+    assert media_pool.MP_INTRO in conversation.states
+    assert media_pool.MP_MENU in conversation.states
     assert media_pool.MP_CHAT_ID in conversation.states
     assert media_pool.MP_ADD_ITEM in conversation.states
     assert media_pool.MP_SET_INTERVAL_VALUE in conversation.states
@@ -297,7 +414,7 @@ def test_media_pool_and_queue_manager_use_separate_cancel_handlers():
     queue_conversation = media_pool.build_queue_manager()
     pool_conversation = media_pool.build_media_pool()
 
-    assert queue_conversation.fallbacks[0].callback.__name__ == "cmd_cancel"
+    assert queue_conversation.fallbacks[0].callback.__name__ == "cmd_qm_cancel"
     assert pool_conversation.fallbacks[0].callback.__name__ == "cmd_mp_cancel"
 
 
