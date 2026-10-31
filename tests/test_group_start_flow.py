@@ -59,7 +59,7 @@ def test_group_start_shows_private_chat_button_not_feature_menu():
             "https://t.me/ScheduleBot?start=setup_-1001234567890"
         )
         assert "Publisher Group" in message.reply_text.await_args.args[0]
-        assert "Private Chat" in message.reply_text.await_args.args[0]
+        assert "private chat" in message.reply_text.await_args.args[0].lower()
         assert "action:schedule_new" not in str(keyboard.inline_keyboard)
 
     asyncio.run(scenario())
