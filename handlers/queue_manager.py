@@ -1665,8 +1665,9 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "text": wizard.get("content_text"),
             "media_file_id": wizard.get("media_file_id"),
             "media_type": wizard.get("media_type"),
-            "auto_delete_after_hours": wizard.get("add_auto_delete_hours"),
         }
+        if wizard.get("add_auto_delete_hours") is not None:
+            payload["auto_delete_after_hours"] = wizard["add_auto_delete_hours"]
         if not payload["text"] and not payload["media_file_id"]:
             raise ValueError("Queue content is empty.")
         item_id = await add_to_queue(user_id, int(chat_id), payload)
