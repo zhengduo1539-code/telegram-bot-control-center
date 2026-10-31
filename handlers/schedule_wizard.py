@@ -54,6 +54,19 @@ from schedule_wizard_localization import translate_schedule_wizard as sw_tr
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_auto_delete_duration(raw: str) -> float | None:
+    """Parse an explicit integer duration such as '5 minutes' or '2 hours'. Return hours."""
+    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.IGNORECASE)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2).lower()
+    minutes = amount if unit in ("m", "min", "mins", "minute", "minutes") else amount * 60
+    if minutes < 5 or minutes > 525600:
+        return None
+    return minutes / 60
+
 # ---------------------------------------------------------------------------
 # Wizard state constants
 # ---------------------------------------------------------------------------
@@ -1445,8 +1458,8 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w["tw_end"]   = None
     if w.get("auto_delete"):
         await _edit(query,
-            "🗑 *Auto-Delete — After how many hours?*\n\n"
-            "Type a positive number (decimals OK, e.g. `24` or `0.5`):",
+            "🗑 *Auto-Delete — When should the post be deleted?*\n\n"
+            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
             nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
@@ -1513,8 +1526,8 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w["auto_delete"]:
         await update.message.reply_text(
             f"✅ Window: `{start}` → `{parsed}`\n\n"
-            "🗑 *Auto-Delete — After how many hours?*\n\n"
-            "Type a positive number (decimals OK, e.g. `24` or `0.5`):",
+            "🗑 *Auto-Delete — When should the post be deleted?*\n\n"
+            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=nav_keyboard(back_data=CB_BACK_TW),
         )
@@ -1594,18 +1607,19 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ---------------------------------------------------------------------------
 
 async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    try:
-        val = float(update.message.text.strip())
-        if val <= 0:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("⚠️ Please enter a positive number, e.g. `24`.", parse_mode=ParseMode.MARKDOWN)
+    val = _parse_auto_delete_duration(update.message.text or "")
+    if val is None:
+        await update.message.reply_text(
+            "⚠️ Enter a valid duration: `5 minutes` or `2 hours`. Minimum is 5 minutes.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
         return WIZARD_AD_HOURS
     _w(context)["ad_hours"] = val
+    _w(context)["ad_duration_label"] = (update.message.text or "").strip()
     w = _w(context)
     if w.get("self_destruct"):
         await update.message.reply_text(
-            f"✅ Auto-delete: `{val}h`\n\n"
+            f"✅ Auto-delete: `{update.message.text.strip()}`\n\n"
             "💣 *Self-Destruct — After how many seconds?*\n\n"
             "Type a positive integer:",
             parse_mode=ParseMode.MARKDOWN,

@@ -61,6 +61,20 @@ from queue_manager_localization import translate_queue_manager as qm_tr
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_auto_delete_duration(raw: str) -> float | None:
+    """Parse explicit integer minutes/hours and return the duration in hours."""
+    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.IGNORECASE)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2).lower()
+    minutes = amount if unit in ("m", "min", "mins", "minute", "minutes") else amount * 60
+    if minutes < 5 or minutes > 525600:
+        return None
+    return minutes / 60
+
+
 # ---------------------------------------------------------------------------
 # Conversation states
 # ---------------------------------------------------------------------------
@@ -81,6 +95,7 @@ QM_ADD_TZ   = 109
 QM_CONFIRM_SLOTS = 110
 QM_INTRO = 111
 QM_TEMPLATE_PICK = 112
+QM_AUTO_DELETE = 113
 
 (
     MP_MENU,
@@ -113,6 +128,8 @@ CB_QM_CLEAR_YES    = "qm:clear_yes"
 CB_QM_CONTINUE     = "qm:intro:continue"
 CB_QM_CONFIRM_SLOTS = "qm:slots:confirm"
 CB_QM_CONFIRM_ADD  = "qm:confirm_add"
+CB_QM_AD_BACK = "qm:auto_delete:back"
+CB_QM_AD_BACK = "qm:auto_delete:back"
 CB_QM_USE_TEMPLATE = "qm:template:open"
 CB_QM_TMPL_PAGE = "qm:template:page:"
 CB_QM_TMPL_USE = "qm:template:use:"
@@ -1467,15 +1484,42 @@ async def cb_qm_ac_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         dt_local_display = date_str
 
     await query.edit_message_text(
-        f"📋 *Queue — Confirmation*\n\n"
-        f"🗂 Chat: *{chat_title}* (`{chat_id}`)\n"
-        f"📝 Content: `{content_preview or '—'}`\n"
-        f"🕐 Post at: `{dt_local_display}` ({tz_label})\n\n"
-        "Tap *✅ Confirm* to schedule:",
+        "Queue Auto-Delete (Optional)\n\n"
+        "After the queued post is successfully sent, should it be deleted automatically?\n\n"
+        "Enter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.\n"
+        "Enter off to keep the post.",
         parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=CB_QM_AD_BACK)]]),
+    )
+    return QM_AUTO_DELETE
+
+
+async def recv_qm_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
+    wizard = _w(context)
+    if raw.lower() == "off":
+        wizard.pop("add_auto_delete_hours", None)
+        label = "Off"
+    else:
+        hours = _parse_auto_delete_duration(raw)
+        if hours is None:
+            await update.message.reply_text("Enter 5 minutes or more, e.g. 5 minutes or 2 hours. Type off to keep the post.")
+            return QM_AUTO_DELETE
+        wizard["add_auto_delete_hours"] = hours
+        label = raw
+    await update.message.reply_text(
+        "Queue confirmation\\nAuto-Delete: " + label + "\\n\\nTap Confirm to save this queue item.",
         reply_markup=confirm_keyboard(CB_QM_CONFIRM_ADD, CB_BACK_QM_AC_TZ),
     )
     return QM_CONFIRM_SLOT
+
+
+async def cb_qm_auto_delete_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    wizard = _w(context)
+    wizard.pop("add_auto_delete_hours", None)
+    await query.answer()
+    return await cb_back_qm_ac_date(update, context)
 
 
 async def cb_qm_ac_tz_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1622,6 +1666,8 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "media_file_id": wizard.get("media_file_id"),
             "media_type": wizard.get("media_type"),
         }
+        if wizard.get("add_auto_delete_hours") is not None:
+            payload["auto_delete_after_hours"] = wizard["add_auto_delete_hours"]
         if not payload["text"] and not payload["media_file_id"]:
             raise ValueError("Queue content is empty.")
         item_id = await add_to_queue(user_id, int(chat_id), payload)
@@ -2534,7 +2580,7 @@ def _mp_summary_text(pm: dict, language: str = "en") -> str:
     first_run_display = mp_tr(language, "start_now") if first_run == "now" else first_run
     ad_hours = pm.get("mp_ad_hours")
     ad_line = (
-        f"{ad_hours} {mp_tr(language, 'hours')}"
+        pm.get("mp_ad_duration_label", f"{ad_hours} hours")
         if ad_hours
         else mp_tr(language, "keep_posts")
     )
@@ -2564,24 +2610,24 @@ async def cb_mp_ad_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     language = await resolve_user_language(context, query.from_user.id)
     await _edit(
         query,
-        mp_tr(language, "delete_delay"),
+        "🗑 When should each Media Pool post be deleted?\n\nEnter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
         _mp_nav_keyboard(language, back_data=CB_BACK_MP_TZ),
     )
     return MP_AUTO_DELETE
 
 
 async def recv_mp_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw = (update.message.text or "").strip().replace(",", ".")
+    raw = (update.message.text or "").strip()
     language = await resolve_user_language(context, update.effective_user.id)
-    try:
-        value = float(raw)
-        if value <= 0 or value > 8760:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text(mp_tr(language, "invalid_delete_delay"))
+    value = _parse_auto_delete_duration(raw)
+    if value is None:
+        await update.message.reply_text(
+            "⚠️ Enter a duration with a unit, e.g. 5 minutes or 2 hours. Minimum: 5 minutes."
+        )
         return MP_AUTO_DELETE
     pm = _pm(context)
     pm["mp_ad_hours"] = value
+    pm["mp_ad_duration_label"] = raw
     await update.message.reply_text(
         _mp_summary_text(pm, language),
         reply_markup=_mp_schedule_confirm_keyboard(language),
@@ -2724,7 +2770,7 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     first_display = mp_tr(language, "start_now") if first_run == "now" else first_run
     interval_label = pm.get("interval_label") or f"{value} {mp_tr(language, unit)}"
     auto_delete_label = (
-        f"{auto_delete_hours} {mp_tr(language, 'hours')}"
+        pm.get("mp_ad_duration_label", f"{auto_delete_hours} hours")
         if auto_delete_hours
         else mp_tr(language, "keep_posts")
     )
@@ -3290,6 +3336,10 @@ def build_queue_manager() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_add_date),
                 CallbackQueryHandler(cb_back_qm_ac_content,  pattern=f"^{CB_BACK_QM_AC_CONTENT}$"),
                 CallbackQueryHandler(cb_back_qm_menu,        pattern=f"^{CB_BACK_QM_MENU}$"),
+            ],
+            QM_AUTO_DELETE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_auto_delete),
+                CallbackQueryHandler(cb_qm_auto_delete_back, pattern=f"^{CB_QM_AD_BACK}$"),
             ],
             QM_ADD_TZ: [
                 CallbackQueryHandler(cb_qm_ac_tz,            pattern=qm_ac_tz_pattern),
