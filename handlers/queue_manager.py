@@ -1472,12 +1472,10 @@ def _mp_manage_picker_keyboard(
     for pool in pools[start:end]:
         chat_id = int(pool["chat_id"])
         count = len(pool.get("items", []))
-        title = escape_markdown(
-            group_titles.get(chat_id) or f"Chat {chat_id}", version=1
-        )
+        title = (group_titles.get(chat_id) or f"Chat {chat_id}")[:28]
         rows.append([
             InlineKeyboardButton(
-                f"🗂 {(group_titles.get(chat_id) or f'Chat {chat_id}')[:28]} · {count} item(s)",
+                f"🗂 {title} · {count} item(s)",
                 callback_data=f"{CB_MP_MANAGE_PICK}{chat_id}",
             )
         ])
@@ -1747,9 +1745,7 @@ async def recv_mp_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             update.effective_user.id,
         )
     except ChatAccessError as exc:
-        await update.message.reply_text(
-            f"Cannot use this chat: {escape_markdown(str(exc), version=1)}"
-        )
+        await update.message.reply_text(f"Cannot use this chat: {exc}")
         return MP_CHAT_ID
 
     return await _mp_continue_after_chat_selection(update, context, target_chat)
@@ -2539,7 +2535,7 @@ async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     _clear_mp(context)
     message = (
-        "✅ This Media Pool has been cleared. Its pending random-post schedule has been paused."
+        "✅ This Media Pool has been cleared. Any pending random-post schedule for this destination has been paused."
         if result.deleted_count
         else "This Media Pool was already empty or no longer exists."
     )
