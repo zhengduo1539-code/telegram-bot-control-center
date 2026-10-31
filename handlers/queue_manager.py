@@ -2117,6 +2117,12 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await query.answer("The setup is incomplete. Please start again.", show_alert=True)
         return MP_MENU
 
+    try:
+        await ensure_chat_access(query.get_bot(), int(chat_id), user_id)
+    except ChatAccessError as exc:
+        await query.answer(str(exc), show_alert=True)
+        return MP_CONFIRM
+
     await query.answer("Checking and saving…")
     try:
         db = await get_db()
@@ -2463,6 +2469,11 @@ async def cb_mp_reset_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer("Select a pool first.", show_alert=True)
         return MP_MANAGE_CHAT
     try:
+        await ensure_chat_access(query.get_bot(), int(chat_id), query.from_user.id)
+    except ChatAccessError as exc:
+        await query.answer(str(exc), show_alert=True)
+        return MP_MANAGE_ACTION
+    try:
         await reset_media_pool(query.from_user.id, int(chat_id))
         text, keyboard = await _mp_manage_summary(query.from_user.id, int(chat_id))
     except Exception:
@@ -2495,6 +2506,12 @@ async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not chat_id:
         await query.answer("Select a pool first.", show_alert=True)
         return MP_MANAGE_CHAT
+    try:
+        await ensure_chat_access(query.get_bot(), int(chat_id), user_id)
+    except ChatAccessError as exc:
+        await query.answer(str(exc), show_alert=True)
+        return MP_MANAGE_ACTION
+
     try:
         db = await get_db()
         result = await db[COL_MEDIA_POOLS].delete_one({
