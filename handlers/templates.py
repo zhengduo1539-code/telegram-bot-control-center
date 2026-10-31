@@ -20,6 +20,9 @@ from telegram.ext import (
 )
 
 from database import list_templates, delete_template, get_template
+from handlers.language import resolve_user_language
+from localization import translate as tr
+
 from handlers.base import (
     CB_CANCEL, CB_MAIN_MENU, CB_TEMPLATES,
     cmd_cancel, main_menu_keyboard,
@@ -48,7 +51,7 @@ _PAGE_SIZE = 5
 # Keyboard builder
 # ---------------------------------------------------------------------------
 
-def _tmpl_list_keyboard(templates: list[dict], page: int) -> InlineKeyboardMarkup:
+def _tmpl_list_keyboard(templates: list[dict], page: int, language: str = "en") -> InlineKeyboardMarkup:
     total = len(templates)
     start = page * _PAGE_SIZE
     end   = min(start + _PAGE_SIZE, total)
@@ -70,7 +73,7 @@ def _tmpl_list_keyboard(templates: list[dict], page: int) -> InlineKeyboardMarku
     if nav_row:
         rows.append(nav_row)
 
-    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)])
+    rows.append([InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -84,6 +87,7 @@ async def enter_templates(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return TMPL_MENU
     await query.answer()
     user_id = query.from_user.id
+    language = await resolve_user_language(context, user_id)
 
     try:
         templates = await list_templates(user_id)
@@ -92,7 +96,7 @@ async def enter_templates(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(
             f"❌ Error loading templates: `{str(exc).replace(chr(96), chr(39))}`",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]),
         )
         return TMPL_MENU
 
@@ -111,7 +115,7 @@ async def enter_templates(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"📝 *My Templates* — {len(templates)} saved\n\n"
         "💡 To use a template: *Schedule New Post → Step 2 → 📝 Use Template*",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_tmpl_list_keyboard(templates, 0),
+        reply_markup=_tmpl_list_keyboard(templates, 0, language),
     )
     return TMPL_MENU
 
@@ -122,6 +126,7 @@ async def cb_tmpl_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return TMPL_MENU
     page    = int((query.data or "0").replace(CB_TMPL_PAGE, "") or "0")
     user_id = query.from_user.id
+    language = await resolve_user_language(context, user_id)
     try:
         templates = await list_templates(user_id)
     except Exception as exc:
@@ -133,7 +138,7 @@ async def cb_tmpl_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"📝 *My Templates* — {len(templates)} saved\n\n"
         "💡 To use a template: *Schedule New Post → Step 2 → 📝 Use Template*",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_tmpl_list_keyboard(templates, page),
+        reply_markup=_tmpl_list_keyboard(templates, page, language),
     )
     return TMPL_MENU
 
