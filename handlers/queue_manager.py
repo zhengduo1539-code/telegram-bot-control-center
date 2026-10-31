@@ -153,6 +153,7 @@ CB_MP_CONTINUE = "mp:intro:continue"
 CB_MP_USE_TEMPLATE = "mp:template:open"
 CB_MP_TMPL_PAGE = "mp:template:page:"
 CB_MP_TMPL_USE = "mp:template:use:"
+CB_MP_TEMPLATE_BACK = "mp:template:back"
 CB_MP_MANAGE_PICK  = "mp:manage:pick:"
 CB_MP_MANAGE_PAGE  = "mp:manage:page:"
 CB_MP_CUSTOM_INTERVAL = "mp:interval:custom"
@@ -2178,7 +2179,7 @@ async def cb_mp_use_template(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(
             _user_template_preview([], 0, "media"),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_user_template_keyboard([], 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_ADD_DONE),
+            reply_markup=_user_template_keyboard([], 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK),
         )
         return MP_TEMPLATE_PICK
     context.user_data["_mp_template_page"] = 0
@@ -2207,6 +2208,13 @@ async def cb_mp_template_page(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     return MP_TEMPLATE_PICK
 
+
+
+async def cb_mp_template_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await _mp_prompt_add_item(update, context)
+    return MP_ADD_ITEM
 
 async def cb_mp_template_use(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -3263,6 +3271,7 @@ def build_queue_manager() -> ConversationHandler:
                 CallbackQueryHandler(cb_back_qm_menu,     pattern=f"^{CB_BACK_QM_MENU}$"),
             ],
             QM_ADD_CONTENT: [
+                CallbackQueryHandler(cb_qm_use_template, pattern=f"^{CB_QM_USE_TEMPLATE}$"),
                 MessageHandler(
                     (filters.TEXT | filters.PHOTO | filters.VIDEO |
                      filters.Document.ALL | filters.AUDIO | filters.ANIMATION |
@@ -3271,6 +3280,11 @@ def build_queue_manager() -> ConversationHandler:
                 ),
                 CallbackQueryHandler(cb_back_qm_ac_chat,    pattern=f"^{CB_BACK_QM_AC_CHAT}$"),
                 CallbackQueryHandler(cb_back_qm_menu,        pattern=f"^{CB_BACK_QM_MENU}$"),
+            ],
+            QM_TEMPLATE_PICK: [
+                CallbackQueryHandler(cb_qm_template_page, pattern=rf"^{re.escape(CB_QM_TMPL_PAGE)}\d+$"),
+                CallbackQueryHandler(cb_qm_template_use, pattern=rf"^{re.escape(CB_QM_TMPL_USE)}[0-9a-f]{{24}}$"),
+                CallbackQueryHandler(cb_back_qm_ac_content, pattern=f"^{CB_BACK_QM_AC_CONTENT}$"),
             ],
             QM_ADD_DATE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_add_date),
@@ -3331,6 +3345,7 @@ def build_media_pool() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_chat_id),
             ],
             MP_ADD_ITEM: [
+                CallbackQueryHandler(cb_mp_use_template, pattern=f"^{CB_MP_USE_TEMPLATE}$"),
                 MessageHandler(
                     (filters.TEXT | filters.PHOTO | filters.VIDEO |
                      filters.Document.ALL | filters.AUDIO | filters.ANIMATION |
@@ -3339,6 +3354,11 @@ def build_media_pool() -> ConversationHandler:
                 ),
                 CallbackQueryHandler(cb_mp_add_done, pattern=f"^{CB_MP_ADD_DONE}$"),
                 CallbackQueryHandler(cb_mp_add_schedule, pattern=f"^{CB_MP_ADD_SCHEDULE}$"),
+            ],
+            MP_TEMPLATE_PICK: [
+                CallbackQueryHandler(cb_mp_template_page, pattern=rf"^{re.escape(CB_MP_TMPL_PAGE)}\d+$"),
+                CallbackQueryHandler(cb_mp_template_use, pattern=rf"^{re.escape(CB_MP_TMPL_USE)}[0-9a-f]{{24}}$"),
+                CallbackQueryHandler(cb_mp_template_back, pattern=f"^{CB_MP_TEMPLATE_BACK}$"),
             ],
             MP_SET_INTERVAL_VALUE: [
                 CallbackQueryHandler(cb_mp_quick_interval, pattern=mp_quick_pattern),
