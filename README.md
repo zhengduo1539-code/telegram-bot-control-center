@@ -42,7 +42,7 @@ Configure these in Render → Service → Environment:
 |---|---|---|
 | BOT_TOKEN | Yes | Telegram token from @BotFather |
 | MONGODB_URI | Yes | MongoDB connection string |
-| MONGODB_DATABASE | No | Defaults to schedule_bot |
+| SCHEDULE_BOT_DATABASE | No | Defaults to schedule_bot |
 | ADMIN_IDS | Recommended | Comma-separated numeric owner Telegram IDs |
 | SCHEDULER_INTERVAL_SECS | No | 15–300 seconds; default 60 |
 | PORT | Render supplied | Local default 8080 |
