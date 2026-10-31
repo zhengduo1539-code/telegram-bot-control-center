@@ -754,12 +754,19 @@ def translate(language: str | None, key: str, **values: Any) -> str:
         return template
 
 
-def language_keyboard() -> ReplyKeyboardMarkup:
-    """Build a compact 2-column, one-time reply keyboard for language selection."""
-    labels = list(LANGUAGE_LABELS.values())
+def language_keyboard(selected_language: str | None = None) -> ReplyKeyboardMarkup:
+    """Build a compact language keyboard and highlight the saved locale."""
+    selected = normalize_language(selected_language)
+    codes = list(LANGUAGE_LABELS)
     rows = [
-        [KeyboardButton(labels[index]), KeyboardButton(labels[index + 1])]
-        for index in range(0, len(labels), 2)
+        [
+            KeyboardButton(
+                LANGUAGE_LABELS[code],
+                style="success" if code == selected else "primary",
+            )
+            for code in codes[index:index + 2]
+        ]
+        for index in range(0, len(codes), 2)
     ]
     return ReplyKeyboardMarkup(
         rows,
