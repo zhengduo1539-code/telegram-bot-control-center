@@ -54,6 +54,7 @@ from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.base import CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard, main_menu_keyboard
 from handlers.language import resolve_user_language
 from localization import translate as tr
+from media_pool_localization import translate_media_pool as mp_tr
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,15 @@ def _clear(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def _pm(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
     return context.user_data.setdefault("mpwiz", {})
+
+
+def _mp_t(context: ContextTypes.DEFAULT_TYPE, key: str, **values: Any) -> str:
+    """Translate Media Pool copy using the user's persisted locale."""
+    return mp_tr(context.user_data.get("language", "en"), key, **values)
+
+
+def _mp_language(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("language", "en")
 
 
 def _clear_mp(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1382,89 +1392,112 @@ _MP_QUICK_INTERVALS: dict[str, tuple[int, str, str]] = {
 }
 
 
-def _mp_menu_text() -> str:
-    return (
-        "🎲 Media Pool\n\n"
-        "Automatically publish one random item from a collection at a regular interval.\n\n"
-        "How it works:\n"
-        "1. Choose a group or channel.\n"
-        "2. Add your content items. You can send them one after another.\n"
-        "3. Choose when the bot should publish.\n\n"
-        "Each item is used once in a cycle. After every item has been published, "
-        "the next cycle starts automatically."
-    )
+def _mp_menu_text(language: str = "en") -> str:
+    return mp_tr(language, "menu_intro")
 
 
-def _mp_menu_keyboard() -> InlineKeyboardMarkup:
+def _mp_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add Content", callback_data=CB_MP_ADD_ITEM)],
-        [InlineKeyboardButton("⏱ Set Posting Schedule", callback_data=CB_MP_SET_INTERVAL)],
+        [InlineKeyboardButton(mp_tr(language, "add_content"), callback_data=CB_MP_ADD_ITEM)],
+        [InlineKeyboardButton(mp_tr(language, "set_schedule"), callback_data=CB_MP_SET_INTERVAL)],
         [
-            InlineKeyboardButton("📊 Pool Overview", callback_data=CB_MP_VIEW),
-            InlineKeyboardButton("🛠 Manage Pool", callback_data=CB_MP_MANAGE),
+            InlineKeyboardButton(mp_tr(language, "pool_overview"), callback_data=CB_MP_VIEW),
+            InlineKeyboardButton(mp_tr(language, "manage_pool"), callback_data=CB_MP_MANAGE),
         ],
         [
-            InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
         ],
     ])
 
 
-def _mp_add_item_keyboard() -> InlineKeyboardMarkup:
+def _mp_add_item_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⏱ Configure Posting Schedule", callback_data=CB_MP_ADD_SCHEDULE)],
-        [InlineKeyboardButton("✅ Finish Adding", callback_data=CB_MP_ADD_DONE)],
-        [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(mp_tr(language, "schedule_from_add"), callback_data=CB_MP_ADD_SCHEDULE)],
+        [InlineKeyboardButton(mp_tr(language, "finish_add"), callback_data=CB_MP_ADD_DONE)],
+        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
     ])
 
 
-def _mp_quick_interval_keyboard() -> InlineKeyboardMarkup:
+def _mp_quick_interval_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    minutes = mp_tr(language, "minutes")
+    hours = mp_tr(language, "hours")
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("15 min", callback_data=f"{CB_MP_QUICK_PREFIX}15m"),
-            InlineKeyboardButton("30 min", callback_data=f"{CB_MP_QUICK_PREFIX}30m"),
-            InlineKeyboardButton("1 hour", callback_data=f"{CB_MP_QUICK_PREFIX}1h"),
+            InlineKeyboardButton(f"15 {minutes}", callback_data=f"{CB_MP_QUICK_PREFIX}15m"),
+            InlineKeyboardButton(f"30 {minutes}", callback_data=f"{CB_MP_QUICK_PREFIX}30m"),
+            InlineKeyboardButton(f"1 {hours}", callback_data=f"{CB_MP_QUICK_PREFIX}1h"),
         ],
         [
-            InlineKeyboardButton("3 hours", callback_data=f"{CB_MP_QUICK_PREFIX}3h"),
-            InlineKeyboardButton("6 hours", callback_data=f"{CB_MP_QUICK_PREFIX}6h"),
-            InlineKeyboardButton("12 hours", callback_data=f"{CB_MP_QUICK_PREFIX}12h"),
+            InlineKeyboardButton(f"3 {hours}", callback_data=f"{CB_MP_QUICK_PREFIX}3h"),
+            InlineKeyboardButton(f"6 {hours}", callback_data=f"{CB_MP_QUICK_PREFIX}6h"),
+            InlineKeyboardButton(f"12 {hours}", callback_data=f"{CB_MP_QUICK_PREFIX}12h"),
         ],
         [
-            InlineKeyboardButton("24 hours", callback_data=f"{CB_MP_QUICK_PREFIX}24h"),
-            InlineKeyboardButton("✏️ Custom", callback_data=CB_MP_CUSTOM_INTERVAL),
+            InlineKeyboardButton(f"24 {hours}", callback_data=f"{CB_MP_QUICK_PREFIX}24h"),
+            InlineKeyboardButton(mp_tr(language, "custom"), callback_data=CB_MP_CUSTOM_INTERVAL),
         ],
         [
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_MENU),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
-        ],
-    ])
-
-
-def _mp_first_run_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ Start as soon as possible", callback_data=CB_MP_FIRST_NOW)],
-        [InlineKeyboardButton("🕒 Choose a specific time", callback_data=CB_MP_FIRST_CUSTOM)],
-        [
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_IV),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
         ],
     ])
 
 
-def _mp_group_picker_keyboard(groups: list[dict], page: int) -> InlineKeyboardMarkup:
-    return _qm_group_picker_keyboard(
-        groups,
-        page,
-        CB_MP_PICK,
-        CB_MP_PAGE,
-        CB_MP_MANUAL,
-        CB_BACK_MP_MENU,
-    )
+def _mp_first_run_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(mp_tr(language, "start_now"), callback_data=CB_MP_FIRST_NOW)],
+        [InlineKeyboardButton(mp_tr(language, "choose_time"), callback_data=CB_MP_FIRST_CUSTOM)],
+        [
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_IV),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        ],
+    ])
+
+
+def _mp_group_picker_keyboard(
+    groups: list[dict], page: int, language: str = "en"
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    total = len(groups)
+    start = page * _QM_CHAT_PAGE_SIZE
+    end = min(start + _QM_CHAT_PAGE_SIZE, total)
+    type_icon = {"channel": "📢", "supergroup": "👥", "group": "👥"}
+    for group in groups[start:end]:
+        icon = type_icon.get(group.get("chat_type", ""), "💬")
+        title = (group.get("title") or f"Chat {group['chat_id']}")[:35]
+        rows.append([
+            InlineKeyboardButton(
+                f"{icon} {title}",
+                callback_data=f"{CB_MP_PICK}{group['chat_id']}",
+            )
+        ])
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(
+            mp_tr(language, "prev"), callback_data=f"{CB_MP_PAGE}{page - 1}"
+        ))
+    if end < total:
+        nav.append(InlineKeyboardButton(
+            mp_tr(language, "next"), callback_data=f"{CB_MP_PAGE}{page + 1}"
+        ))
+    if nav:
+        rows.append(nav)
+    rows.append([
+        InlineKeyboardButton(mp_tr(language, "manual_id"), callback_data=CB_MP_MANUAL)
+    ])
+    rows.append([
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+    ])
+    return InlineKeyboardMarkup(rows)
 
 
 def _mp_manage_picker_keyboard(
-    pools: list[dict], group_titles: dict[int, str], page: int
+    pools: list[dict],
+    group_titles: dict[int, str],
+    page: int,
+    language: str = "en",
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     start = page * _MP_POOL_PAGE_SIZE
@@ -1475,46 +1508,66 @@ def _mp_manage_picker_keyboard(
         title = (group_titles.get(chat_id) or f"Chat {chat_id}")[:28]
         rows.append([
             InlineKeyboardButton(
-                f"🗂 {title} · {count} item(s)",
+                mp_tr(language, "pool_button", group=title, count=count),
                 callback_data=f"{CB_MP_MANAGE_PICK}{chat_id}",
             )
         ])
     nav: list[InlineKeyboardButton] = []
     if page > 0:
         nav.append(InlineKeyboardButton(
-            "⬅️ Prev", callback_data=f"{CB_MP_MANAGE_PAGE}{page - 1}"
+            mp_tr(language, "prev"), callback_data=f"{CB_MP_MANAGE_PAGE}{page - 1}"
         ))
     if end < len(pools):
         nav.append(InlineKeyboardButton(
-            "Next ➡️", callback_data=f"{CB_MP_MANAGE_PAGE}{page + 1}"
+            mp_tr(language, "next"), callback_data=f"{CB_MP_MANAGE_PAGE}{page + 1}"
         ))
     if nav:
         rows.append(nav)
     rows.append([
-        InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_MENU),
-        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
 
-def _mp_manage_actions_keyboard() -> InlineKeyboardMarkup:
+def _mp_manage_actions_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Reset Posting Cycle", callback_data=CB_MP_RESET)],
-        [InlineKeyboardButton("🗑 Clear This Pool", callback_data=CB_MP_CLEAR)],
+        [InlineKeyboardButton(mp_tr(language, "reset_cycle"), callback_data=CB_MP_RESET)],
+        [InlineKeyboardButton(mp_tr(language, "clear_pool"), callback_data=CB_MP_CLEAR)],
         [
-            InlineKeyboardButton("⬅️ All Pools", callback_data=CB_BACK_MP_MANAGE),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton(mp_tr(language, "all_pools"), callback_data=CB_BACK_MP_MANAGE),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
         ],
     ])
 
 
-def _mp_manage_confirm_keyboard(confirm_callback: str) -> InlineKeyboardMarkup:
+def _mp_manage_confirm_keyboard(
+    confirm_callback: str,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Confirm", callback_data=confirm_callback),
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_DETAILS),
+            InlineKeyboardButton(tr(language, "confirm"), callback_data=confirm_callback),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_DETAILS),
         ],
-        [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+    ])
+
+
+def _mp_no_groups_keyboard(language: str, bot_username: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            mp_tr(language, "add_bot"),
+            url=f"https://t.me/{bot_username}?startgroup=start",
+        )],
+        [InlineKeyboardButton(
+            mp_tr(language, "manual_id"),
+            callback_data=CB_MP_MANUAL,
+        )],
+        [
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        ],
     ])
 
 
@@ -1541,6 +1594,7 @@ async def _mp_reply_or_edit(
 
 async def enter_media_pool(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     _clear_mp(context)
     chat_cleanup.reset(context.application.bot_data, query.message.chat_id)
     chat_cleanup.track(
@@ -1548,7 +1602,7 @@ async def enter_media_pool(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         query.message.chat_id,
         query.message.message_id,
     )
-    await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
+    await _edit(query, _mp_menu_text(language), _mp_menu_keyboard(language))
     return MP_MENU
 
 
@@ -1558,43 +1612,33 @@ async def _mp_show_group_picker(
     page: int = 0,
 ) -> int:
     user_id = query.from_user.id
+    language = await resolve_user_language(context, user_id)
     try:
         groups = await list_groups_for_user(user_id)
     except Exception:
         logger.exception("Media Pool group picker failed for user_id=%s", user_id)
-        await query.answer("Unable to load your groups. Please try again.", show_alert=True)
+        await query.answer(mp_tr(language, "pool_check_error"), show_alert=True)
         return MP_CHAT_ID
 
     if not groups:
         bot_username = (await query.get_bot().get_me()).username or "YourSchedulerBot"
-        mode_label = (
-            "add content to"
-            if _pm(context).get("mode") == "add"
-            else "set a posting schedule for"
-        )
         await _edit(
             query,
-            "No groups or channels are linked to your account yet.\n\n"
-            "Add the bot to your group or channel first, then make sure you are an administrator. "
-            "You can also enter a Chat ID manually.\n\n"
-            f"Choose where you want to {mode_label} the Media Pool:",
-            _qm_no_groups_keyboard(
-                CB_MP_MANUAL,
-                CB_BACK_MP_MENU,
-                bot_username,
-            ),
+            mp_tr(language, "no_groups"),
+            _mp_no_groups_keyboard(language, bot_username),
         )
         return MP_CHAT_ID
 
     total = len(groups)
     page = max(0, min(page, (total - 1) // _QM_CHAT_PAGE_SIZE))
+    range_text = (
+        f"({page * _QM_CHAT_PAGE_SIZE + 1}–"
+        f"{min((page + 1) * _QM_CHAT_PAGE_SIZE, total)} / {total})"
+    )
     await _edit(
         query,
-        "Step 1 of 3 — Select a Group or Channel\n\n"
-        "Choose the destination where the Media Pool will save content and publish posts.\n"
-        f"Showing {page * _QM_CHAT_PAGE_SIZE + 1}–"
-        f"{min((page + 1) * _QM_CHAT_PAGE_SIZE, total)} of {total}.",
-        _mp_group_picker_keyboard(groups, page),
+        mp_tr(language, "select_group", range_text=range_text),
+        _mp_group_picker_keyboard(groups, page, language),
     )
     return MP_CHAT_ID
 
@@ -1621,6 +1665,7 @@ async def cb_mp_group_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def cb_mp_group_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     raw = (query.data or "").replace(CB_MP_PICK, "", 1)
+    language = await resolve_user_language(context, query.from_user.id)
     try:
         chat_id = int(raw)
         target_chat = await ensure_chat_access(
@@ -1629,21 +1674,20 @@ async def cb_mp_group_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             query.from_user.id,
         )
     except ValueError:
-        await query.answer("Invalid group selection. Please choose again.", show_alert=True)
+        await query.answer(mp_tr(language, "invalid_chat_id"), show_alert=True)
         return MP_CHAT_ID
-    except ChatAccessError as exc:
-        await query.answer(str(exc), show_alert=True)
+    except ChatAccessError:
+        await query.answer(mp_tr(language, "access_error"), show_alert=True)
         return MP_CHAT_ID
     return await _mp_continue_after_chat_selection(update, context, target_chat)
 
 
 async def cb_mp_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     await _edit(
         query,
-        "Enter the numeric Chat ID of your group or channel.\n\n"
-        "Tip: Send /id in the target group to see its Chat ID. "
-        "Example: -1001234567890",
+        mp_tr(language, "manual_id"),
         nav_keyboard(back_data=CB_BACK_MP_MENU),
     )
     return MP_CHAT_ID
@@ -1655,6 +1699,7 @@ async def _mp_continue_after_chat_selection(
     target_chat: Any,
 ) -> int:
     pm = _pm(context)
+    language = await resolve_user_language(context, update.effective_user.id)
     chat_id = int(target_chat.id)
     title = target_chat.title or str(chat_id)
     pm["mp_chat_id"] = chat_id
@@ -1671,7 +1716,7 @@ async def _mp_continue_after_chat_selection(
             logger.exception("Could not inspect Media Pool for chat_id=%s", chat_id)
             await _mp_reply_or_edit(
                 update,
-                "I couldn't check this group's content right now. Please try again.",
+                mp_tr(language, "pool_check_error"),
                 nav_keyboard(back_data=CB_BACK_MP_MENU),
             )
             return MP_CHAT_ID
@@ -1680,16 +1725,20 @@ async def _mp_continue_after_chat_selection(
             pm["mode"] = "add"
             await _mp_reply_or_edit(
                 update,
-                f"Selected: {escape_markdown(title, version=1)}\n\n"
-                "This group does not have any Media Pool content yet. "
-                "Add at least one item before creating a posting schedule.",
+                f"{title}\n\n{mp_tr(language, 'empty_pool')}",
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton(
-                        "➕ Add Content to This Group",
+                        mp_tr(language, "add_content"),
                         callback_data=CB_MP_ADD_SELECTED,
                     )],
-                    [InlineKeyboardButton("⬅️ Back to Menu", callback_data=CB_BACK_MP_MENU)],
-                    [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+                    [InlineKeyboardButton(
+                        tr(language, "back"),
+                        callback_data=CB_BACK_MP_MENU,
+                    )],
+                    [InlineKeyboardButton(
+                        tr(language, "cancel"),
+                        callback_data=CB_CANCEL,
+                    )],
                 ]),
             )
             return MP_CHAT_ID
@@ -1700,28 +1749,28 @@ async def _mp_continue_after_chat_selection(
     return MP_ADD_ITEM
 
 
-async def _mp_prompt_add_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _mp_prompt_add_item(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
     pm = _pm(context)
-    title = escape_markdown(pm.get("mp_chat_title", "Selected group"), version=1)
+    language = await resolve_user_language(context, update.effective_user.id)
+    title = pm.get("mp_chat_title", "Selected group")
     await _mp_reply_or_edit(
         update,
-        f"Selected destination: {title}\n\n"
-        "Step 2 of 3 — Add Content\n\n"
-        "Send a text message, photo, video, GIF/animation, document, audio, or voice message. "
-        "The bot saves each message as one item in this group's pool.\n\n"
-        "You can send several items one after another. When you are finished, tap "
-        "Finish Adding. Captions are kept with their media.",
-        _mp_add_item_keyboard(),
+        mp_tr(language, "add_prompt", group=title),
+        _mp_add_item_keyboard(language),
     )
 
 
 async def cb_mp_add_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     pm = _pm(context)
+    language = await resolve_user_language(context, query.from_user.id)
     if not pm.get("mp_chat_id"):
-        await query.answer("Please select a group again.", show_alert=True)
+        await query.answer(mp_tr(language, "pool_missing"), show_alert=True)
         _clear_mp(context)
-        await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
+        await _edit(query, _mp_menu_text(language), _mp_menu_keyboard(language))
         return MP_MENU
     pm["mode"] = "add"
     await _mp_prompt_add_item(update, context)
@@ -1730,12 +1779,11 @@ async def cb_mp_add_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def recv_mp_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
+    language = await resolve_user_language(context, update.effective_user.id)
     try:
         chat_id = int(raw)
     except ValueError:
-        await update.message.reply_text(
-            "Please enter a valid numeric Chat ID, for example -1001234567890."
-        )
+        await update.message.reply_text(mp_tr(language, "invalid_chat_id"))
         return MP_CHAT_ID
 
     try:
@@ -1744,8 +1792,8 @@ async def recv_mp_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             chat_id,
             update.effective_user.id,
         )
-    except ChatAccessError as exc:
-        await update.message.reply_text(f"Cannot use this chat: {exc}")
+    except ChatAccessError:
+        await update.message.reply_text(mp_tr(language, "access_error"))
         return MP_CHAT_ID
 
     return await _mp_continue_after_chat_selection(update, context, target_chat)
@@ -1754,8 +1802,9 @@ async def recv_mp_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg = update.message
     pm = _pm(context)
+    language = await resolve_user_language(context, msg.from_user.id)
     if not pm.get("mp_chat_id"):
-        await msg.reply_text("Your group selection expired. Please start Add Content again.")
+        await msg.reply_text(mp_tr(language, "pool_missing"))
         _clear_mp(context)
         return MP_MENU
 
@@ -1775,9 +1824,7 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     elif msg.text:
         item.update(media_file_id=None, media_type=None, text=msg.text)
     else:
-        await msg.reply_text(
-            "Unsupported content type. Send text, photo, video, GIF/animation, document, audio, or voice."
-        )
+        await msg.reply_text(mp_tr(language, "unsupported"))
         return MP_ADD_ITEM
 
     user_id = msg.from_user.id
@@ -1786,9 +1833,7 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await add_to_media_pool(user_id, chat_id, item)
     except Exception:
         logger.exception("Could not save Media Pool item for user_id=%s chat_id=%s", user_id, chat_id)
-        await msg.reply_text(
-            "The item could not be saved. Please try sending it again."
-        )
+        await msg.reply_text(mp_tr(language, "save_error"))
         return MP_ADD_ITEM
 
     count: int | None = None
@@ -1801,26 +1846,23 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception:
         logger.exception("Item saved, but Media Pool count lookup failed for chat_id=%s", chat_id)
 
-    title = escape_markdown(pm.get("mp_chat_title", str(chat_id)), version=1)
-    count_line = f"Items in this pool: {count}\n" if count is not None else ""
+    title = pm.get("mp_chat_title", str(chat_id))
+    count_display = str(count) if count is not None else "—"
     await msg.reply_text(
-        f"✅ Item saved to {title}.\n"
-        f"{count_line}\n"
-        "Send the next item to continue, or use the buttons below when you are finished.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_mp_add_item_keyboard(),
+        mp_tr(language, "item_saved", group=title, count=count_display),
+        reply_markup=_mp_add_item_keyboard(language),
     )
     return MP_ADD_ITEM
 
 
 async def cb_mp_add_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     _clear_mp(context)
     await _edit(
         query,
-        "✅ Content collection saved.\n\n"
-        "You can review your pools or configure a posting schedule from this menu.",
-        _mp_menu_keyboard(),
+        mp_tr(language, "finish_add"),
+        _mp_menu_keyboard(language),
     )
     return MP_MENU
 
@@ -1828,10 +1870,11 @@ async def cb_mp_add_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cb_mp_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     pm = _pm(context)
+    language = await resolve_user_language(context, query.from_user.id)
     chat_id = pm.get("mp_chat_id")
     if not chat_id:
         _clear_mp(context)
-        await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
+        await _edit(query, _mp_menu_text(language), _mp_menu_keyboard(language))
         return MP_MENU
     try:
         db = await get_db()
@@ -1839,11 +1882,11 @@ async def cb_mp_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE)
             {"user_id": query.from_user.id, "chat_id": int(chat_id)}
         )
         if not pool or not pool.get("items"):
-            await query.answer("Add at least one content item before scheduling.", show_alert=True)
+            await query.answer(mp_tr(language, "empty_pool"), show_alert=True)
             return MP_ADD_ITEM
     except Exception:
         logger.exception("Could not verify Media Pool items before scheduling")
-        await query.answer("Could not check this pool. Please try again.", show_alert=True)
+        await query.answer(mp_tr(language, "pool_check_error"), show_alert=True)
         return MP_ADD_ITEM
     pm["mode"] = "interval"
     return await _mp_prompt_interval(update, context)
