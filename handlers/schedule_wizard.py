@@ -1686,7 +1686,7 @@ def _build_summary(w: dict[str, Any]) -> str:
     tw = w.get("time_window_enabled", False)
     tw_line = f"`{w.get('tw_start')}` → `{w.get('tw_end')}`" if tw else "Disabled"
 
-    ad  = f"`{w.get("ad_duration_label", str(w.get("ad_hours")) + " hours")}`" if w.get("auto_delete") else "OFF"
+    ad  = f"`{w.get('ad_duration_label', str(w.get('ad_hours')) + ' hours')}`" if w.get('auto_delete') else 'OFF'
     sd  = f"`{w.get('sd_secs')}s`"   if w.get("self_destruct") else "OFF"
     ap  = f"`{w.get('ap_hours')}h`"  if w.get("auto_pin")      else "OFF"
 
