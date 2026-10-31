@@ -23,6 +23,7 @@ from telegram import (
     Update,
 )
 from telegram.constants import ParseMode
+from telegram.helpers import escape_markdown
 from handlers import chat_cleanup
 from telegram.ext import (
     CallbackQueryHandler,
@@ -35,6 +36,7 @@ from telegram.ext import (
 
 from config import ADMIN_IDS
 from handlers.owner_panel import CB_OWNER_PANEL
+from handlers.permissions import ChatAccessError, ensure_chat_access
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,35 @@ MY_POSTS_CONFIRM_CLONE  = 3
 MY_POSTS_SAVE_TEMPLATE  = 4
 
 POSTS_PER_PAGE = 5
+
+
+# Telegram deep-link payload used to carry the originating group into private chat.
+START_GROUP_PREFIX = "setup_"
+
+
+def build_group_start_payload(chat_id: int) -> str:
+    """Build a Telegram-compatible /start payload for a group or supergroup."""
+    if isinstance(chat_id, bool) or not isinstance(chat_id, int) or chat_id >= 0:
+        raise ValueError("A negative group or supergroup chat ID is required.")
+    payload = f"{START_GROUP_PREFIX}{chat_id}"
+    if len(payload.encode("utf-8")) > 64:
+        raise ValueError("The group deep-link payload exceeds Telegram's 64-byte limit.")
+    return payload
+
+
+def parse_group_start_payload(args: list[str]) -> int | None:
+    """Parse a trusted-format group ID from /start arguments; reject other payloads."""
+    if len(args) != 1 or not args[0].startswith(START_GROUP_PREFIX):
+        return None
+    raw_chat_id = args[0][len(START_GROUP_PREFIX):]
+    if not raw_chat_id.startswith("-") or not raw_chat_id[1:].isdecimal():
+        return None
+    if len(raw_chat_id) > 21:
+        return None
+    try:
+        return int(raw_chat_id)
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -340,12 +371,91 @@ async def _render_my_posts(
 # ---------------------------------------------------------------------------
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle /start — send welcome message with main menu buttons."""
-    if not update.message:
+    """Redirect group /start requests to private chat; show the feature menu in PM."""
+    message = update.message
+    if message is None:
         return MAIN_MENU
+
+    chat = update.effective_chat
     user_id = update.effective_user.id if update.effective_user else None
-    await update.message.reply_text(
-        "🏠 *Main Menu* — choose an action:",
+
+    # A group should never receive the private scheduling controls.
+    if chat is not None and chat.type in ("group", "supergroup"):
+        try:
+            bot_user = await context.bot.get_me()
+            if not bot_user.username:
+                raise RuntimeError("The bot does not have a public username.")
+            payload = build_group_start_payload(chat.id)
+            private_url = f"https://t.me/{bot_user.username}?start={payload}"
+        except Exception:
+            logger.exception("Could not create a private-chat deep link for group %s.", chat.id)
+            await message.reply_text(
+                "⚠️ I couldn't open the private setup link right now. "
+                "Please open the bot's profile and press Start.",
+            )
+            return ConversationHandler.END
+
+        group_title = escape_markdown(chat.title or "this group", version=1)
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📩 Open Bot in Private Chat", url=private_url)]
+        ])
+        await message.reply_text(
+            "👋 *Schedule this group with the bot*\n\n"
+            f"To create scheduled posts for *{group_title}*, continue in the bot's private chat.\n\n"
+            "Tap *📩 Open Bot in Private Chat* below. This group will be remembered "
+            "and automatically selected when you choose *📅 Schedule New Post*.\n\n"
+            "🔒 Your scheduling controls and confirmations will stay in the private chat.\n"
+            "ℹ️ Only a group administrator can create schedules for this group.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboard,
+        )
+        # Do not keep a conversation state inside the group.
+        return ConversationHandler.END
+
+    # The deep-link is only a request to preselect a chat. Verify membership,
+    # administrator rights and the bot's publish permission before saving context.
+    target_chat_id = parse_group_start_payload(context.args)
+    context.user_data.pop("launch_chat", None)
+    launch_notice = None
+
+    if target_chat_id is not None and user_id is not None:
+        try:
+            target_chat = await ensure_chat_access(context.bot, target_chat_id, user_id)
+            context.user_data["launch_chat"] = {
+                "chat_id": target_chat.id,
+                "title": target_chat.title or str(target_chat.id),
+            }
+        except ChatAccessError as exc:
+            launch_notice = (
+                "⚠️ *Group not linked:* "
+                f"{escape_markdown(str(exc), version=1)}\n\n"
+                "You can still choose a group manually, or ask a group administrator "
+                "to open this setup link."
+            )
+        except Exception:
+            logger.exception("Failed to validate deep-linked group %s.", target_chat_id)
+            launch_notice = (
+                "⚠️ I couldn't verify the selected group. "
+                "You can choose a group manually from the menu."
+            )
+
+    if "launch_chat" in context.user_data:
+        linked = context.user_data["launch_chat"]
+        safe_title = escape_markdown(str(linked["title"]), version=1)
+        menu_text = (
+            "👋 *Private Setup*\n\n"
+            f"📍 *Selected Group:* {safe_title}\n\n"
+            "This group is linked to your session. Choose *📅 Schedule New Post* "
+            "to start creating a post; the bot will select this group automatically.\n\n"
+            "Choose another tool below whenever you need it."
+        )
+    else:
+        menu_text = "🏠 *Main Menu* — choose an action:"
+        if launch_notice:
+            menu_text = f"{launch_notice}\n\n{menu_text}"
+
+    await message.reply_text(
+        menu_text,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(context.bot, user_id),
     )
