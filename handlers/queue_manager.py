@@ -1569,6 +1569,18 @@ async def cb_back_qm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     language = await resolve_user_language(context, query.from_user.id)
     await _edit(query, _qm_menu_text(language), _qm_menu_keyboard(language))
     return QM_MENU
+_MP_POOL_PAGE_SIZE = 5
+_MP_QUICK_INTERVALS: dict[str, tuple[int, str, str]] = {
+    "15m": (15, "minutes", "15 minutes"),
+    "30m": (30, "minutes", "30 minutes"),
+    "1h": (1, "hours", "1 hour"),
+    "3h": (3, "hours", "3 hours"),
+    "6h": (6, "hours", "6 hours"),
+    "12h": (12, "hours", "12 hours"),
+    "24h": (24, "hours", "24 hours"),
+}
+
+
 def _mp_menu_text(language: str = "en") -> str:
     return mp_tr(language, "menu_intro")
 
