@@ -585,6 +585,155 @@ _ACTION_ROWS: dict[str, tuple[str, ...]] = {
 for _locale, _values in _ACTION_ROWS.items():
     TRANSLATIONS[_locale].update(dict(zip(_ACTION_KEYS, _values, strict=True)))
 
+_WIZARD_KEYS = (
+    "recurrence_prompt", "recurrence_interval", "recurrence_days",
+    "recurrence_once", "timezone_prompt", "first_run_prompt", "max_runs_prompt",
+)
+_WIZARD_ROWS: dict[str, tuple[str, ...]] = {
+    "en": (
+        "🔁 Step 3/8 — Recurrence Type\n\nHow often should this post be sent?",
+        "🔂 Interval (every X min/hr/day)", "📆 Specific Days of Week",
+        "1️⃣ One-Time Post", "🌍 Step 4/8 — Timezone\n\nSelect your timezone so the post time is interpreted correctly.",
+        "🕐 Step 5/8 — First Run Time\n\n• HH:MM — today at this time\n• DD/MM/YYYY HH:MM — specific date\n\nOr tap Suggest Best Time.",
+        "🔢 Step 6/8 — Max Runs\n\nHow many times should this post be sent? Choose a preset or enter a custom number.",
+    ),
+    "my": (
+        "🔁 အဆင့် ၃/၈ — ထပ်ခါတလဲလဲ ပို့မည့်ပုံစံ\n\nဤ Post ကို ဘယ်နှစ်ကြိမ်၊ ဘယ်လိုအချိန်ခြားပြီး ပို့မလဲ?",
+        "🔂 အချိန်ခြားပြီး ပို့ရန်", "📆 သတ်မှတ်ထားသော ရက်များတွင် ပို့ရန်",
+        "1️⃣ တစ်ကြိမ်တည်း ပို့ရန်", "🌍 အဆင့် ၄/၈ — အချိန်ဇုန်\n\nPost ပို့မည့်အချိန်ကို မှန်ကန်စွာတွက်ချက်ရန် သင့်အချိန်ဇုန်ကို ရွေးပါ။",
+        "🕐 အဆင့် ၅/၈ — ပထမဆုံးပို့မည့်အချိန်\n\n• HH:MM — ယနေ့အချိန်\n• DD/MM/YYYY HH:MM — သတ်မှတ်ရက်စွဲ\n\nသင့်တော်သောအချိန် အကြံပြုချက်ကိုလည်း ရယူနိုင်ပါသည်။",
+        "🔢 အဆင့် ၆/၈ — ပို့မည့်အကြိမ်ရေ\n\nPost ကို စုစုပေါင်း ဘယ်နှစ်ကြိမ် ပို့စေချင်ပါသလဲ။ အမြန်ရွေးချယ်မှု သို့မဟုတ် အရေအတွက်ကို ကိုယ်တိုင်ထည့်ပါ။",
+    ),
+    "zh": (
+        "🔁 第 3/8 步 — 重复方式\n\n此帖子需要多久发送一次？",
+        "🔂 按间隔发送", "📆 在指定星期发送", "1️⃣ 仅发送一次",
+        "🌍 第 4/8 步 — 时区\n\n选择时区，以正确计算帖子发送时间。",
+        "🕐 第 5/8 步 — 首次发送时间\n\n• HH:MM — 今天的时间\n• DD/MM/YYYY HH:MM — 指定日期\n\n也可以点击推荐最佳时间。",
+        "🔢 第 6/8 步 — 发送次数\n\n此帖子需要发送多少次？请选择预设值或输入自定义次数。",
+    ),
+    "es": (
+        "🔁 Paso 3/8 — Tipo de repetición\n\n¿Con qué frecuencia debe enviarse esta publicación?",
+        "🔂 Por intervalo", "📆 Días específicos de la semana", "1️⃣ Una sola vez",
+        "🌍 Paso 4/8 — Zona horaria\n\nSelecciona tu zona horaria para calcular correctamente la hora de publicación.",
+        "🕐 Paso 5/8 — Primera publicación\n\n• HH:MM — hoy a esta hora\n• DD/MM/YYYY HH:MM — fecha específica\n\nTambién puedes sugerir la mejor hora.",
+        "🔢 Paso 6/8 — Número de envíos\n\n¿Cuántas veces debe enviarse? Elige una opción o introduce un número.",
+    ),
+    "hi": (
+        "🔁 चरण 3/8 — दोहराव का प्रकार\n\nयह पोस्ट कितनी बार भेजी जानी चाहिए?",
+        "🔂 अंतराल के अनुसार", "📆 सप्ताह के चुने हुए दिन", "1️⃣ केवल एक बार",
+        "🌍 चरण 4/8 — समय क्षेत्र\n\nपोस्ट का समय सही रखने के लिए अपना समय क्षेत्र चुनें।",
+        "🕐 चरण 5/8 — पहली पोस्ट का समय\n\n• HH:MM — आज का समय\n• DD/MM/YYYY HH:MM — निश्चित तारीख\n\nआप सबसे अच्छा समय सुझाने का विकल्प भी चुन सकते हैं।",
+        "🔢 चरण 6/8 — कुल बार\n\nयह पोस्ट कितनी बार भेजी जाए? विकल्प चुनें या संख्या दर्ज करें।",
+    ),
+    "ar": (
+        "🔁 الخطوة 3/8 — نوع التكرار\n\nكم مرة يجب إرسال هذا المنشور؟",
+        "🔂 حسب الفاصل الزمني", "📆 أيام محددة من الأسبوع", "1️⃣ مرة واحدة فقط",
+        "🌍 الخطوة 4/8 — المنطقة الزمنية\n\nاختر منطقتك الزمنية لحساب وقت النشر بشكل صحيح.",
+        "🕐 الخطوة 5/8 — وقت الإرسال الأول\n\n• HH:MM — اليوم في هذا الوقت\n• DD/MM/YYYY HH:MM — تاريخ محدد\n\nيمكنك أيضاً اقتراح أفضل وقت.",
+        "🔢 الخطوة 6/8 — عدد مرات الإرسال\n\nكم مرة يجب إرسال المنشور؟ اختر قيمة أو أدخل رقماً.",
+    ),
+    "pt": (
+        "🔁 Etapa 3/8 — Tipo de repetição\n\nCom que frequência esta publicação deve ser enviada?",
+        "🔂 Por intervalo", "📆 Dias específicos da semana", "1️⃣ Apenas uma vez",
+        "🌍 Etapa 4/8 — Fuso horário\n\nEscolha seu fuso horário para calcular corretamente o horário da publicação.",
+        "🕐 Etapa 5/8 — Primeiro envio\n\n• HH:MM — hoje neste horário\n• DD/MM/YYYY HH:MM — data específica\n\nVocê também pode sugerir o melhor horário.",
+        "🔢 Etapa 6/8 — Número de envios\n\nQuantas vezes a publicação deve ser enviada? Escolha uma opção ou digite um número.",
+    ),
+    "fr": (
+        "🔁 Étape 3/8 — Type de répétition\n\nÀ quelle fréquence cette publication doit-elle être envoyée ?",
+        "🔂 Par intervalle", "📆 Jours spécifiques de la semaine", "1️⃣ Une seule fois",
+        "🌍 Étape 4/8 — Fuseau horaire\n\nChoisissez votre fuseau horaire pour calculer correctement l'heure de publication.",
+        "🕐 Étape 5/8 — Premier envoi\n\n• HH:MM — aujourd'hui à cette heure\n• DD/MM/YYYY HH:MM — date précise\n\nVous pouvez aussi suggérer le meilleur horaire.",
+        "🔢 Étape 6/8 — Nombre d'envois\n\nCombien de fois publier ? Choisissez une option ou saisissez un nombre.",
+    ),
+    "ru": (
+        "🔁 Шаг 3/8 — Тип повторения\n\nКак часто отправлять эту публикацию?",
+        "🔂 Через интервал", "📆 В выбранные дни недели", "1️⃣ Только один раз",
+        "🌍 Шаг 4/8 — Часовой пояс\n\nВыберите часовой пояс для правильного расчёта времени публикации.",
+        "🕐 Шаг 5/8 — Время первой отправки\n\n• HH:MM — сегодня в это время\n• DD/MM/YYYY HH:MM — конкретная дата\n\nТакже можно предложить лучшее время.",
+        "🔢 Шаг 6/8 — Количество отправок\n\nСколько раз отправлять публикацию? Выберите вариант или введите число.",
+    ),
+    "bn": (
+        "🔁 ধাপ ৩/৮ — পুনরাবৃত্তির ধরন\n\nএই পোস্ট কত ঘন ঘন পাঠানো হবে?",
+        "🔂 নির্দিষ্ট বিরতিতে", "📆 সপ্তাহের নির্দিষ্ট দিনে", "1️⃣ একবারই পাঠান",
+        "🌍 ধাপ ৪/৮ — সময় অঞ্চল\n\nপোস্টের সময় ঠিকভাবে নির্ধারণ করতে আপনার সময় অঞ্চল বেছে নিন।",
+        "🕐 ধাপ ৫/৮ — প্রথম পাঠানোর সময়\n\n• HH:MM — আজকের সময়\n• DD/MM/YYYY HH:MM — নির্দিষ্ট তারিখ\n\nসেরা সময়ের পরামর্শও নিতে পারেন।",
+        "🔢 ধাপ ৬/৮ — মোট পাঠানোর সংখ্যা\n\nপোস্টটি কতবার পাঠানো হবে? একটি বিকল্প বেছে নিন বা সংখ্যা লিখুন।",
+    ),
+    "id": (
+        "🔁 Langkah 3/8 — Jenis Pengulangan\n\nSeberapa sering postingan ini harus dikirim?",
+        "🔂 Berdasarkan interval", "📆 Hari tertentu dalam seminggu", "1️⃣ Sekali saja",
+        "🌍 Langkah 4/8 — Zona Waktu\n\nPilih zona waktu agar waktu posting dihitung dengan benar.",
+        "🕐 Langkah 5/8 — Waktu Kirim Pertama\n\n• HH:MM — hari ini pada waktu tersebut\n• DD/MM/YYYY HH:MM — tanggal tertentu\n\nAnda juga dapat meminta saran waktu terbaik.",
+        "🔢 Langkah 6/8 — Jumlah Pengiriman\n\nBerapa kali postingan ini dikirim? Pilih opsi atau masukkan angka.",
+    ),
+    "ja": (
+        "🔁 ステップ 3/8 — 繰り返し設定\n\nこの投稿をどのくらいの頻度で送信しますか？",
+        "🔂 間隔を指定", "📆 曜日を指定", "1️⃣ 1回のみ",
+        "🌍 ステップ 4/8 — タイムゾーン\n\n投稿時刻を正しく計算するため、タイムゾーンを選択してください。",
+        "🕐 ステップ 5/8 — 初回送信時刻\n\n• HH:MM — 今日の時刻\n• DD/MM/YYYY HH:MM — 指定日\n\nおすすめの時刻を提案することもできます。",
+        "🔢 ステップ 6/8 — 送信回数\n\nこの投稿を何回送信しますか？プリセットを選ぶか数字を入力してください。",
+    ),
+    "ko": (
+        "🔁 3/8단계 — 반복 유형\n\n이 게시물을 얼마나 자주 보내야 하나요?",
+        "🔂 간격으로 반복", "📆 특정 요일에 반복", "1️⃣ 한 번만 게시",
+        "🌍 4/8단계 — 시간대\n\n게시 시간을 정확하게 계산할 시간대를 선택하세요.",
+        "🕐 5/8단계 — 첫 게시 시간\n\n• HH:MM — 오늘 해당 시간\n• DD/MM/YYYY HH:MM — 지정 날짜\n\n추천 시간을 확인할 수도 있습니다.",
+        "🔢 6/8단계 — 게시 횟수\n\n게시물을 몇 번 보낼까요? 미리 설정된 옵션을 선택하거나 숫자를 입력하세요.",
+    ),
+    "th": (
+        "🔁 ขั้นตอน 3/8 — รูปแบบการทำซ้ำ\n\nต้องการส่งโพสต์นี้บ่อยแค่ไหน?",
+        "🔂 ทำซ้ำตามช่วงเวลา", "📆 วันที่กำหนดในสัปดาห์", "1️⃣ ส่งครั้งเดียว",
+        "🌍 ขั้นตอน 4/8 — เขตเวลา\n\nเลือกเขตเวลาเพื่อคำนวณเวลาโพสต์ให้ถูกต้อง",
+        "🕐 ขั้นตอน 5/8 — เวลาโพสต์ครั้งแรก\n\n• HH:MM — วันนี้ตามเวลานี้\n• DD/MM/YYYY HH:MM — วันที่กำหนด\n\nหรือขอคำแนะนำเวลาที่เหมาะสมได้",
+        "🔢 ขั้นตอน 6/8 — จำนวนครั้งที่ส่ง\n\nต้องการส่งโพสต์นี้กี่ครั้ง? เลือกค่าที่กำหนดหรือพิมพ์ตัวเลข",
+    ),
+    "vi": (
+        "🔁 Bước 3/8 — Kiểu lặp lại\n\nBạn muốn gửi bài đăng này thường xuyên như thế nào?",
+        "🔂 Theo khoảng thời gian", "📆 Các ngày cụ thể trong tuần", "1️⃣ Chỉ gửi một lần",
+        "🌍 Bước 4/8 — Múi giờ\n\nChọn múi giờ để tính chính xác thời gian đăng bài.",
+        "🕐 Bước 5/8 — Thời gian gửi đầu tiên\n\n• HH:MM — hôm nay vào giờ này\n• DD/MM/YYYY HH:MM — ngày cụ thể\n\nBạn cũng có thể nhận đề xuất thời gian tốt nhất.",
+        "🔢 Bước 6/8 — Số lần gửi\n\nBài đăng này sẽ được gửi bao nhiêu lần? Chọn tùy chọn hoặc nhập số.",
+    ),
+    "tr": (
+        "🔁 3/8. Adım — Tekrarlama Türü\n\nBu gönderi ne sıklıkla gönderilmeli?",
+        "🔂 Aralıklarla", "📆 Haftanın belirli günlerinde", "1️⃣ Yalnızca bir kez",
+        "🌍 4/8. Adım — Saat Dilimi\n\nGönderi saatini doğru hesaplamak için saat diliminizi seçin.",
+        "🕐 5/8. Adım — İlk Gönderim Zamanı\n\n• HH:MM — bugün bu saatte\n• DD/MM/YYYY HH:MM — belirli tarih\n\nEn iyi zaman önerisini de alabilirsiniz.",
+        "🔢 6/8. Adım — Gönderim Sayısı\n\nBu gönderi kaç kez gönderilsin? Bir seçenek seçin veya sayı girin.",
+    ),
+    "de": (
+        "🔁 Schritt 3/8 — Wiederholungstyp\n\nWie oft soll dieser Beitrag gesendet werden?",
+        "🔂 In Intervallen", "📆 An bestimmten Wochentagen", "1️⃣ Nur einmal",
+        "🌍 Schritt 4/8 — Zeitzone\n\nWähle deine Zeitzone, damit die Veröffentlichungszeit korrekt berechnet wird.",
+        "🕐 Schritt 5/8 — Erste Veröffentlichungszeit\n\n• HH:MM — heute zu dieser Uhrzeit\n• DD/MM/YYYY HH:MM — bestimmtes Datum\n\nDu kannst auch eine passende Zeit vorschlagen lassen.",
+        "🔢 Schritt 6/8 — Anzahl der Veröffentlichungen\n\nWie oft soll dieser Beitrag gesendet werden? Wähle eine Option oder gib eine Zahl ein.",
+    ),
+    "it": (
+        "🔁 Passaggio 3/8 — Tipo di ripetizione\n\nCon quale frequenza deve essere inviato questo post?",
+        "🔂 A intervalli", "📆 Giorni specifici della settimana", "1️⃣ Una sola volta",
+        "🌍 Passaggio 4/8 — Fuso orario\n\nScegli il fuso orario per calcolare correttamente l'ora di pubblicazione.",
+        "🕐 Passaggio 5/8 — Primo invio\n\n• HH:MM — oggi a quest'ora\n• DD/MM/YYYY HH:MM — data specifica\n\nPuoi anche chiedere di suggerire l'orario migliore.",
+        "🔢 Passaggio 6/8 — Numero di invii\n\nQuante volte deve essere inviato il post? Scegli un'opzione o inserisci un numero.",
+    ),
+    "ur": (
+        "🔁 مرحلہ 3/8 — تکرار کی قسم\n\nیہ پوسٹ کتنی بار بھیجی جائے؟",
+        "🔂 وقفے کے مطابق", "📆 ہفتے کے مخصوص دن", "1️⃣ صرف ایک بار",
+        "🌍 مرحلہ 4/8 — ٹائم زون\n\nپوسٹ کا وقت درست رکھنے کے لیے اپنا ٹائم زون منتخب کریں۔",
+        "🕐 مرحلہ 5/8 — پہلی پوسٹ کا وقت\n\n• HH:MM — آج اس وقت\n• DD/MM/YYYY HH:MM — مخصوص تاریخ\n\nبہترین وقت کی تجویز بھی حاصل کر سکتے ہیں۔",
+        "🔢 مرحلہ 6/8 — بھیجنے کی تعداد\n\nیہ پوسٹ کتنی بار بھیجی جائے؟ کوئی آپشن منتخب کریں یا نمبر درج کریں۔",
+    ),
+    "sw": (
+        "🔁 Hatua ya 3/8 — Aina ya Marudio\n\nChapisho hili litumwe mara ngapi?",
+        "🔂 Kwa vipindi", "📆 Siku maalum za wiki", "1️⃣ Mara moja tu",
+        "🌍 Hatua ya 4/8 — Eneo la Saa\n\nChagua eneo lako la saa ili muda wa chapisho uhesabiwe kwa usahihi.",
+        "🕐 Hatua ya 5/8 — Muda wa Kwanza wa Kutuma\n\n• HH:MM — leo kwa muda huu\n• DD/MM/YYYY HH:MM — tarehe maalum\n\nUnaweza pia kuomba muda bora upendekezwe.",
+        "🔢 Hatua ya 6/8 — Idadi ya Machapisho\n\nChapisho hili litumwe mara ngapi? Chagua chaguo au weka nambari.",
+    ),
+}
+for _locale, _values in _WIZARD_ROWS.items():
+    TRANSLATIONS[_locale].update(dict(zip(_WIZARD_KEYS, _values, strict=True)))
+
 DEFAULT_LANGUAGE = "en"
 
 
