@@ -271,12 +271,12 @@ def _format_next_run(next_run, tz_str: str) -> str:
     return local_dt.strftime(f"%d/%m %H:%M {label}")
 
 
-def _posts_list_text(posts: list[dict], page: int) -> str:
+def _posts_list_text(posts: list[dict], page: int, language: str = "en") -> str:
     total     = len(posts)
     n_pages   = max(1, (total + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
     start     = page * POSTS_PER_PAGE
     end       = min(start + POSTS_PER_PAGE, total)
-    lines     = [f"📋 *My Posts* (page {page + 1}/{n_pages})\n"]
+    lines     = [f"{tr(language, 'posts_title')} (page {page + 1}/{n_pages})\n"]
     for idx, post in enumerate(posts[start:end], start=start + 1):
         status  = post.get("status", "?")
         chat_id = post.get("chat_id", "?")
@@ -290,7 +290,7 @@ def _posts_list_text(posts: list[dict], page: int) -> str:
     return "\n".join(lines)
 
 
-def _posts_keyboard(posts: list[dict], page: int) -> InlineKeyboardMarkup:
+def _posts_keyboard(posts: list[dict], page: int, language: str = "en") -> InlineKeyboardMarkup:
     total  = len(posts)
     start  = page * POSTS_PER_PAGE
     end    = min(start + POSTS_PER_PAGE, total)
@@ -323,7 +323,7 @@ def _posts_keyboard(posts: list[dict], page: int) -> InlineKeyboardMarkup:
 
     buttons.append([
         InlineKeyboardButton("📊 Statistics",  callback_data=CB_MY_STATS),
-        InlineKeyboardButton("🏠 Main Menu",   callback_data=CB_MAIN_MENU),
+        InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
     ])
     return InlineKeyboardMarkup(buttons)
 
@@ -336,6 +336,7 @@ async def _render_my_posts(
 ) -> int:
     """Fetch posts and render the My Posts list. Returns the next state."""
     from database import get_user_posts  # lazy import to avoid circular deps
+    language = await resolve_user_language(context, user_id)
     try:
         posts = await get_user_posts(user_id)
     except Exception as exc:
@@ -344,14 +345,14 @@ async def _render_my_posts(
             f"❌ Error loading posts: `{str(exc).replace(chr(96), chr(39))}`",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]
+                [[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]
             ),
         )
         return MY_POSTS
 
     if not posts:
         await query.edit_message_text(
-            "📋 *My Posts*\n\nNo posts yet. Tap *📅 Schedule New Post* to create one.",
+            tr(language, "posts_empty"),
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]
@@ -365,9 +366,9 @@ async def _render_my_posts(
     context.user_data["_mp_page"] = page
 
     await query.edit_message_text(
-        _posts_list_text(posts, page),
+        _posts_list_text(posts, page, language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_posts_keyboard(posts, page),
+        reply_markup=_posts_keyboard(posts, page, language),
     )
     return MY_POSTS
 
