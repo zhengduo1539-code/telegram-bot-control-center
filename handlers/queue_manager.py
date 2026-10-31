@@ -1784,11 +1784,6 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     chat_id = int(pm["mp_chat_id"])
     try:
         await add_to_media_pool(user_id, chat_id, item)
-        db = await get_db()
-        pool = await db[COL_MEDIA_POOLS].find_one(
-            {"user_id": user_id, "chat_id": chat_id}
-        )
-        count = len(pool.get("items", [])) if pool else 1
     except Exception:
         logger.exception("Could not save Media Pool item for user_id=%s chat_id=%s", user_id, chat_id)
         await msg.reply_text(
@@ -1796,10 +1791,21 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return MP_ADD_ITEM
 
+    count: int | None = None
+    try:
+        db = await get_db()
+        pool = await db[COL_MEDIA_POOLS].find_one(
+            {"user_id": user_id, "chat_id": chat_id}
+        )
+        count = len(pool.get("items", [])) if pool else None
+    except Exception:
+        logger.exception("Item saved, but Media Pool count lookup failed for chat_id=%s", chat_id)
+
     title = escape_markdown(pm.get("mp_chat_title", str(chat_id)), version=1)
+    count_line = f"Items in this pool: {count}\\n" if count is not None else ""
     await msg.reply_text(
         f"✅ Item saved to {title}.\n"
-        f"Items in this pool: {count}\n\n"
+        f"{count_line}\n"
         "Send the next item to continue, or use the buttons below when you are finished.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_mp_add_item_keyboard(),
@@ -1824,7 +1830,6 @@ async def cb_mp_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE)
     pm = _pm(context)
     chat_id = pm.get("mp_chat_id")
     if not chat_id:
-        await query.answer("Your group selection expired. Please start again.", show_alert=True)
         _clear_mp(context)
         await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
         return MP_MENU
@@ -2437,7 +2442,6 @@ async def cb_back_mp_manage_details(update: Update, context: ContextTypes.DEFAUL
         text, keyboard = await _mp_manage_summary(query.from_user.id, int(chat_id))
     except Exception:
         logger.exception("Could not reload Media Pool details")
-        await query.answer("This pool is no longer available.", show_alert=True)
         return await _mp_show_manage_picker(query, context)
     await _edit(query, text, keyboard)
     return MP_MANAGE_ACTION
@@ -2514,6 +2518,13 @@ async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "user_id": user_id,
             "chat_id": int(chat_id),
         })
+    except Exception:
+        logger.exception("Could not delete Media Pool for user_id=%s chat_id=%s", user_id, chat_id)
+        await query.answer("The pool could not be cleared. Please try again.", show_alert=True)
+        return MP_MANAGE_ACTION
+
+    schedule_pause_ok = True
+    try:
         await db[COL_POSTS].update_many(
             {
                 "user_id": user_id,
@@ -2529,16 +2540,19 @@ async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             },
         )
     except Exception:
-        logger.exception("Could not clear Media Pool for user_id=%s chat_id=%s", user_id, chat_id)
-        await query.answer("The pool could not be cleared. Please try again.", show_alert=True)
-        return MP_MANAGE_ACTION
+        schedule_pause_ok = False
+        logger.exception("Pool content was deleted but schedule pause failed for chat_id=%s", chat_id)
 
     _clear_mp(context)
-    message = (
-        "✅ This Media Pool has been cleared. Any pending random-post schedule for this destination has been paused."
-        if result.deleted_count
-        else "This Media Pool was already empty or no longer exists."
-    )
+    if result.deleted_count and schedule_pause_ok:
+        message = "✅ This Media Pool has been cleared. Any pending random-post schedule for this destination has been paused."
+    elif result.deleted_count:
+        message = (
+            "✅ This Media Pool has been cleared. The schedule could not be paused immediately; "
+            "the scheduler will pause it when it next checks the now-empty pool."
+        )
+    else:
+        message = "This Media Pool was already empty or no longer exists. Any pending schedule was checked for pause."
     await _edit(query, message, _mp_menu_keyboard())
     return MP_MENU
 
