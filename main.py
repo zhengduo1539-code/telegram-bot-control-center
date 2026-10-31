@@ -1,71 +1,76 @@
 """
-main.py — Application entry point.
+Schedule Bot ASGI and Telegram application entry point.
 
-Boot order:
-  1. Start keep-alive Flask server (background thread — Render/UptimeRobot)
-  2. Connect to MongoDB
-  3. Start APScheduler (shares the asyncio event loop with PTB)
-  4. Start Telegram bot (polling)
-  5. On shutdown: stop scheduler → close MongoDB
+Render runs this module with Uvicorn. The ASGI lifespan starts and stops the
+Telegram application on Uvicorn's event loop; Flask health endpoints are
+served through WsgiToAsgi on the same HTTP port.
+
+For local development, python main.py remains supported and starts the health
+server in a background thread before starting Telegram polling.
 """
-
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
+from asgiref.wsgi import WsgiToAsgi
 from telegram import Bot, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    CallbackQueryHandler,
     ChatMemberHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
-    CallbackQueryHandler,
     filters,
 )
 
 from config import MONGO_URI, MONGODB_DATABASE, PORT, TELEGRAM_BOT_TOKEN
-from database import close_db, connect_db, record_chat_activity, remove_group, upsert_group, upsert_user
+from database import (
+    close_db,
+    connect_db,
+    record_chat_activity,
+    remove_group,
+    upsert_group,
+    upsert_user,
+)
 from handlers import chat_cleanup
 from handlers.base import build_base_conversation
 from handlers.owner_panel import build_owner_panel
 from handlers.queue_manager import build_media_pool, build_queue_manager
 from handlers.schedule_wizard import build_schedule_wizard
 from handlers.templates import build_templates_conversation
+from keep_alive import app as health_app
 from keep_alive import set_readiness, start_keep_alive
 from scheduler import setup_scheduler
 
 logger = logging.getLogger(__name__)
 
-# Increment this string whenever a significant update is deployed.
-# Users can type /ping to confirm which version is running on Render.
 BOT_VERSION = "Schedule Bot | Daily Queue Engine | Permission Checks | 2026-10"
+ALLOWED_UPDATES = ["message", "callback_query", "my_chat_member"]
 
-# Module-level scheduler reference so post_shutdown can stop it
 _scheduler = None
+_bot_data_ref: dict | None = None
 
 
 async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/ping — reply with version info so users can confirm the deployment."""
+    """Reply with the running version for deployment verification."""
     if not update.message:
         return
     try:
         await update.message.reply_text("pong — " + BOT_VERSION)
-    except Exception as exc:
-        logger.exception("cmd_ping failed: %s", exc)
-        try:
-            await update.message.reply_text("pong (error: " + str(exc) + ")")
-        except Exception:
-            pass
+    except Exception:
+        logger.exception("cmd_ping failed")
 
 
 async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/id — reply with this chat's title/ID and the sender's user ID."""
+    """Show the current chat ID and the sender's Telegram user ID."""
     if not update.message or not update.effective_chat or not update.effective_user:
         return
+
     from telegram.helpers import escape_markdown
 
     chat = update.effective_chat
@@ -75,30 +80,22 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             f"ℹ️ *Group Help*\n"
             f"{title}\n\n"
-            f"`/id`\n\n"
-            f"*CHAT ID:* `{chat.id}`\n"
-            f"*YOUR ID:* `{user.id}`",
+            f"Command: /id\n\n"
+            f"*CHAT ID:* {chat.id}\n"
+            f"*YOUR ID:* {user.id}",
             parse_mode=ParseMode.MARKDOWN,
         )
-    except Exception as exc:
-        logger.exception("cmd_id failed: %s", exc)
+    except Exception:
+        logger.exception("cmd_id failed")
 
 
 async def post_init(application: Application) -> None:
-    """
-    Called by PTB after the Application is initialised and the event loop is running.
-    This is the correct place to start APScheduler — both PTB and APScheduler share
-    the same asyncio loop, so starting here prevents any event-loop conflicts.
-    """
+    """Connect MongoDB and start APScheduler on the bot event loop."""
     global _scheduler
 
-    # 1. Connect to MongoDB
     await connect_db(MONGO_URI, db_name=MONGODB_DATABASE)
     logger.info("MongoDB connected.")
 
-    # 2. Set up and start APScheduler on the SAME event loop as PTB.
-    #    asyncio.get_running_loop() is the correct modern idiom (Python 3.10+).
-    #    get_event_loop() inside an async coroutine raises DeprecationWarning in 3.10+.
     loop = asyncio.get_running_loop()
     _scheduler = setup_scheduler(application.bot, event_loop=loop)
     _scheduler.start()
@@ -107,104 +104,69 @@ async def post_init(application: Application) -> None:
 
 
 async def _track_incoming(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Low-priority (group=-1) tracker: records every incoming message/callback
-    message id so chat_cleanup can later wipe an entire wizard's back-and-forth
-    once it finishes. Never blocks or mutates the update.
-
-    Also opportunistically records the sending user / chat into MongoDB so the
-    owner panel's Status / User List / Group List / Broadcast tools have data
-    to work with. Best-effort — failures are logged and swallowed so a DB
-    hiccup never breaks normal bot flow.
-    """
+    """Record wizard messages and best-effort user/group activity."""
     chat = update.effective_chat
-    msg = update.effective_message
-    if chat is not None and msg is not None:
-        chat_cleanup.track(context.application.bot_data, chat.id, msg.message_id)
+    message = update.effective_message
+    if chat is not None and message is not None:
+        chat_cleanup.track(context.application.bot_data, chat.id, message.message_id)
 
     user = update.effective_user
     if user is not None and not user.is_bot:
         try:
             await upsert_user(user.id, user.username, user.first_name)
         except Exception:
-            logger.exception("upsert_user tracking failed for user_id=%s", user.id)
+            logger.exception("User tracking failed for user_id=%s", user.id)
 
     if chat is not None and chat.type in ("group", "supergroup", "channel"):
         try:
             await upsert_group(chat.id, chat.title, chat.type)
         except Exception:
-            logger.exception("upsert_group tracking failed for chat_id=%s", chat.id)
-        if msg is not None and msg.date is not None:
+            logger.exception("Group tracking failed for chat_id=%s", chat.id)
+
+        if message is not None and message.date is not None:
             try:
-                await record_chat_activity(chat.id, msg.date.hour)
+                await record_chat_activity(chat.id, message.date.hour)
             except Exception:
-                logger.exception("record_chat_activity failed for chat_id=%s", chat.id)
+                logger.exception("Activity tracking failed for chat_id=%s", chat.id)
 
 
-async def _on_bot_membership_change(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Fired whenever the bot's membership status changes in any chat.
-
-    • Bot added (member / administrator) — record the inviting user's ID in
-      `added_by_user_ids` so they can see this group in the schedule wizard.
-    • Bot removed (kicked / left) — cascade-delete all group data from MongoDB.
-    """
+async def _on_bot_membership_change(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Track bot additions and remove a group's data after the bot leaves."""
     event = update.my_chat_member
     if event is None:
         return
 
-    new_status = event.new_chat_member.status  # "kicked","left","member","administrator",…
-    chat_id    = event.chat.id
-    chat_title = event.chat.title or str(chat_id)
-    chat_type  = event.chat.type  # "group","supergroup","channel",…
+    new_status = event.new_chat_member.status
+    chat_id = event.chat.id
 
     if new_status in ("member", "administrator"):
-        # Bot was just added — record who invited it
         added_by = event.from_user.id if event.from_user else None
-        logger.info(
-            "Bot added to '%s' (%s) by user %s — recording membership.",
-            chat_title, chat_id, added_by,
-        )
         try:
-            await upsert_group(chat_id, chat_title, chat_type, added_by_user_id=added_by)
+            await upsert_group(
+                chat_id,
+                event.chat.title or str(chat_id),
+                event.chat.type,
+                added_by_user_id=added_by,
+            )
         except Exception:
-            logger.exception("upsert_group (add event) failed for chat %s.", chat_id)
+            logger.exception("Could not record bot membership for chat %s", chat_id)
 
     elif new_status in ("kicked", "left"):
-        logger.info("Bot removed from '%s' (%s) — purging all group data…", chat_title, chat_id)
         try:
             counts = await remove_group(chat_id)
             logger.info(
-                "Purged data for chat %s: %s",
+                "Removed group data for chat %s: %s",
                 chat_id,
-                ", ".join(f"{k}={v}" for k, v in counts.items()),
+                ", ".join(f"{key}={value}" for key, value in counts.items()),
             )
         except Exception:
-            logger.exception("Failed to purge data for chat %s after bot removal.", chat_id)
-
-
-# Holds a reference to the running Application's bot_data dict. Populated once
-# in main() after the Application is built. A module-level variable is used
-# (rather than an attribute on the Bot instance) because PTB's TelegramObject
-# defines a strict `__setattr__` that raises AttributeError for any attribute
-# name not declared in its (and every parent class's) `__slots__` — so even a
-# fresh instance attribute on a subclass cannot be set after construction.
-_bot_data_ref: dict | None = None
+            logger.exception("Could not clean removed group %s", chat_id)
 
 
 class _TrackedBot(Bot):
-    """
-    Bot subclass that records every outgoing message id via chat_cleanup, so
-    wizard flows can later wipe them without touching every reply_text()/
-    send_message() call site across handlers/base.py, schedule_wizard.py,
-    queue_manager.py, etc.
-
-    A plain instance-attribute monkey-patch (`app.bot.send_message = ...`)
-    does NOT work here: PTB's Bot uses __slots__ and a strict __setattr__,
-    so assigning to the instance raises AttributeError. Subclassing to
-    override the method works, but storing state also requires going
-    through the module-level `_bot_data_ref` above rather than `self.x = ...`.
-    """
+    """Track outgoing messages so completed wizard conversations can clean them up."""
 
     async def send_message(self, chat_id=None, *args, **kwargs):
         message = await super().send_message(chat_id, *args, **kwargs)
@@ -214,62 +176,185 @@ class _TrackedBot(Bot):
 
 
 async def post_shutdown(application: Application) -> None:
-    """Graceful teardown: stop scheduler, then close DB."""
+    """Stop APScheduler and release the MongoDB connection."""
     global _scheduler
+
     set_readiness(database=False, scheduler=False)
     if _scheduler is not None and _scheduler.running:
         _scheduler.shutdown(wait=False)
         logger.info("APScheduler stopped.")
+    _scheduler = None
     await close_db()
     logger.info("MongoDB disconnected. Shutdown complete.")
 
 
-def main() -> None:
-    logger.info("Starting Telegram Advanced Scheduler Bot…")
-    logger.info("Version: %s", BOT_VERSION)
+def build_application() -> Application:
+    """Build the Telegram application and register all handlers."""
+    global _bot_data_ref
 
-    # Keep-alive server (daemon thread) — must start before PTB blocks the loop
-    start_keep_alive(PORT)
-
-    # Build PTB Application, using a _TrackedBot instance (instead of
-    # .token(...)) so outgoing sends are recorded for chat_cleanup.
-    tracked_bot = _TrackedBot(token=TELEGRAM_BOT_TOKEN)
-    app: Application = (
+    application = (
         ApplicationBuilder()
-        .bot(tracked_bot)
+        .bot(_TrackedBot(token=TELEGRAM_BOT_TOKEN))
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
     )
-    global _bot_data_ref
-    _bot_data_ref = app.bot_data
+    _bot_data_ref = application.bot_data
 
-    # /ping — deployment verification (registered before ConversationHandlers so
-    # it is always reachable regardless of the user's conversation state)
-    app.add_handler(CommandHandler("ping", cmd_ping))
-    app.add_handler(CommandHandler("id", cmd_id))
+    application.add_handler(CommandHandler("ping", cmd_ping))
+    application.add_handler(CommandHandler("id", cmd_id))
+    application.add_handler(MessageHandler(filters.ALL, _track_incoming), group=-1)
+    application.add_handler(CallbackQueryHandler(_track_incoming), group=-1)
+    application.add_handler(
+        ChatMemberHandler(
+            _on_bot_membership_change,
+            ChatMemberHandler.MY_CHAT_MEMBER,
+        )
+    )
 
-    # Chat cleanup tracking: record incoming messages/callbacks at low
-    # priority (group=-1) so they don't interfere with normal handler
-    # dispatch order. Outgoing sends are tracked by _TrackedBot above.
-    app.add_handler(MessageHandler(filters.ALL, _track_incoming), group=-1)
-    app.add_handler(CallbackQueryHandler(_track_incoming), group=-1)
+    application.add_handler(build_schedule_wizard())
+    application.add_handler(build_queue_manager())
+    application.add_handler(build_media_pool())
+    application.add_handler(build_owner_panel())
+    application.add_handler(build_templates_conversation())
+    application.add_handler(build_base_conversation())
+    return application
 
-    # Cascade-delete all group data when the bot is kicked or leaves
-    app.add_handler(ChatMemberHandler(_on_bot_membership_change, ChatMemberHandler.MY_CHAT_MEMBER))
 
-    # Register ConversationHandlers — specific wizards first (higher priority)
-    app.add_handler(build_schedule_wizard())
-    app.add_handler(build_queue_manager())
-    app.add_handler(build_media_pool())
-    app.add_handler(build_owner_panel())
-    app.add_handler(build_templates_conversation())
-    app.add_handler(build_base_conversation())
+class ScheduleBotASGI:
+    """Serve health routes and manage Telegram polling via ASGI lifespan events."""
 
-    logger.info("Bot starting — polling for updates…")
-    app.run_polling(
-        allowed_updates=["message", "callback_query", "my_chat_member"],
-        drop_pending_updates=True,   # ignore stale updates accumulated during downtime
+    def __init__(self) -> None:
+        self._http_app = WsgiToAsgi(health_app)
+        self._application: Application | None = None
+        self._initialized = False
+        self._post_init_attempted = False
+
+    async def __call__(self, scope: dict[str, Any], receive, send) -> None:
+        if scope["type"] == "http":
+            await self._http_app(scope, receive, send)
+        elif scope["type"] == "lifespan":
+            await self._handle_lifespan(receive, send)
+        else:
+            raise RuntimeError(f"Unsupported ASGI scope type: {scope['type']}")
+
+    async def _start_bot(self) -> None:
+        application = build_application()
+        self._application = application
+
+        await application.initialize()
+        self._initialized = True
+
+        # Application.initialize() does not invoke post_init; do it explicitly
+        # to preserve the setup sequence normally provided by run_polling().
+        self._post_init_attempted = True
+        await post_init(application)
+
+        if application.updater is None:
+            raise RuntimeError("Telegram polling updater is not configured.")
+
+        await application.updater.start_polling(
+            allowed_updates=ALLOWED_UPDATES,
+            drop_pending_updates=True,
+        )
+        await application.start()
+        logger.info("Schedule Bot started through the ASGI lifespan.")
+
+    async def _stop_bot(self) -> None:
+        application = self._application
+        if application is None:
+            return
+
+        errors: list[Exception] = []
+
+        if application.updater is not None and application.updater.running:
+            try:
+                await application.updater.stop()
+            except Exception as exc:
+                errors.append(exc)
+                logger.exception("Failed to stop Telegram polling.")
+
+        if application.running:
+            try:
+                await application.stop()
+            except Exception as exc:
+                errors.append(exc)
+                logger.exception("Failed to stop Telegram application.")
+
+        if self._post_init_attempted:
+            try:
+                await post_shutdown(application)
+            except Exception as exc:
+                errors.append(exc)
+                logger.exception("Schedule Bot post-shutdown cleanup failed.")
+
+        if self._initialized:
+            try:
+                await application.shutdown()
+            except Exception as exc:
+                errors.append(exc)
+                logger.exception("Telegram application shutdown failed.")
+
+        self._application = None
+        self._initialized = False
+        self._post_init_attempted = False
+
+        if errors:
+            raise RuntimeError(
+                "One or more Schedule Bot shutdown steps failed."
+            ) from errors[0]
+
+    async def _handle_lifespan(self, receive, send) -> None:
+        while True:
+            message = await receive()
+
+            if message["type"] == "lifespan.startup":
+                try:
+                    await self._start_bot()
+                except Exception:
+                    logger.exception("Schedule Bot failed to start.")
+                    try:
+                        await self._stop_bot()
+                    except Exception:
+                        logger.exception("Cleanup after startup failure was incomplete.")
+                    await send(
+                        {
+                            "type": "lifespan.startup.failed",
+                            "message": "Schedule Bot startup failed; inspect Render logs.",
+                        }
+                    )
+                    return
+
+                await send({"type": "lifespan.startup.complete"})
+
+            elif message["type"] == "lifespan.shutdown":
+                try:
+                    await self._stop_bot()
+                except Exception:
+                    logger.exception("Schedule Bot shutdown was incomplete.")
+                    await send(
+                        {
+                            "type": "lifespan.shutdown.failed",
+                            "message": "Schedule Bot shutdown was incomplete; inspect logs.",
+                        }
+                    )
+                    return
+
+                await send({"type": "lifespan.shutdown.complete"})
+                return
+
+
+# Uvicorn imports this ASGI object using the current Render service command.
+app = ScheduleBotASGI()
+
+
+def main() -> None:
+    """Standalone local-development entry point."""
+    logger.info("Starting %s", BOT_VERSION)
+    start_keep_alive(PORT)
+    build_application().run_polling(
+        allowed_updates=ALLOWED_UPDATES,
+        drop_pending_updates=True,
     )
 
 
