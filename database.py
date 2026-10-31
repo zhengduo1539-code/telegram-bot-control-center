@@ -394,13 +394,14 @@ async def update_post_status(post_id: str, status: str) -> None:
     db  = await get_db()
     now = datetime.now(tz=timezone.utc)
     fields: dict = {"status": status, "updated_at": now}
-    if status in ("posted", "failed"):
-        fields["expire_at"] = _post_expire_at()   # only completed/failed posts expire
-    elif status == "pending":
-        fields.pop("expire_at", None)
+    update: dict[str, Any] = {"$set": fields}
+    if status in ("pending", "paused"):
+        # Remove stale TTL dates left by older versions so a paused schedule
+        # cannot disappear while the user expects to resume it.
+        update["$unset"] = {"expire_at": ""}
     await db[COL_POSTS].update_one(
         {"_id": ObjectId(post_id)},
-        {"$set": fields},
+        update,
     )
 
 
@@ -598,12 +599,12 @@ async def claim_queue_item(user_id: int, chat_id: int, now: datetime, lease_seco
              {"state": "sending", "claimed_at": {"$lte": stale_before}},
          ]}}},
         {"$set": {"contents.$.state": "sending", "contents.$.claimed_at": now,
-                  "contents.$.item_id": claim_id, "updated_at": now}},
+                  "contents.$.claim_token": claim_id, "updated_at": now}},
         return_document=ReturnDocument.AFTER,
     )
     if not doc:
         return None
-    item = next((entry for entry in doc.get("contents", []) if entry.get("item_id") == claim_id), None)
+    item = next((entry for entry in doc.get("contents", []) if entry.get("claim_token") == claim_id), None)
     return (doc, item) if item else None
 
 
