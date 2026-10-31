@@ -2525,52 +2525,53 @@ async def cb_mp_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def cb_mp_reset_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     pm = _pm(context)
+    language = await resolve_user_language(context, query.from_user.id)
     chat_id = pm.get("mp_chat_id")
     if not chat_id:
-        await query.answer("Select a pool first.", show_alert=True)
+        await query.answer(mp_tr(language, "pool_missing"), show_alert=True)
         return MP_MANAGE_CHAT
     try:
         await ensure_chat_access(query.get_bot(), int(chat_id), query.from_user.id)
-    except ChatAccessError as exc:
-        await query.answer(str(exc), show_alert=True)
+    except ChatAccessError:
+        await query.answer(mp_tr(language, "access_error"), show_alert=True)
         return MP_MANAGE_ACTION
     try:
         await reset_media_pool(query.from_user.id, int(chat_id))
-        text, keyboard = await _mp_manage_summary(query.from_user.id, int(chat_id))
+        text, keyboard = await _mp_manage_summary(
+            query.from_user.id, int(chat_id), language
+        )
     except Exception:
         logger.exception("Could not reset Media Pool cycle for chat_id=%s", chat_id)
-        await query.answer("The pool could not be reset. Please try again.", show_alert=True)
+        await query.answer(mp_tr(language, "pool_check_error"), show_alert=True)
         return MP_MANAGE_ACTION
-    await _edit(query, "✅ Posting cycle reset.\n\n" + text, keyboard)
+    await _edit(query, mp_tr(language, "reset_done") + "\n\n" + text, keyboard)
     return MP_MANAGE_ACTION
 
 
 async def cb_mp_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    pm = _pm(context)
-    title = escape_markdown(pm.get("mp_chat_title", "selected group"), version=1)
+    language = await resolve_user_language(context, query.from_user.id)
+    title = _pm(context).get("mp_chat_title", "selected group")
     await _edit(
         query,
-        f"🗑 Clear the Media Pool for {title}?\n\n"
-        "This permanently deletes the content items in this one pool. "
-        "Any active random-post schedule for this destination will be paused. "
-        "Other groups and channels will not be affected.",
-        _mp_manage_confirm_keyboard(CB_MP_CLEAR_YES),
+        mp_tr(language, "clear_confirm", group=title),
+        _mp_manage_confirm_keyboard(CB_MP_CLEAR_YES, language),
     )
     return MP_MANAGE_ACTION
 
 
 async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     user_id = query.from_user.id
     chat_id = _pm(context).get("mp_chat_id")
     if not chat_id:
-        await query.answer("Select a pool first.", show_alert=True)
+        await query.answer(mp_tr(language, "pool_missing"), show_alert=True)
         return MP_MANAGE_CHAT
     try:
         await ensure_chat_access(query.get_bot(), int(chat_id), user_id)
-    except ChatAccessError as exc:
-        await query.answer(str(exc), show_alert=True)
+    except ChatAccessError:
+        await query.answer(mp_tr(language, "access_error"), show_alert=True)
         return MP_MANAGE_ACTION
 
     try:
@@ -2581,7 +2582,7 @@ async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         })
     except Exception:
         logger.exception("Could not delete Media Pool for user_id=%s chat_id=%s", user_id, chat_id)
-        await query.answer("The pool could not be cleared. Please try again.", show_alert=True)
+        await query.answer(mp_tr(language, "pool_check_error"), show_alert=True)
         return MP_MANAGE_ACTION
 
     schedule_pause_ok = True
@@ -2606,22 +2607,20 @@ async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     _clear_mp(context)
     if result.deleted_count and schedule_pause_ok:
-        message = "✅ This Media Pool has been cleared. Any pending random-post schedule for this destination has been paused."
+        message = mp_tr(language, "clear_done")
     elif result.deleted_count:
-        message = (
-            "✅ This Media Pool has been cleared. The schedule could not be paused immediately; "
-            "the scheduler will pause it when it next checks the now-empty pool."
-        )
+        message = mp_tr(language, "clear_partial")
     else:
-        message = "This Media Pool was already empty or no longer exists. Any pending schedule was checked for pause."
-    await _edit(query, message, _mp_menu_keyboard())
+        message = mp_tr(language, "pool_missing")
+    await _edit(query, message, _mp_menu_keyboard(language))
     return MP_MENU
 
 
 async def cb_back_mp_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     _clear_mp(context)
-    await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
+    await _edit(query, _mp_menu_text(language), _mp_menu_keyboard(language))
     return MP_MENU
 
 
