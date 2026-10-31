@@ -793,7 +793,7 @@ async def cb_tmpl_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if not query:
         return WIZARD_TMPL_PICK
     tid  = (query.data or "").replace(CB_TMPL_PICK_PFX, "")
-    tmpl = await get_template(tid)
+    tmpl = await get_template_for_user(tid, query.from_user.id)
     if not tmpl:
         await query.answer("Template not found.", show_alert=True)
         return WIZARD_TMPL_PICK
