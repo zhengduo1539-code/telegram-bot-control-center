@@ -17,7 +17,7 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 
 1. Add the bot to a group or channel.
 2. Give it permission to send messages. For channels, make it an administrator with **Post Messages** permission.
-3. Open a private chat with the bot and send `/start`.
+3. Open a private chat with the bot and send /start.
 4. Choose **Schedule New Post**, **Manage Queue**, or **Media Pool**.
 5. Follow the guided steps, review the summary and confirm.
 
@@ -25,14 +25,14 @@ Only a group administrator or channel owner can create schedules for a target ch
 
 ## Project structure
 
-- `main.py`: Telegram application startup, handlers and shutdown.
-- `config.py`: validated environment configuration.
-- `database.py`: MongoDB persistence, indexes, atomic queue claims and retention.
-- `scheduler.py`: recurring post execution, daily queue delivery and message lifecycle.
-- `schedule_utils.py`: pure timezone-aware daily-slot calculations.
-- `handlers/`: guided user flows, owner tools, templates and permission checks.
-- `keep_alive.py`: Render liveness/readiness endpoints.
-- `tests/`: automated unit tests.
+- main.py: Telegram application startup, ASGI lifecycle and health-server integration.
+- config.py: validated environment configuration.
+- database.py: MongoDB persistence, indexes, atomic queue claims and retention.
+- scheduler.py: recurring post execution, daily queue delivery and message lifecycle.
+- schedule_utils.py: pure timezone-aware daily-slot calculations.
+- handlers/: guided user flows, owner tools, templates and permission checks.
+- keep_alive.py: Render liveness/readiness endpoints.
+- tests/: automated unit tests.
 
 ## Environment variables
 
@@ -40,33 +40,31 @@ Configure these in Render → Service → Environment:
 
 | Variable | Required | Description |
 |---|---|---|
-| `BOT_TOKEN` | Yes | Telegram token from @BotFather |
-| `MONGODB_URI` | Yes | MongoDB connection string |
-| `MONGODB_DATABASE` | No | Defaults to `schedule_bot` |
-| `ADMIN_IDS` | Recommended | Comma-separated numeric owner Telegram IDs |
-| `SCHEDULER_INTERVAL_SECS` | No | 15–300 seconds; default 60 |
-| `PORT` | Render supplied | Local default 8080 |
+| BOT_TOKEN | Yes | Telegram token from @BotFather |
+| MONGODB_URI | Yes | MongoDB connection string |
+| MONGODB_DATABASE | No | Defaults to schedule_bot |
+| ADMIN_IDS | Recommended | Comma-separated numeric owner Telegram IDs |
+| SCHEDULER_INTERVAL_SECS | No | 15–300 seconds; default 60 |
+| PORT | Render supplied | Local default 8080 |
 
-Never commit credentials. Use `.env.example` only as a template.
+Never commit credentials. Use .env.example only as a template.
 
 ## Render deployment
 
-The included `render.yaml` uses build command `pip install -r requirements.txt`, start command `python main.py`, liveness `/healthz` and readiness `/health`.
+The included render.yaml uses build command pip install -r requirements.txt, start command uvicorn main:app --host 0.0.0.0 --port $PORT, liveness /healthz and readiness /health.
 
 Run one service instance only. This bot uses an in-process polling scheduler; multiple service instances would run multiple scheduler loops. MongoDB atomic queue claims provide a second layer of protection against duplicate queue claims.
 
 ## Local development
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt
-cp .env.example .env
-# Fill BOT_TOKEN, MONGODB_URI and ADMIN_IDS in .env
-python -m compileall -q main.py handlers
-python -m pytest -q
-python main.py
-```
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements-dev.txt
+    cp .env.example .env
+    # Fill BOT_TOKEN, MONGODB_URI and ADMIN_IDS in .env
+    python -m compileall -q main.py handlers
+    python -m pytest -q
+    python main.py
 
 ## Retention and operational behavior
 
