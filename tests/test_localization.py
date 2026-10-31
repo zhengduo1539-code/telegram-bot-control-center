@@ -134,11 +134,17 @@ def test_selected_language_is_saved_and_temporary_keyboard_is_removed(monkeypatc
     async def scenario():
         message = SimpleNamespace(
             text=LANGUAGE_LABELS["my"],
+            chat_id=123456789,
+            message_id=77,
             reply_text=AsyncMock(),
+        )
+        bot = SimpleNamespace(
+            username="ScheduleBot",
+            delete_message=AsyncMock(return_value=True),
         )
         context = SimpleNamespace(
             user_data={"awaiting_language_choice": True},
-            bot=SimpleNamespace(username="ScheduleBot"),
+            bot=bot,
         )
         update = SimpleNamespace(
             effective_message=message,
@@ -150,6 +156,7 @@ def test_selected_language_is_saved_and_temporary_keyboard_is_removed(monkeypatc
         await language_handler.handle_language_choice(update, context)
 
         save.assert_awaited_once_with(123, "my")
+        bot.delete_message.assert_awaited_once_with(chat_id=123456789, message_id=77)
         assert context.user_data["language"] == "my"
         assert "awaiting_language_choice" not in context.user_data
         assert message.reply_text.await_count == 2
