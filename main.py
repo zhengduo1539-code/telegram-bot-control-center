@@ -38,7 +38,8 @@ from database import (
     upsert_user,
 )
 from handlers import chat_cleanup
-from handlers.base import build_base_conversation
+from handlers.base import CB_LANGUAGE, build_base_conversation
+from handlers.language import cmd_lang, handle_language_choice, language_selection_filter
 from handlers.owner_panel import build_owner_panel
 from handlers.queue_manager import build_media_pool, build_queue_manager
 from handlers.schedule_wizard import build_schedule_wizard
@@ -203,6 +204,10 @@ def build_application() -> Application:
 
     application.add_handler(CommandHandler("ping", cmd_ping))
     application.add_handler(CommandHandler("id", cmd_id))
+    # Register globally before the conversation handlers so /lang remains available in every flow.
+    application.add_handler(CommandHandler("lang", cmd_lang))
+    application.add_handler(CallbackQueryHandler(cmd_lang, pattern=f"^{CB_LANGUAGE}$"))
+    application.add_handler(MessageHandler(language_selection_filter(), handle_language_choice))
     application.add_handler(MessageHandler(filters.ALL, _track_incoming), group=-1)
     application.add_handler(CallbackQueryHandler(_track_incoming), group=-1)
     application.add_handler(
