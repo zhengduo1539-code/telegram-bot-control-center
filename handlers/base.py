@@ -510,11 +510,13 @@ async def _render_my_posts(query: Any, user_id: int, page: int, context: Context
             "rich_message": rich_message,
             "reply_markup": keyboard,
         }
-        if query.inline_message_id:
-            api_kwargs["inline_message_id"] = query.inline_message_id
-        elif query.message:
-            api_kwargs["chat_id"] = query.message.chat_id
-            api_kwargs["message_id"] = query.message.message_id
+        inline_message_id = getattr(query, "inline_message_id", None)
+        message = getattr(query, "message", None)
+        if inline_message_id:
+            api_kwargs["inline_message_id"] = inline_message_id
+        elif message:
+            api_kwargs["chat_id"] = message.chat_id
+            api_kwargs["message_id"] = message.message_id
         else:
             raise ValueError("Cannot edit My Posts: callback message is unavailable.")
 
