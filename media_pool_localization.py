@@ -18,6 +18,7 @@ _KEYS = (
     "manage_empty", "manage_select", "pool_button", "manage_summary",
     "reset_cycle", "clear_pool", "all_pools", "reset_confirm", "reset_done",
     "clear_confirm", "clear_done", "clear_partial", "pool_missing", "prev", "next",
+    "manual_id_prompt", "cancelled",
 )
 
 # Values follow _KEYS exactly. User-facing copy is intentionally concise for Telegram.
@@ -67,6 +68,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "This Media Pool no longer exists. Please select a pool again.",
         "⬅️ Previous", "Next ➡️",
         "To find your Chat ID, send /id in the target group, then paste the ID here. Example: -1001234567890.",
+        "❌ Cancelled. Back to the main menu.",
     ),
     "my": (
         "🎲 Media Pool\n\nPost များကို စုစည်းထည့်သွင်းပြီး သတ်မှတ်ထားသော အချိန်ခြားတိုင်းတွင် Bot က ကျပန်းတစ်ခုစီ ပို့ပေးနိုင်ပါသည်။ Cycle တစ်ခုအတွင်း Content တစ်ခုစီကို တစ်ကြိမ်စီ အသုံးပြုမည်ဖြစ်ပြီး အားလုံးပို့ပြီးပါက Cycle အသစ် အလိုအလျောက် စတင်ပါမည်။\n\n၁။ Group သို့မဟုတ် Channel ရွေးပါ။\n၂။ Content များကို တစ်ခုပြီးတစ်ခု ထည့်ပါ။\n၃။ ပို့မည့်အချိန်ခြားနဲ့ ပထမဆုံးပို့မည့်အချိန်ကို သတ်မှတ်ပါ။",
@@ -113,6 +115,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "ဤ Media Pool မရှိတော့ပါ။ Pool ကို ပြန်ရွေးပါ။",
         "⬅️ ယခင်", "နောက်တစ်ခု ➡️",
         "Chat ID ရယူရန် သက်ဆိုင်ရာ Group ထဲတွင် /id command ကို ပို့ပါ။ ပြသလာသော ID ကို ဤနေရာတွင် ထည့်ပါ။ ဥပမာ -1001234567890။",
+        "❌ ပယ်ဖျက်ပြီးပါပြီ။ ပင်မမီနူးသို့ ပြန်သွားပါ။",
     ),
     "zh": (
         "🎲 媒体池\n\n先建立内容集合，机器人会按设定间隔随机发布一条内容。每个周期内每条内容只发布一次；全部发布后会自动开始新周期。\n\n1. 选择群组或频道。\n2. 依次添加内容。\n3. 设置发布间隔和首次发布时间。",
@@ -159,6 +162,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "此媒体池已不存在。请重新选择内容池。",
         "⬅️ 上一页", "下一页 ➡️",
         "如需获取 Chat ID，请在目标群组中发送 /id，然后将显示的 ID 粘贴到这里。示例：-1001234567890。",
+        "❌ 已取消，返回主菜单。",
     ),
     "es": (
         "🎲 Biblioteca multimedia\n\nCrea una colección de contenido y el bot publicará un elemento aleatorio cada cierto intervalo. Cada elemento se usa una vez por ciclo; al terminar todos, comienza otro ciclo automáticamente.\n\n1. Elige un grupo o canal.\n2. Añade contenido uno tras otro.\n3. Configura el intervalo y la primera publicación.",
@@ -205,6 +209,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Esta biblioteca ya no existe. Vuelve a seleccionar una.",
         "⬅️ Anterior", "Siguiente ➡️",
         "Para obtener tu Chat ID, envía /id en el grupo de destino y pega aquí el ID que aparezca. Ejemplo: -1001234567890.",
+        "❌ Se canceló la operación. Volviendo al menú principal.",
     ),
     "hi": (
         "🎲 मीडिया पूल\n\nकंटेंट का संग्रह बनाएँ और बॉट को तय अंतराल पर एक यादृच्छिक आइटम प्रकाशित करने दें। हर चक्र में हर आइटम एक बार उपयोग होगा; सभी आइटम भेजे जाने पर नया चक्र अपने आप शुरू होगा।\n\n1. ग्रुप या चैनल चुनें।\n2. एक-एक करके कंटेंट जोड़ें।\n3. पोस्ट का अंतराल और पहला समय तय करें।",
@@ -251,6 +256,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "यह मीडिया पूल अब मौजूद नहीं है। कृपया फिर से पूल चुनें।",
         "⬅️ पिछला", "अगला ➡️",
         "अपना Chat ID पाने के लिए लक्ष्य ग्रुप में /id भेजें और दिखाए गए ID को यहाँ पेस्ट करें। उदाहरण: -1001234567890।",
+        "❌ रद्द कर दिया गया। मुख्य मेनू पर लौट रहे हैं।",
     ),
     "ar": (
         "🎲 مجموعة الوسائط\n\nأنشئ مجموعة من المحتوى، وسيقوم البوت بنشر عنصر عشوائي وفق الفاصل المحدد. يُستخدم كل عنصر مرة واحدة في كل دورة، ثم تبدأ دورة جديدة تلقائياً بعد نشر جميع العناصر.\n\n1. اختر مجموعة أو قناة.\n2. أضف المحتوى واحداً تلو الآخر.\n3. حدّد الفاصل الزمني ووقت النشر الأول.",
@@ -297,6 +303,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "لم تعد مجموعة الوسائط هذه موجودة. يرجى اختيار مجموعة أخرى.",
         "⬅️ السابق", "التالي ➡️",
         "للحصول على Chat ID، أرسل /id في المجموعة المستهدفة ثم الصق المعرّف الذي يظهر هنا. مثال: -1001234567890.",
+        "❌ تم الإلغاء. جارٍ الرجوع إلى القائمة الرئيسية.",
     ),
     "pt": (
         "🎲 Biblioteca de mídia\n\nCrie uma coleção de conteúdo e deixe o bot publicar um item aleatório em cada intervalo. Cada item é usado uma vez por ciclo; quando todos forem enviados, um novo ciclo começa automaticamente.\n\n1. Escolha um grupo ou canal.\n2. Adicione conteúdo um item após o outro.\n3. Defina o intervalo e o horário da primeira publicação.",
@@ -343,6 +350,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Esta biblioteca de mídia não existe mais. Selecione uma novamente.",
         "⬅️ Anterior", "Próximo ➡️",
         "Para obter seu Chat ID, envie /id no grupo de destino e cole aqui o ID exibido. Exemplo: -1001234567890.",
+        "❌ Operação cancelada. Voltando ao menu principal.",
     ),
     "fr": (
         "🎲 Bibliothèque multimédia\n\nCréez une collection de contenu et laissez le bot publier un élément aléatoire à chaque intervalle. Chaque élément est utilisé une fois par cycle ; un nouveau cycle démarre automatiquement lorsque tous les éléments ont été envoyés.\n\n1. Choisissez un groupe ou un canal.\n2. Ajoutez le contenu successivement.\n3. Définissez l'intervalle et l'heure de la première publication.",
@@ -389,6 +397,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Cette bibliothèque multimédia n'existe plus. Veuillez en sélectionner une autre.",
         "⬅️ Précédent", "Suivant ➡️",
         "Pour obtenir votre Chat ID, envoyez /id dans le groupe cible, puis collez ici l'identifiant affiché. Exemple : -1001234567890.",
+        "❌ Opération annulée. Retour au menu principal.",
     ),
     "ru": (
         "🎲 Медиатека\n\nСоздайте набор публикаций, и бот будет размещать случайный элемент через заданный интервал. Каждый элемент используется один раз за цикл; после публикации всех элементов автоматически начинается новый цикл.\n\n1. Выберите группу или канал.\n2. Добавляйте материалы по одному.\n3. Укажите интервал и время первой публикации.",
@@ -435,6 +444,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Эта медиатека больше не существует. Выберите коллекцию заново.",
         "⬅️ Назад", "Далее ➡️",
         "Чтобы узнать Chat ID, отправьте /id в целевой группе и вставьте сюда показанный идентификатор. Пример: -1001234567890.",
+        "❌ Отменено. Возврат в главное меню.",
     ),
     "bn": (
         "🎲 মিডিয়া পুল\n\nকনটেন্টের একটি সংগ্রহ তৈরি করুন। বট নির্দিষ্ট বিরতিতে এলোমেলো একটি আইটেম প্রকাশ করবে। প্রতিটি চক্রে প্রতিটি আইটেম একবার ব্যবহৃত হবে; সব আইটেম পাঠানো হলে নতুন চক্র স্বয়ংক্রিয়ভাবে শুরু হবে।\n\n১. একটি গ্রুপ বা চ্যানেল বেছে নিন।\n২. একের পর এক কনটেন্ট যোগ করুন।\n৩. পোস্টের বিরতি ও প্রথম পোস্টের সময় নির্ধারণ করুন।",
@@ -481,6 +491,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "এই মিডিয়া পুলটি আর নেই। অনুগ্রহ করে আবার একটি পুল বেছে নিন।",
         "⬅️ পূর্ববর্তী", "পরবর্তী ➡️",
         "আপনার Chat ID পেতে লক্ষ্য গ্রুপে /id পাঠান, তারপর দেখানো ID এখানে পেস্ট করুন। উদাহরণ: -1001234567890।",
+        "❌ বাতিল করা হয়েছে। মূল মেনুতে ফিরে যাচ্ছি।",
     ),
     "id": (
         "🎲 Koleksi Media\n\nBuat kumpulan konten, lalu bot akan menerbitkan satu item secara acak pada setiap interval. Setiap item digunakan sekali per siklus; siklus baru dimulai otomatis setelah semua item terkirim.\n\n1. Pilih grup atau kanal.\n2. Tambahkan konten satu per satu.\n3. Atur interval dan waktu posting pertama.",
@@ -527,6 +538,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Koleksi media ini sudah tidak ada. Silakan pilih ulang.",
         "⬅️ Sebelumnya", "Berikutnya ➡️",
         "Untuk mengetahui Chat ID, kirim /id di grup tujuan lalu tempel ID yang muncul di sini. Contoh: -1001234567890.",
+        "❌ Dibatalkan. Kembali ke menu utama.",
     ),
     "ja": (
         "🎲 メディアプール\n\nコンテンツをまとめて登録すると、設定した間隔でボットがランダムに1件ずつ投稿します。各アイテムは1サイクルにつき1回使用され、すべて投稿すると新しいサイクルが自動で始まります。\n\n1. グループまたはチャンネルを選択。\n2. コンテンツを順番に追加。\n3. 投稿間隔と初回投稿時刻を設定。",
@@ -573,6 +585,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "このメディアプールは存在しません。もう一度選択してください。",
         "⬅️ 前へ", "次へ ➡️",
         "Chat IDを取得するには、対象グループで /id を送信し、表示されたIDをここに貼り付けてください。例：-1001234567890。",
+        "❌ キャンセルしました。メインメニューに戻ります。",
     ),
     "ko": (
         "🎲 미디어 풀\n\n콘텐츠 모음을 만들면 봇이 설정된 간격마다 무작위 항목 하나를 게시합니다. 각 항목은 한 주기에 한 번씩 사용되며, 모두 게시되면 새 주기가 자동으로 시작됩니다.\n\n1. 그룹 또는 채널 선택\n2. 콘텐츠를 차례로 추가\n3. 게시 간격과 첫 게시 시간 설정",
@@ -619,6 +632,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "이 미디어 풀은 더 이상 존재하지 않습니다. 다시 선택하세요.",
         "⬅️ 이전", "다음 ➡️",
         "Chat ID를 확인하려면 대상 그룹에서 /id를 보내고 표시된 ID를 여기에 붙여 넣으세요. 예: -1001234567890.",
+        "❌ 취소되었습니다. 메인 메뉴로 돌아갑니다.",
     ),
     "th": (
         "🎲 Media Pool\n\nสร้างคลังเนื้อหา แล้วให้บอทสุ่มโพสต์หนึ่งรายการตามช่วงเวลาที่กำหนด แต่ละรายการจะถูกใช้หนึ่งครั้งต่อรอบ เมื่อโพสต์ครบทั้งหมด ระบบจะเริ่มรอบใหม่โดยอัตโนมัติ\n\n1. เลือกกลุ่มหรือช่อง\n2. เพิ่มเนื้อหาทีละรายการ\n3. ตั้งช่วงเวลาและเวลาโพสต์ครั้งแรก",
@@ -665,6 +679,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "ไม่มี Media Pool นี้แล้ว กรุณาเลือกพูลอีกครั้ง",
         "⬅️ ก่อนหน้า", "ถัดไป ➡️",
         "หากต้องการทราบ Chat ID ให้ส่ง /id ในกลุ่มเป้าหมาย แล้วคัดลอก ID ที่แสดงมาวางที่นี่ ตัวอย่าง: -1001234567890",
+        "❌ ยกเลิกแล้ว กำลังกลับไปยังเมนูหลัก",
     ),
     "vi": (
         "🎲 Kho nội dung\n\nTạo một bộ sưu tập nội dung, sau đó bot sẽ đăng ngẫu nhiên một mục theo khoảng thời gian đã đặt. Mỗi mục được dùng một lần trong mỗi chu kỳ; khi đăng hết, chu kỳ mới sẽ tự động bắt đầu.\n\n1. Chọn nhóm hoặc kênh.\n2. Thêm nội dung lần lượt.\n3. Đặt khoảng thời gian và thời điểm đăng đầu tiên.",
@@ -711,6 +726,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Kho nội dung này không còn tồn tại. Vui lòng chọn lại.",
         "⬅️ Trước", "Tiếp ➡️",
         "Để lấy Chat ID, hãy gửi /id trong nhóm đích rồi dán ID hiển thị vào đây. Ví dụ: -1001234567890.",
+        "❌ Đã hủy. Đang quay lại menu chính.",
     ),
     "tr": (
         "🎲 Medya Havuzu\n\nBir içerik koleksiyonu oluşturun; bot belirlenen aralıklarla rastgele bir öğe yayımlasın. Her öğe döngü başına bir kez kullanılır; tüm öğeler gönderilince yeni döngü otomatik başlar.\n\n1. Grup veya kanal seçin.\n2. İçerikleri sırayla ekleyin.\n3. Yayın aralığını ve ilk yayın saatini ayarlayın.",
@@ -757,6 +773,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Bu medya havuzu artık mevcut değil. Lütfen yeniden seçin.",
         "⬅️ Önceki", "Sonraki ➡️",
         "Chat ID'nizi öğrenmek için hedef grupta /id komutunu gönderin ve görüntülenen kimliği buraya yapıştırın. Örnek: -1001234567890.",
+        "❌ İptal edildi. Ana menüye dönülüyor.",
     ),
     "de": (
         "🎲 Medienpool\n\nErstellen Sie eine Inhaltssammlung. Der Bot veröffentlicht dann in jedem eingestellten Intervall einen zufälligen Eintrag. Jeder Eintrag wird pro Zyklus einmal verwendet; sobald alle gesendet wurden, beginnt automatisch ein neuer Zyklus.\n\n1. Gruppe oder Kanal auswählen.\n2. Inhalte nacheinander hinzufügen.\n3. Veröffentlichungsintervall und erste Uhrzeit festlegen.",
@@ -803,6 +820,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Dieser Medienpool ist nicht mehr vorhanden. Bitte wählen Sie erneut einen Pool aus.",
         "⬅️ Zurück", "Weiter ➡️",
         "Um Ihre Chat-ID zu erhalten, senden Sie /id in der Zielgruppe und fügen Sie die angezeigte ID hier ein. Beispiel: -1001234567890.",
+        "❌ Abgebrochen. Zurück zum Hauptmenü.",
     ),
     "it": (
         "🎲 Raccolta multimediale\n\nCrea una raccolta di contenuti e lascia che il bot pubblichi un elemento casuale a ogni intervallo. Ogni elemento viene usato una volta per ciclo; quando sono stati inviati tutti, inizia automaticamente un nuovo ciclo.\n\n1. Scegli un gruppo o canale.\n2. Aggiungi i contenuti uno dopo l'altro.\n3. Imposta l'intervallo e l'orario del primo post.",
@@ -849,6 +867,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Questa raccolta multimediale non esiste più. Seleziona di nuovo una raccolta.",
         "⬅️ Precedente", "Successivo ➡️",
         "Per ottenere il Chat ID, invia /id nel gruppo di destinazione e incolla qui l'ID mostrato. Esempio: -1001234567890.",
+        "❌ Operazione annullata. Ritorno al menu principale.",
     ),
     "ur": (
         "🎲 میڈیا پول\n\nمواد کا مجموعہ بنائیں، پھر بوٹ مقررہ وقفے پر ایک بے ترتیب آئٹم شائع کرے گا۔ ہر آئٹم ہر سائیکل میں ایک بار استعمال ہوگا؛ تمام آئٹمز بھیجنے کے بعد نیا سائیکل خودکار طور پر شروع ہوگا۔\n\n1۔ گروپ یا چینل منتخب کریں۔\n2۔ مواد ایک ایک کرکے شامل کریں۔\n3۔ اشاعت کا وقفہ اور پہلی اشاعت کا وقت مقرر کریں۔",
@@ -895,6 +914,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "یہ میڈیا پول اب موجود نہیں ہے۔ براہ کرم دوبارہ پول منتخب کریں۔",
         "⬅️ پچھلا", "اگلا ➡️",
         "اپنا Chat ID حاصل کرنے کے لیے ہدف گروپ میں /id بھیجیں، پھر دکھائی دینے والی ID یہاں پیسٹ کریں۔ مثال: -1001234567890۔",
+        "❌ منسوخ کر دیا گیا۔ مرکزی مینو پر واپس جا رہے ہیں۔",
     ),
     "sw": (
         "🎲 Kikusanyaji cha Media\n\nTengeneza mkusanyiko wa maudhui, kisha bot itachapisha kipengee kimoja cha bahati nasibu kwa kila muda uliowekwa. Kila kipengee hutumika mara moja kwa mzunguko; vyote vikishatumwa, mzunguko mpya huanza kiotomatiki.\n\n1. Chagua kundi au chaneli.\n2. Ongeza maudhui moja baada ya jingine.\n3. Weka muda wa kuchapisha na muda wa chapisho la kwanza.",
@@ -941,6 +961,7 @@ _ROWS: dict[str, tuple[str, ...]] = {
         "Media Pool hii haipo tena. Tafadhali chagua pool tena.",
         "⬅️ Iliyotangulia", "Inayofuata ➡️",
         "Ili kupata Chat ID yako, tuma /id kwenye kundi lengwa kisha bandika ID inayoonyeshwa hapa. Mfano: -1001234567890.",
+        "❌ Imeghairiwa. Inarudi kwenye menyu kuu.",
     ),
 }
 
