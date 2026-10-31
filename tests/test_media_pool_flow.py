@@ -148,8 +148,13 @@ def test_reset_only_affects_the_selected_pool(monkeypatch):
         summary = AsyncMock(return_value=("Pool stats", InlineKeyboardMarkup([])))
         monkeypatch.setattr(media_pool, "reset_media_pool", reset)
         monkeypatch.setattr(media_pool, "_mp_manage_summary", summary)
+        monkeypatch.setattr(
+            media_pool, "ensure_chat_access",
+            AsyncMock(return_value=SimpleNamespace(title="Publisher Group")),
+        )
 
         query = SimpleNamespace(
+            get_bot=lambda: object(),
             from_user=SimpleNamespace(id=42),
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
@@ -207,6 +212,7 @@ def test_clear_only_deletes_selected_pool_and_pauses_its_schedule(monkeypatch):
             media_pool, "get_db", AsyncMock(return_value=FakeDatabase())
         )
         query = SimpleNamespace(
+            get_bot=lambda: object(),
             from_user=SimpleNamespace(id=42),
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
@@ -214,6 +220,10 @@ def test_clear_only_deletes_selected_pool_and_pauses_its_schedule(monkeypatch):
         context = SimpleNamespace(user_data={
             "mpwiz": {"mp_chat_id": -1001234567890}
         })
+        monkeypatch.setattr(
+            media_pool, "ensure_chat_access",
+            AsyncMock(return_value=SimpleNamespace(title="Publisher Group")),
+        )
 
         state = await media_pool.cb_mp_clear_yes(
             SimpleNamespace(callback_query=query), context
