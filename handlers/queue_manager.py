@@ -2186,7 +2186,7 @@ async def cb_mp_use_template(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.edit_message_text(
         _user_template_preview(templates, 0, "media"),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_user_template_keyboard(templates, 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_ADD_DONE),
+        reply_markup=_user_template_keyboard(templates, 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK),
     )
     return MP_TEMPLATE_PICK
 
@@ -2204,7 +2204,7 @@ async def cb_mp_template_page(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(
         _user_template_preview(templates, page, "media"),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_user_template_keyboard(templates, page, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_ADD_DONE),
+        reply_markup=_user_template_keyboard(templates, page, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK),
     )
     return MP_TEMPLATE_PICK
 
