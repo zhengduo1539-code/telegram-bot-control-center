@@ -403,3 +403,14 @@ def test_queue_empty_template_message_guides_manual_content():
     assert "No User Templates Found" in preview
     assert "send your text, photo" in preview
     assert "Queue" in preview
+
+
+def test_queue_conversation_registers_user_template_preview_state():
+    conversation = queue.build_queue_manager()
+    assert queue.QM_TEMPLATE_PICK in conversation.states
+    callbacks = {
+        handler.callback.__name__
+        for handler in conversation.states[queue.QM_TEMPLATE_PICK]
+        if isinstance(handler, queue.CallbackQueryHandler)
+    }
+    assert {"cb_qm_template_page", "cb_qm_template_use", "cb_back_qm_ac_content"} <= callbacks
