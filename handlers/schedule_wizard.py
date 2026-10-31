@@ -54,6 +54,19 @@ from schedule_wizard_localization import translate_schedule_wizard as sw_tr
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_auto_delete_duration(raw: str) -> float | None:
+    """Parse an explicit integer duration such as '5 minutes' or '2 hours'. Return hours."""
+    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.IGNORECASE)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2).lower()
+    minutes = amount if unit in ("m", "min", "mins", "minute", "minutes") else amount * 60
+    if minutes < 5 or minutes > 525600:
+        return None
+    return minutes / 60
+
 # ---------------------------------------------------------------------------
 # Wizard state constants
 # ---------------------------------------------------------------------------
@@ -1594,12 +1607,12 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ---------------------------------------------------------------------------
 
 async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    try:
-        val = float(update.message.text.strip())
-        if val <= 0:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("⚠️ Please enter a positive number, e.g. `24`.", parse_mode=ParseMode.MARKDOWN)
+    val = _parse_auto_delete_duration(update.message.text or "")
+    if val is None:
+        await update.message.reply_text(
+            "⚠️ Enter a valid duration: `5 minutes` or `2 hours`. Minimum is 5 minutes.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
         return WIZARD_AD_HOURS
     _w(context)["ad_hours"] = val
     w = _w(context)
