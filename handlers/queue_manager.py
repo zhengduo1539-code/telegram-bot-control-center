@@ -96,6 +96,7 @@ QM_CONFIRM_SLOTS = 110
 QM_INTRO = 111
 QM_TEMPLATE_PICK = 112
 QM_AUTO_DELETE = 113
+QM_AUTO_DELETE = 113
 
 (
     MP_MENU,
@@ -128,6 +129,7 @@ CB_QM_CLEAR_YES    = "qm:clear_yes"
 CB_QM_CONTINUE     = "qm:intro:continue"
 CB_QM_CONFIRM_SLOTS = "qm:slots:confirm"
 CB_QM_CONFIRM_ADD  = "qm:confirm_add"
+CB_QM_AD_BACK = "qm:auto_delete:back"
 CB_QM_AD_BACK = "qm:auto_delete:back"
 CB_QM_USE_TEMPLATE = "qm:template:open"
 CB_QM_TMPL_PAGE = "qm:template:page:"
@@ -1493,6 +1495,34 @@ async def cb_qm_ac_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return QM_AUTO_DELETE
 
 
+async def recv_qm_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
+    wizard = _w(context)
+    if raw.lower() == "off":
+        wizard.pop("add_auto_delete_hours", None)
+        label = "Off"
+    else:
+        hours = _parse_auto_delete_duration(raw)
+        if hours is None:
+            await update.message.reply_text("Enter 5 minutes or more, e.g. 5 minutes or 2 hours. Type off to keep the post.")
+            return QM_AUTO_DELETE
+        wizard["add_auto_delete_hours"] = hours
+        label = raw
+    await update.message.reply_text(
+        "Queue confirmation\\nAuto-Delete: " + label + "\\n\\nTap Confirm to save this queue item.",
+        reply_markup=confirm_keyboard(CB_QM_CONFIRM_ADD, CB_BACK_QM_AC_TZ),
+    )
+    return QM_CONFIRM_SLOT
+
+
+async def cb_qm_auto_delete_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    wizard = _w(context)
+    wizard.pop("add_auto_delete_hours", None)
+    await query.answer()
+    return await cb_back_qm_ac_date(update, context)
+
+
 async def cb_qm_ac_tz_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Add Content — paginate timezone picker."""
     query    = update.callback_query
@@ -1636,6 +1666,7 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "text": wizard.get("content_text"),
             "media_file_id": wizard.get("media_file_id"),
             "media_type": wizard.get("media_type"),
+            "auto_delete_after_hours": wizard.get("add_auto_delete_hours"),
         }
         if not payload["text"] and not payload["media_file_id"]:
             raise ValueError("Queue content is empty.")
@@ -3305,6 +3336,10 @@ def build_queue_manager() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_add_date),
                 CallbackQueryHandler(cb_back_qm_ac_content,  pattern=f"^{CB_BACK_QM_AC_CONTENT}$"),
                 CallbackQueryHandler(cb_back_qm_menu,        pattern=f"^{CB_BACK_QM_MENU}$"),
+            ],
+            QM_AUTO_DELETE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_auto_delete),
+                CallbackQueryHandler(cb_qm_auto_delete_back, pattern=f"^{CB_QM_AD_BACK}$"),
             ],
             QM_ADD_TZ: [
                 CallbackQueryHandler(cb_qm_ac_tz,            pattern=qm_ac_tz_pattern),
