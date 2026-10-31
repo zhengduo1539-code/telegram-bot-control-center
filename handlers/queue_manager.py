@@ -55,6 +55,7 @@ from handlers.base import CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, con
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from media_pool_localization import translate_media_pool as mp_tr
+from queue_manager_localization import translate_queue_manager as qm_tr
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ QM_ADD_TZ   = 109
 MP_MANAGE_CHAT = 209
 MP_MANAGE_ACTION = 210
 MP_INTRO = 211
+QM_CONFIRM_SLOTS = 110
 
 # ---------------------------------------------------------------------------
 # Callback-data constants  (all ≤ 64 bytes)
@@ -103,6 +105,8 @@ CB_QM_ADD_CONTENT  = "qm:add_content"
 CB_QM_VIEW         = "qm:view"
 CB_QM_CLEAR        = "qm:clear"
 CB_QM_CLEAR_YES    = "qm:clear_yes"
+CB_QM_CONTINUE     = "qm:intro:continue"
+CB_QM_CONFIRM_SLOTS = "qm:slots:confirm"
 CB_QM_CONFIRM_ADD  = "qm:confirm_add"
 
 # Group picker — Set Slots flow
@@ -340,50 +344,54 @@ def _mp_interval_unit_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     ])
 
 
-def _qm_tz_keyboard(page: int = 0) -> InlineKeyboardMarkup:
-    """Timezone picker keyboard for the Queue Manager Set Slots wizard."""
+def _qm_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
+    """Localized timezone picker for the Queue Manager daily-slot wizard."""
     start = page * TZ_PAGE_SIZE
-    end   = start + TZ_PAGE_SIZE
+    end = start + TZ_PAGE_SIZE
     rows = [
         [InlineKeyboardButton(label, callback_data=f"qmtz:{tz}")]
         for tz, label in TIMEZONES[start:end]
     ]
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_QM_TZ_PAGE}{page - 1}"))
+        nav.append(InlineKeyboardButton(
+            qm_tr(language, "prev"), callback_data=f"{CB_QM_TZ_PAGE}{page - 1}"
+        ))
     if end < len(TIMEZONES):
-        nav.append(InlineKeyboardButton("▶️ Next", callback_data=f"{CB_QM_TZ_PAGE}{page + 1}"))
+        nav.append(InlineKeyboardButton(
+            qm_tr(language, "next"), callback_data=f"{CB_QM_TZ_PAGE}{page + 1}"
+        ))
     if nav:
         rows.append(nav)
     rows.append([
-        InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_QM_SLOT_TZ),
-        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_QM_SLOT_TZ),
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
-
-
-def _qm_ac_tz_keyboard(page: int = 0) -> InlineKeyboardMarkup:
-    """Timezone picker keyboard for the Add Content wizard."""
+def _qm_ac_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
+    """Localized timezone picker for the legacy date/time add-content path."""
     start = page * TZ_PAGE_SIZE
-    end   = start + TZ_PAGE_SIZE
+    end = start + TZ_PAGE_SIZE
     rows = [
         [InlineKeyboardButton(label, callback_data=f"qmactz:{tz}")]
         for tz, label in TIMEZONES[start:end]
     ]
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_QM_AC_TZ_PAGE}{page - 1}"))
+        nav.append(InlineKeyboardButton(
+            qm_tr(language, "prev"), callback_data=f"{CB_QM_AC_TZ_PAGE}{page - 1}"
+        ))
     if end < len(TIMEZONES):
-        nav.append(InlineKeyboardButton("▶️ Next", callback_data=f"{CB_QM_AC_TZ_PAGE}{page + 1}"))
+        nav.append(InlineKeyboardButton(
+            qm_tr(language, "next"), callback_data=f"{CB_QM_AC_TZ_PAGE}{page + 1}"
+        ))
     if nav:
         rows.append(nav)
     rows.append([
-        InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_QM_AC_DATE),
-        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_QM_AC_DATE),
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
-
-
 def _mp_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
     start = page * TZ_PAGE_SIZE
     end = start + TZ_PAGE_SIZE
@@ -416,52 +424,91 @@ def _qm_group_picker_keyboard(
     page_prefix: str,
     manual_cb: str,
     back_cb: str,
+    language: str = "en",
 ) -> InlineKeyboardMarkup:
-    """Generic group-picker keyboard shared by Set Slots and Add Content flows."""
+    """Localized group picker shared by Queue Manager setup flows."""
     rows: list[list[InlineKeyboardButton]] = []
-    total  = len(groups)
-    start  = page * _QM_CHAT_PAGE_SIZE
-    end    = min(start + _QM_CHAT_PAGE_SIZE, total)
+    total = len(groups)
+    start = page * _QM_CHAT_PAGE_SIZE
+    end = min(start + _QM_CHAT_PAGE_SIZE, total)
     type_icon = {"channel": "📢", "supergroup": "👥", "group": "👥"}
-    for g in groups[start:end]:
-        icon  = type_icon.get(g.get("chat_type", ""), "💬")
-        title = (g.get("title") or f"Chat {g['chat_id']}")[:35]
+    for group in groups[start:end]:
+        icon = type_icon.get(group.get("chat_type", ""), "💬")
+        title = (group.get("title") or f"Chat {group['chat_id']}")[:35]
         rows.append([InlineKeyboardButton(
-            f"{icon} {title}",
-            callback_data=f"{pick_prefix}{g['chat_id']}",
+            f"{icon} {title}", callback_data=f"{pick_prefix}{group['chat_id']}"
         )])
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"{page_prefix}{page - 1}"))
+        nav.append(InlineKeyboardButton(
+            qm_tr(language, "prev"), callback_data=f"{page_prefix}{page - 1}"
+        ))
     if end < total:
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"{page_prefix}{page + 1}"))
+        nav.append(InlineKeyboardButton(
+            qm_tr(language, "next"), callback_data=f"{page_prefix}{page + 1}"
+        ))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("✏️ Enter ID manually", callback_data=manual_cb)])
+    rows.append([InlineKeyboardButton(
+        qm_tr(language, "button_manual_id"), callback_data=manual_cb
+    )])
     rows.append([
-        InlineKeyboardButton("⬅️ Back",   callback_data=back_cb),
-        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "back"), callback_data=back_cb),
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
-
-
-def _qm_no_groups_keyboard(manual_cb: str, back_cb: str, bot_username: str) -> InlineKeyboardMarkup:
+def _qm_no_groups_keyboard(
+    manual_cb: str,
+    back_cb: str,
+    bot_username: str,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "➕ Add Bot to a Group",
+            qm_tr(language, "button_add_bot"),
             url=f"https://t.me/{bot_username}?startgroup=start",
         )],
-        [InlineKeyboardButton("✏️ Enter ID manually", callback_data=manual_cb)],
+        [InlineKeyboardButton(
+            qm_tr(language, "button_manual_id"), callback_data=manual_cb
+        )],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=back_cb),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=back_cb),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
         ],
     ])
+def _qm_intro_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    """Back returns to Main Menu; Continue opens the Queue Manager actions."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_MAIN_MENU),
+        InlineKeyboardButton(qm_tr(language, "continue"), callback_data=CB_QM_CONTINUE),
+    ]])
 
 
-# ============================================================================
-#  A) QUEUE MANAGER
-# ============================================================================
+def _qm_menu_text(language: str = "en") -> str:
+    return qm_tr(language, "menu")
+
+
+def _qm_nav_keyboard(language: str, back_data: str | None = None) -> InlineKeyboardMarkup:
+    row: list[InlineKeyboardButton] = []
+    if back_data:
+        row.append(InlineKeyboardButton(tr(language, "back"), callback_data=back_data))
+    row.append(InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL))
+    return InlineKeyboardMarkup([row])
+
+
+def _qm_confirm_keyboard(
+    language: str,
+    confirm_data: str,
+    back_data: str,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(tr(language, "confirm"), callback_data=confirm_data),
+            InlineKeyboardButton(tr(language, "back"), callback_data=back_data),
+        ],
+        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+    ])
+
 
 def _qm_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -474,22 +521,46 @@ def _qm_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
             InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
         ],
     ])
-
-
 async def enter_queue_manager(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show the Queue Manager introduction before exposing its actions."""
     query = update.callback_query
     _clear(context)
-    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
-    chat_cleanup.reset(context.application.bot_data, query.message.chat_id)
-    chat_cleanup.track(context.application.bot_data, query.message.chat_id, query.message.message_id)
-    await _edit(
-        query,
-        f"{tr(language, 'queue_title')}\n\n{tr(language, 'queue_intro')}",
-        _qm_menu_keyboard(language),
+    language = await resolve_user_language(
+        context, query.from_user.id if query.from_user else None
     )
+    context.user_data["active_queue_manager"] = True
+    chat_cleanup.reset(context.application.bot_data, query.message.chat_id)
+    chat_cleanup.track(
+        context.application.bot_data, query.message.chat_id, query.message.message_id
+    )
+    await _edit(query, qm_tr(language, "intro"), _qm_intro_keyboard(language))
+    return QM_INTRO
+
+
+async def cb_qm_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Open the existing Queue Manager menu after the user reads the guide."""
+    query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
+    await _edit(query, _qm_menu_text(language), _qm_menu_keyboard(language))
     return QM_MENU
 
 
+async def cb_qm_back_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return from Queue Manager onboarding/menu to the localized main menu."""
+    query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
+    context.user_data.pop("active_queue_manager", None)
+    _clear(context)
+    await query.answer()
+    await query.edit_message_text(
+        tr(language, "menu_title"),
+        reply_markup=main_menu_keyboard(
+            bot=context.bot,
+            user_id=query.from_user.id,
+            language=language,
+        ),
+    )
+    return ConversationHandler.END
 async def cb_qm_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show a concise overview of this user's daily queues and item states."""
     query = update.callback_query
