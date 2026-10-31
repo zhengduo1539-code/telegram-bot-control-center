@@ -286,6 +286,91 @@ def _filter_posts(posts: list[dict], filter_key: str) -> list[dict]:
     return [post for post in posts if post.get("status", "pending") == filter_key]
 
 
+
+def _posts_rich_message(
+    posts: list[dict],
+    page: int,
+    language: str = "en",
+    all_posts: list[dict] | None = None,
+    filter_key: str = "all",
+) -> dict[str, Any]:
+    """Build a Telegram Bot API Rich Message containing a native compact table."""
+    source_posts = all_posts if all_posts is not None else posts
+    counts = {
+        status: sum(1 for post in source_posts if post.get("status", "pending") == status)
+        for status in _MP_FILTERS[1:]
+    }
+    total = len(posts)
+    start = page * POSTS_PER_PAGE
+    end = min(start + POSTS_PER_PAGE, total)
+    n_pages = max(1, (total + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
+
+    cells: list[list[dict[str, Any]]] = [[
+        {"text": "Post", "is_header": True},
+        {"text": "Content", "is_header": True},
+        {"text": "Status", "is_header": True},
+        {"text": "Next run", "is_header": True},
+    ]]
+    for idx, post in enumerate(posts[start:end], start=start + 1):
+        status = post.get("status", "pending")
+        icon = _STATUS_ICON.get(status, "❓")
+        status_label = _mp_label(language, status) if status in _MP_FILTERS else status.replace("_", " ").title()
+        chat_id = post.get("chat_id", "?")
+        chat_title = post.get("chat_title") or post.get("group_title") or post.get("chat_name") or chat_id
+        group = " ".join(str(chat_title).split())
+        if len(group) > 30:
+            group = group[:27].rstrip() + "…"
+
+        recurrence = post.get("recurrence") or {}
+        rec_type = str(recurrence.get("type", "once")).replace("_", " ").title()
+        content = post.get("content") or {}
+        media_type = content.get("media_type")
+        content_type = (
+            "Text" if content.get("text") and not media_type
+            else str(media_type or "Text").replace("_", " ").title()
+        )
+        next_run = recurrence.get("next_run_at") or post.get("next_run_at")
+        next_label = _format_next_run(next_run, post.get("timezone", "UTC"))
+        if status == "posted":
+            next_label = "Published"
+        elif status == "failed":
+            next_label = "Needs attention"
+
+        cells.append([
+            {"text": f"#{idx}\n{group}"},
+            {"text": f"{content_type}\n{rec_type}"},
+            {"text": f"{icon} {status_label}"},
+            {"text": next_label},
+        ])
+
+    summary = (
+        f"{len(source_posts)} total · ⏳ {counts['pending']} active · "
+        f"⏸ {counts['paused']} paused · ✅ {counts['posted']} completed · "
+        f"❌ {counts['failed']} failed"
+    )
+    return {
+        "blocks": [
+            {"type": "heading", "size": 2, "text": "📋 My Posts"},
+            {
+                "type": "paragraph",
+                "text": f"{_mp_label(language, filter_key)} · {total} posts · Page {page + 1}/{n_pages}",
+            },
+            {"type": "paragraph", "text": summary},
+            {
+                "type": "table",
+                "cells": cells,
+                "is_bordered": True,
+                "is_striped": True,
+                "is_compact": True,
+                "caption": "Scheduled post overview",
+            },
+            {
+                "type": "footer",
+                "text": "Use the buttons below each post to pause, resume, duplicate, save as a template, or delete it.",
+            },
+        ]
+    }
+
 def _posts_list_text(posts: list[dict], page: int, language: str = "en") -> str:
     total = len(posts)
     n_pages = max(1, (total + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
@@ -414,18 +499,44 @@ async def _render_my_posts(query: Any, user_id: int, page: int, context: Context
     max_page = max(0, (len(filtered_posts) + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE - 1)
     page = max(0, min(page, max_page))
     context.user_data["_mp_page"] = page
-    counts = {status: sum(1 for post in posts if post.get("status", "pending") == status) for status in _MP_FILTERS[1:]}
-    summary = (
-        f"\n📊 {len(posts)} total · ⏳ {counts['pending']} active · "
-        f"⏸ {counts['paused']} paused · ✅ {counts['posted']} completed · ❌ {counts['failed']} failed\n"
+    keyboard = _posts_keyboard(filtered_posts, page, language, filter_key)
+    rich_message = _posts_rich_message(
+        filtered_posts, page, language, all_posts=posts, filter_key=filter_key
     )
-    rendered = _posts_list_text(filtered_posts, page, language)
-    rendered = rendered.replace("\n\n", summary + "\n", 1)
-    rendered = rendered.replace(f"{_mp_label(language, 'all')} ·", f"{_mp_label(language, filter_key)} ·", 1)
-    await query.edit_message_text(
-        rendered, parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_posts_keyboard(filtered_posts, page, language, filter_key),
-    )
+    try:
+        # PTB 22.8 exposes do_api_request for Bot API methods added after the
+        # library release. Edit in place to preserve the dashboard message.
+        api_kwargs: dict[str, Any] = {
+            "rich_message": rich_message,
+            "reply_markup": keyboard,
+        }
+        if query.inline_message_id:
+            api_kwargs["inline_message_id"] = query.inline_message_id
+        elif query.message:
+            api_kwargs["chat_id"] = query.message.chat_id
+            api_kwargs["message_id"] = query.message.message_id
+        else:
+            raise ValueError("Cannot edit My Posts: callback message is unavailable.")
+
+        await context.bot.do_api_request("editMessageText", api_kwargs=api_kwargs)
+    except Exception as exc:
+        logger.warning("Native My Posts Rich Message unavailable; using text fallback: %s", exc)
+        rendered = _posts_list_text(filtered_posts, page, language)
+        rendered = rendered.replace(
+            "\n\n",
+            f"\n\n{len(posts)} total · "
+            f"⏳ {sum(1 for post in posts if post.get('status', 'pending') == 'pending')} active · "
+            f"⏸ {sum(1 for post in posts if post.get('status') == 'paused')} paused · "
+            f"✅ {sum(1 for post in posts if post.get('status') == 'posted')} completed · "
+            f"❌ {sum(1 for post in posts if post.get('status') == 'failed')} failed\n",
+            1,
+        )
+        rendered = rendered.replace(
+            f"{_mp_label(language, 'all')} ·", f"{_mp_label(language, filter_key)} ·", 1
+        )
+        await query.edit_message_text(
+            rendered, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
+        )
     return MY_POSTS
 
 
