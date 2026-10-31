@@ -138,7 +138,7 @@ def test_selected_language_is_saved_and_temporary_keyboard_is_removed(monkeypatc
         )
         context = SimpleNamespace(
             user_data={"awaiting_language_choice": True},
-            bot=SimpleNamespace(),
+            bot=SimpleNamespace(username="ScheduleBot"),
         )
         update = SimpleNamespace(
             effective_message=message,
