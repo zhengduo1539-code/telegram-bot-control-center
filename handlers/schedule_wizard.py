@@ -1088,6 +1088,97 @@ async def cb_back_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await _edit(query, tr(language, "first_run_prompt"), _first_run_keyboard(CB_BACK_TIMEZONE))
     return WIZARD_FIRST_RUN
 
+_MEDAL = ["🥇", "🥈", "🥉"]
+
+
+async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show top active hours for the chosen chat as tappable time buttons."""
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = _w(context).get("chat_id")
+    results = await get_best_hours(chat_id, top_n=3) if chat_id else []
+
+    if not results:
+        await query.edit_message_text(
+            "💡 *Smart Scheduling*\n\n"
+            "⚠️ *Not enough data yet.*\n\n"
+            "The bot learns active hours by observing messages in the group. "
+            "Come back after the bot has been active there for a while.\n\n"
+            "For now, type the time manually:\n"
+            "• `HH:MM` — e.g. `09:00`\n"
+            "• `DD/MM/YYYY HH:MM` — e.g. `25/12/2025 09:00`",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN)],
+            ]),
+        )
+        return WIZARD_FIRST_RUN
+
+    total = sum(r["count"] for r in results)
+
+    def _label(count: int) -> str:
+        pct = count / total * 100 if total else 0
+        if pct >= 40:
+            return "high activity"
+        if pct >= 20:
+            return "good activity"
+        return "moderate activity"
+
+    lines = []
+    btn_rows: list[list[InlineKeyboardButton]] = []
+    for i, r in enumerate(results):
+        h = r["hour"]
+        time_str = f"{h:02d}:00"
+        medal = _MEDAL[i] if i < 3 else "•"
+        lines.append(f"{medal} *{time_str}* — {_label(r['count'])} ({r['count']} msgs)")
+        btn_rows.append([InlineKeyboardButton(
+            f"{medal} {time_str}",
+            callback_data=f"{CB_SMART_PICK_PREFIX}{time_str}",
+        )])
+
+    btn_rows.append([InlineKeyboardButton("✏️ Enter custom time", callback_data=CB_BACK_FIRST_RUN)])
+
+    await query.edit_message_text(
+        "💡 *Suggested Best Times*\n\n"
+        "Based on message activity in this chat:\n\n" +
+        "\n".join(lines) +
+        "\n\nTap a time to use it, or enter a custom time:",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup(btn_rows),
+    )
+    return WIZARD_FIRST_RUN
+
+
+async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """User tapped a suggested time — save it and move to timezone step."""
+    query = update.callback_query
+    time_str = (query.data or "").replace(CB_SMART_PICK_PREFIX, "", 1)  # "HH:MM"
+
+    w = _w(context)
+    tz_str = w.get("timezone", "UTC")
+    dt = _parse_run_time(time_str, tz_str)
+    if dt is None:
+        await query.answer("Could not parse time — please enter manually.", show_alert=True)
+        return WIZARD_FIRST_RUN
+
+    w["first_run"] = dt
+    w["first_run_raw"] = time_str
+    w.setdefault("time_window_enabled", False)
+
+    tz_str = w.get("timezone", "UTC")
+    await query.answer()
+    await query.edit_message_text(
+        f"✅ First run: `{time_str}` ({tz_str})\n\n"
+        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
+        "How many times should this post be sent?\n\n"
+        "Tap a preset or type a custom number:",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_max_runs_keyboard(),
+    )
+    return WIZARD_MAX_RUNS
+
+
 # ---------------------------------------------------------------------------
 # Step 5 — Timezone
 # ---------------------------------------------------------------------------
