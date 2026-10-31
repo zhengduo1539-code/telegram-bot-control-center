@@ -54,7 +54,8 @@ CB_MANAGE_QUEUE = "action:manage_queue"
 CB_MEDIA_POOL   = "action:media_pool"
 CB_LANGUAGE    = "nav:language"
 
-# My Posts action prefixes (prefix + 24-char ObjectId ≤ 64 bytes total)
+# My Posts action prefixes
+CB_MPP_FILTER  = "mpp:filter:"  # + all|pending|paused|posted|failed (prefix + 24-char ObjectId ≤ 64 bytes total)
 CB_MPP_PAGE    = "mpp:page:"     # + page number
 CB_MPP_PAUSE   = "mpp:pause:"   # + post_id
 CB_MPP_RESUME  = "mpp:resume:"  # + post_id
@@ -248,15 +249,22 @@ HELP_TEXT = (
 # ---------------------------------------------------------------------------
 
 _STATUS_ICON: dict[str, str] = {
-    "pending": "⏳",
-    "paused":  "⏸",
-    "posted":  "✅",
-    "failed":  "❌",
+    "pending": "⏳", "paused": "⏸", "posted": "✅", "failed": "❌",
+}
+_STATUS_LABEL = {"pending": "Active", "paused": "Paused", "posted": "Completed", "failed": "Failed"}
+_MP_FILTERS = ("all", "pending", "paused", "posted", "failed")
+_MP_FILTER_LABELS = {
+    "en": {"all": "All", "pending": "Active", "paused": "Paused", "posted": "Completed", "failed": "Failed"},
+    "my": {"all": "အားလုံး", "pending": "လုပ်ဆောင်နေ", "paused": "ခေတ္တရပ်", "posted": "ပြီးဆုံး", "failed": "မအောင်မြင်"},
 }
 
 
+def _mp_label(language: str, key: str) -> str:
+    return _MP_FILTER_LABELS.get(language, _MP_FILTER_LABELS["en"]).get(key, key.title())
+
+
 def _format_next_run(next_run, tz_str: str) -> str:
-    """Format a UTC `next_run_at` datetime in the post's own saved timezone."""
+    """Format a UTC next_run_at datetime in the post's saved timezone."""
     if next_run is None:
         return "—"
     if next_run.tzinfo is None:
@@ -268,51 +276,85 @@ def _format_next_run(next_run, tz_str: str) -> str:
         tz_str = "UTC"
     local_dt = next_run.astimezone(zone)
     label = "UTC" if tz_str == "UTC" else tz_str.split("/")[-1].replace("_", " ")
-    return local_dt.strftime(f"%d/%m %H:%M {label}")
+    return local_dt.strftime(f"%d/%m/%Y %H:%M {label}")
+
+
+def _filter_posts(posts: list[dict], filter_key: str) -> list[dict]:
+    """Return a status-filtered view without mutating database results."""
+    if filter_key not in _MP_FILTERS or filter_key == "all":
+        return list(posts)
+    return [post for post in posts if post.get("status", "pending") == filter_key]
 
 
 def _posts_list_text(posts: list[dict], page: int, language: str = "en") -> str:
-    total     = len(posts)
-    n_pages   = max(1, (total + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
-    start     = page * POSTS_PER_PAGE
-    end       = min(start + POSTS_PER_PAGE, total)
-    lines     = [f"{tr(language, 'posts_title')} (page {page + 1}/{n_pages})\n"]
+    total = len(posts)
+    n_pages = max(1, (total + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
+    start = page * POSTS_PER_PAGE
+    end = min(start + POSTS_PER_PAGE, total)
+    lines = [
+        f"📋 *{tr(language, 'posts_title')}*",
+        f"{_mp_label(language, 'all')} · {total} posts · Page {page + 1}/{n_pages}",
+        "",
+    ]
     for idx, post in enumerate(posts[start:end], start=start + 1):
-        status  = post.get("status", "?")
+        status = post.get("status", "pending")
+        icon = _STATUS_ICON.get(status, "❓")
+        status_label = _mp_label(language, status) if status in _MP_FILTERS else status.title()
         chat_id = post.get("chat_id", "?")
-        rec     = post.get("recurrence", {})
-        rec_type = rec.get("type", "once")
-        next_run = rec.get("next_run_at")
-        tz_str   = post.get("timezone", "UTC")
-        next_str = _format_next_run(next_run, tz_str)
-        icon    = _STATUS_ICON.get(status, "❓")
-        lines.append(f"{idx}. {icon} Chat `{chat_id}` · `{rec_type}` · {next_str}")
+        chat_title = post.get("chat_title") or post.get("group_title") or post.get("chat_name")
+        group = escape_markdown(str(chat_title or chat_id), version=1)
+        recurrence = post.get("recurrence") or {}
+        rec_type = recurrence.get("type", "once")
+        content = post.get("content") or {}
+        media_type = content.get("media_type")
+        content_type = "Text" if content.get("text") and not media_type else str(media_type or "Text").replace("_", " ").title()
+        next_run = recurrence.get("next_run_at") or post.get("next_run_at")
+        next_str = _format_next_run(next_run, post.get("timezone", "UTC"))
+        next_label = "Next run"
+        if status == "posted":
+            next_label, next_str = "Status", "Published"
+        elif status == "failed":
+            next_label, next_str = "Status", "Needs attention"
+        lines.extend([
+            f"*{idx}. {icon} {status_label}*",
+            f"🗂 {group}",
+            f"🧩 {content_type} · 🔁 {str(rec_type).replace('_', ' ').title()}",
+            f"🕒 {next_label}: {next_str}",
+            "",
+        ])
+    lines.append("Choose an action below to manage a post. Use the status filters to narrow the list.")
     return "\n".join(lines)
 
 
-def _posts_keyboard(posts: list[dict], page: int, language: str = "en") -> InlineKeyboardMarkup:
-    total  = len(posts)
-    start  = page * POSTS_PER_PAGE
-    end    = min(start + POSTS_PER_PAGE, total)
+def _posts_keyboard(
+    posts: list[dict], page: int, language: str = "en", filter_key: str = "all"
+) -> InlineKeyboardMarkup:
+    total = len(posts)
+    start = page * POSTS_PER_PAGE
+    end = min(start + POSTS_PER_PAGE, total)
     buttons: list[list[InlineKeyboardButton]] = []
-
+    buttons.append([
+        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", callback_data=f"{CB_MPP_FILTER}{key}")
+        for key in ("all", "pending", "paused")
+    ])
+    buttons.append([
+        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", callback_data=f"{CB_MPP_FILTER}{key}")
+        for key in ("posted", "failed")
+    ])
     for idx, post in enumerate(posts[start:end], start=start + 1):
-        pid    = str(post["_id"])
-        status = post.get("status", "?")
-        # Row 1: status controls + delete
-        ctrl: list[InlineKeyboardButton] = []
+        pid = str(post["_id"])
+        status = post.get("status", "pending")
+        controls: list[InlineKeyboardButton] = []
         if status == "pending":
-            ctrl.append(InlineKeyboardButton(f"{tr(language, "pause")} #{idx}",  callback_data=f"{CB_MPP_PAUSE}{pid}"))
+            controls.append(InlineKeyboardButton(f"⏸ Pause #{idx}", callback_data=f"{CB_MPP_PAUSE}{pid}"))
         elif status == "paused":
-            ctrl.append(InlineKeyboardButton(f"{tr(language, "resume")} #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
-        ctrl.append(InlineKeyboardButton(f"{tr(language, "delete")} #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
-        buttons.append(ctrl)
-        # Row 2: utilities
+            controls.append(InlineKeyboardButton(f"▶️ Resume #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
+        controls.append(InlineKeyboardButton(f"🗑 Delete #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
+        buttons.append(controls)
         buttons.append([
-            InlineKeyboardButton(f"{tr(language, "clone")} #{idx}",    callback_data=f"{CB_MPP_CLONE}{pid}"),
-            InlineKeyboardButton(f"{tr(language, "save_template")} #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
+            InlineKeyboardButton(f"🔁 Clone #{idx}", callback_data=f"{CB_MPP_CLONE}{pid}"),
+            InlineKeyboardButton(f"💾 Template #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
         ])
-
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
         nav_row.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{CB_MPP_PAGE}{page - 1}"))
@@ -320,7 +362,6 @@ def _posts_keyboard(posts: list[dict], page: int, language: str = "en") -> Inlin
         nav_row.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{CB_MPP_PAGE}{page + 1}"))
     if nav_row:
         buttons.append(nav_row)
-
     buttons.append([
         InlineKeyboardButton(tr(language, "statistics"), callback_data=CB_MY_STATS),
         InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
@@ -328,14 +369,9 @@ def _posts_keyboard(posts: list[dict], page: int, language: str = "en") -> Inlin
     return InlineKeyboardMarkup(buttons)
 
 
-async def _render_my_posts(
-    query: Any,
-    user_id: int,
-    page: int,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> int:
-    """Fetch posts and render the My Posts list. Returns the next state."""
-    from database import get_user_posts  # lazy import to avoid circular deps
+async def _render_my_posts(query: Any, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Fetch, filter, and render the user's post-management dashboard."""
+    from database import get_user_posts
     language = await resolve_user_language(context, user_id)
     try:
         posts = await get_user_posts(user_id)
@@ -344,31 +380,51 @@ async def _render_my_posts(
         await query.edit_message_text(
             f"❌ Error loading posts: `{str(exc).replace(chr(96), chr(39))}`",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]
-            ),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]),
         )
         return MY_POSTS
+
+    filter_key = context.user_data.get("_mp_filter", "all")
+    if filter_key not in _MP_FILTERS:
+        filter_key = "all"
+        context.user_data["_mp_filter"] = filter_key
+    filtered_posts = _filter_posts(posts, filter_key)
 
     if not posts:
         await query.edit_message_text(
-            tr(language, "posts_empty"),
+            f"{tr(language, 'posts_empty')}\n\nUse *Schedule New Post* to create your first scheduled post. "
+            "Return here anytime to pause, resume, duplicate, or remove posts.",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]
-            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tr(language, "schedule_new"), callback_data=CB_SCHEDULE_NEW)],
+                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
+            ]),
         )
         return MY_POSTS
 
-    # Clamp page to valid range
-    max_page = max(0, (len(posts) + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE - 1)
-    page     = min(page, max_page)
-    context.user_data["_mp_page"] = page
+    if not filtered_posts:
+        await query.edit_message_text(
+            f"📋 *{tr(language, 'posts_title')}*\n\nNo {_mp_label(language, filter_key)} posts found. Choose another filter below.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_posts_keyboard([], 0, language, filter_key),
+        )
+        context.user_data["_mp_page"] = 0
+        return MY_POSTS
 
+    max_page = max(0, (len(filtered_posts) + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE - 1)
+    page = max(0, min(page, max_page))
+    context.user_data["_mp_page"] = page
+    counts = {status: sum(1 for post in posts if post.get("status", "pending") == status) for status in _MP_FILTERS[1:]}
+    summary = (
+        f"\n📊 {len(posts)} total · ⏳ {counts['pending']} active · "
+        f"⏸ {counts['paused']} paused · ✅ {counts['posted']} completed · ❌ {counts['failed']} failed\n"
+    )
+    rendered = _posts_list_text(filtered_posts, page, language)
+    rendered = rendered.replace("\n\n", summary + "\n", 1)
+    rendered = rendered.replace(f"{_mp_label(language, 'all')} ·", f"{_mp_label(language, filter_key)} ·", 1)
     await query.edit_message_text(
-        _posts_list_text(posts, page, language),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_posts_keyboard(posts, page, language),
+        rendered, parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_posts_keyboard(filtered_posts, page, language, filter_key),
     )
     return MY_POSTS
 
@@ -550,7 +606,23 @@ async def cb_my_posts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await query.answer()
     user_id: int = query.from_user.id
     page = context.user_data.get("_mp_page", 0)
+    context.user_data["_mp_filter"] = "all"
     return await _render_my_posts(query, user_id, page, context)
+
+
+async def cb_mpp_filter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Switch the status filter and reset pagination."""
+    query = update.callback_query
+    if not query or not query.from_user:
+        return MY_POSTS
+    filter_key = (query.data or "").replace(CB_MPP_FILTER, "", 1)
+    if filter_key not in _MP_FILTERS:
+        await query.answer("Unknown filter.", show_alert=True)
+        return MY_POSTS
+    context.user_data["_mp_filter"] = filter_key
+    context.user_data["_mp_page"] = 0
+    await query.answer()
+    return await _render_my_posts(query, query.from_user.id, 0, context)
 
 
 async def cb_mpp_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -856,6 +928,7 @@ def build_base_conversation() -> ConversationHandler:
             ],
             MY_POSTS: [
                 CallbackQueryHandler(cb_my_posts,       pattern=f"^{CB_MY_POSTS}$"),
+                CallbackQueryHandler(cb_mpp_filter,     pattern=rf"^{CB_MPP_FILTER}(?:all|pending|paused|posted|failed)$"),
                 CallbackQueryHandler(cb_mpp_page,       pattern=rf"^{CB_MPP_PAGE}\d+$"),
                 CallbackQueryHandler(cb_mpp_pause,      pattern=rf"^{CB_MPP_PAUSE}{oid}$"),
                 CallbackQueryHandler(cb_mpp_resume,     pattern=rf"^{CB_MPP_RESUME}{oid}$"),
