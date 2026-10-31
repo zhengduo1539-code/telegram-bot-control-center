@@ -61,6 +61,20 @@ from queue_manager_localization import translate_queue_manager as qm_tr
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_auto_delete_duration(raw: str) -> float | None:
+    """Parse explicit integer minutes/hours and return the duration in hours."""
+    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.IGNORECASE)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2).lower()
+    minutes = amount if unit in ("m", "min", "mins", "minute", "minutes") else amount * 60
+    if minutes < 5 or minutes > 525600:
+        return None
+    return minutes / 60
+
+
 # ---------------------------------------------------------------------------
 # Conversation states
 # ---------------------------------------------------------------------------
@@ -2534,7 +2548,7 @@ def _mp_summary_text(pm: dict, language: str = "en") -> str:
     first_run_display = mp_tr(language, "start_now") if first_run == "now" else first_run
     ad_hours = pm.get("mp_ad_hours")
     ad_line = (
-        f"{ad_hours} {mp_tr(language, 'hours')}"
+        pm.get("mp_ad_duration_label", f"{ad_hours} hours")
         if ad_hours
         else mp_tr(language, "keep_posts")
     )
@@ -2564,24 +2578,24 @@ async def cb_mp_ad_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     language = await resolve_user_language(context, query.from_user.id)
     await _edit(
         query,
-        mp_tr(language, "delete_delay"),
+        "🗑 When should each Media Pool post be deleted?\n\nEnter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
         _mp_nav_keyboard(language, back_data=CB_BACK_MP_TZ),
     )
     return MP_AUTO_DELETE
 
 
 async def recv_mp_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw = (update.message.text or "").strip().replace(",", ".")
+    raw = (update.message.text or "").strip()
     language = await resolve_user_language(context, update.effective_user.id)
-    try:
-        value = float(raw)
-        if value <= 0 or value > 8760:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text(mp_tr(language, "invalid_delete_delay"))
+    value = _parse_auto_delete_duration(raw)
+    if value is None:
+        await update.message.reply_text(
+            "⚠️ Enter a duration with a unit, e.g. 5 minutes or 2 hours. Minimum: 5 minutes."
+        )
         return MP_AUTO_DELETE
     pm = _pm(context)
     pm["mp_ad_hours"] = value
+    pm["mp_ad_duration_label"] = raw
     await update.message.reply_text(
         _mp_summary_text(pm, language),
         reply_markup=_mp_schedule_confirm_keyboard(language),
@@ -2724,7 +2738,7 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     first_display = mp_tr(language, "start_now") if first_run == "now" else first_run
     interval_label = pm.get("interval_label") or f"{value} {mp_tr(language, unit)}"
     auto_delete_label = (
-        f"{auto_delete_hours} {mp_tr(language, 'hours')}"
+        pm.get("mp_ad_duration_label", f"{auto_delete_hours} hours")
         if auto_delete_hours
         else mp_tr(language, "keep_posts")
     )
