@@ -493,6 +493,7 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # A private-chat deep-link may carry the group that initiated setup.
     # Consume it only after the user chooses Continue.
     launch_chat = context.user_data.pop("launch_chat", None)
+    answered = False
     if isinstance(launch_chat, dict):
         try:
             launch_chat_id = int(launch_chat.get("chat_id"))
@@ -504,6 +505,7 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "Please select a group manually.",
                 show_alert=True,
             )
+            answered = True
         else:
             selected_title = target_chat.title or str(launch_chat_id)
             w = _w(context)
@@ -523,7 +525,8 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
     groups = await list_groups_for_user(user_id)
     if groups:
         shown = min(_CHAT_PAGE_SIZE, len(groups))
-        await query.answer()
+        if not answered:
+            await query.answer()
         await query.edit_message_text(
             f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
             f"_(Showing {shown} of {len(groups)} known chats)_",
@@ -531,7 +534,8 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
         )
     else:
-        await query.answer()
+        if not answered:
+            await query.answer()
         await query.edit_message_text(
             f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
             "⚠️ No groups or channels found. Add the bot to a group first, then return here to schedule a post.",
