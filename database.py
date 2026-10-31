@@ -977,6 +977,20 @@ async def get_template(template_id: str) -> dict[str, Any] | None:
     return await db[COL_TEMPLATES].find_one({"_id": ObjectId(template_id)})
 
 
+async def get_template_for_user(template_id: str, user_id: int) -> dict[str, Any] | None:
+    """Fetch a template only when it belongs to the requesting user."""
+    from bson import ObjectId, errors as bson_errors
+
+    try:
+        object_id = ObjectId(template_id)
+    except (bson_errors.InvalidId, TypeError):
+        return None
+    db = await get_db()
+    return await db[COL_TEMPLATES].find_one(
+        {"_id": object_id, "user_id": user_id}
+    )
+
+
 async def delete_template(template_id: str) -> bool:
     """Delete a template. Returns True if a document was deleted."""
     from bson import ObjectId

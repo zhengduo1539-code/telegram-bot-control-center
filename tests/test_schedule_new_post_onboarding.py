@@ -94,3 +94,33 @@ def test_schedule_conversation_registers_intro_state():
         handler.callback.__name__ == "cb_wizard_continue"
         for handler in conversation.states[wizard.WIZARD_INTRO]
     )
+
+
+def test_schedule_template_preview_shows_full_saved_content():
+    template = {
+        "_id": "0123456789abcdef01234567",
+        "name": "Weekly Notice",
+        "content": {"media_type": "video", "media_file_id": "file-id", "text": "The complete saved caption"},
+    }
+    preview = wizard._wizard_template_page_text([template], 0)
+    assert "Weekly Notice" in preview
+    assert "video" in preview
+    assert "The complete saved caption" in preview
+    assert wizard._TMPL_WIZ_PAGE_SIZE == 1
+
+
+def test_schedule_empty_template_preview_explains_manual_entry():
+    preview = wizard._wizard_template_page_text([], 0)
+    assert "No User Templates Found" in preview
+    assert "Send your post content manually" in preview
+
+
+def test_schedule_template_pick_uses_owner_scoped_template_loader():
+    conversation = wizard.build_schedule_wizard()
+    callbacks = {
+        handler.callback.__name__
+        for handler in conversation.states[wizard.WIZARD_TMPL_PICK]
+        if isinstance(handler, wizard.CallbackQueryHandler)
+    }
+    assert "cb_tmpl_pick" in callbacks
+    assert "cb_tmpl_page_wiz" in callbacks

@@ -503,3 +503,36 @@ def test_manual_chat_id_help_and_cancel_feedback_use_selected_language(monkeypat
         cleanup.assert_awaited_once()
 
     asyncio.run(scenario())
+
+
+def test_media_pool_user_template_action_and_full_preview():
+    labels = _button_labels(media_pool._mp_add_item_keyboard("en"))
+    assert "📝 User Template" in labels
+    template = {
+        "_id": "0123456789abcdef01234567",
+        "name": "Launch Campaign",
+        "content": {"media_type": "photo", "media_file_id": "file-id", "text": "Complete caption body"},
+    }
+    preview = media_pool._user_template_preview([template], 0, "media")
+    assert "Launch Campaign" in preview
+    assert "photo" in preview
+    assert "Complete caption body" in preview
+    assert "Saved Telegram media" in preview
+
+
+def test_media_pool_empty_template_message_guides_manual_content():
+    preview = media_pool._user_template_preview([], 0, "media")
+    assert "No User Templates Found" in preview
+    assert "send your text, photo" in preview
+    assert "Media Pool" in preview
+
+
+def test_media_pool_conversation_registers_user_template_preview_state():
+    conversation = media_pool.build_media_pool()
+    assert media_pool.MP_TEMPLATE_PICK in conversation.states
+    callbacks = {
+        handler.callback.__name__
+        for handler in conversation.states[media_pool.MP_TEMPLATE_PICK]
+        if isinstance(handler, media_pool.CallbackQueryHandler)
+    }
+    assert {"cb_mp_template_page", "cb_mp_template_use", "cb_mp_template_back"} <= callbacks
