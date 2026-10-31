@@ -89,6 +89,7 @@ QM_ADD_TZ   = 109
 ) = range(200, 209)
 MP_MANAGE_CHAT = 209
 MP_MANAGE_ACTION = 210
+MP_INTRO = 211
 
 # ---------------------------------------------------------------------------
 # Callback-data constants  (all ≤ 64 bytes)
@@ -136,6 +137,7 @@ CB_MP_MANUAL       = "mp:manual"
 CB_MP_ADD_SELECTED = "mp:add:selected"
 CB_MP_ADD_DONE     = "mp:add:done"
 CB_MP_ADD_SCHEDULE = "mp:add:schedule"
+CB_MP_CONTINUE = "mp:intro:continue"
 CB_MP_MANAGE_PICK  = "mp:manage:pick:"
 CB_MP_MANAGE_PAGE  = "mp:manage:page:"
 CB_MP_CUSTOM_INTERVAL = "mp:interval:custom"
@@ -1400,6 +1402,14 @@ def _mp_menu_text(language: str = "en") -> str:
     return mp_tr(language, "menu_intro")
 
 
+def _mp_intro_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    """Navigation for the first-time Media Pool introduction."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_MAIN_MENU),
+        InlineKeyboardButton(mp_tr(language, "continue"), callback_data=CB_MP_CONTINUE),
+    ]])
+
+
 def _mp_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(mp_tr(language, "add_content"), callback_data=CB_MP_ADD_ITEM)],
@@ -1619,6 +1629,14 @@ async def enter_media_pool(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         query.message.chat_id,
         query.message.message_id,
     )
+    await _edit(query, mp_tr(language, "onboarding"), _mp_intro_keyboard(language))
+    return MP_INTRO
+
+
+async def cb_mp_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Open the existing Media Pool actions after the user reads the guide."""
+    query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     await _edit(query, _mp_menu_text(language), _mp_menu_keyboard(language))
     return MP_MENU
 
@@ -2837,6 +2855,10 @@ def build_media_pool() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(enter_media_pool, pattern=f"^{CB_MEDIA_POOL}$")],
         states={
+            MP_INTRO: [
+                CallbackQueryHandler(cb_mp_continue, pattern=f"^{CB_MP_CONTINUE}$"),
+                CallbackQueryHandler(cb_mp_main_menu, pattern=f"^{CB_MAIN_MENU}$"),
+            ],
             MP_MENU: [
                 CallbackQueryHandler(cb_mp_add_item, pattern=f"^{CB_MP_ADD_ITEM}$"),
                 CallbackQueryHandler(cb_mp_set_interval, pattern=f"^{CB_MP_SET_INTERVAL}$"),
