@@ -324,16 +324,16 @@ def _next_slot_datetime(slots: list[str], tz_str: str = "UTC") -> tuple[str, dat
     return label, dt
 
 
-def _mp_interval_unit_keyboard() -> InlineKeyboardMarkup:
+def _mp_interval_unit_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⏱ Minutes", callback_data=CB_MP_IU_MINUTES),
-            InlineKeyboardButton("🕐 Hours",   callback_data=CB_MP_IU_HOURS),
-            InlineKeyboardButton("📅 Days",    callback_data=CB_MP_IU_DAYS),
+            InlineKeyboardButton(f"⏱ {mp_tr(language, 'minutes')}", callback_data=CB_MP_IU_MINUTES),
+            InlineKeyboardButton(f"🕐 {mp_tr(language, 'hours')}", callback_data=CB_MP_IU_HOURS),
+            InlineKeyboardButton(f"📅 {mp_tr(language, 'days')}", callback_data=CB_MP_IU_DAYS),
         ],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MP_IU),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_IU),
+            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
         ],
     ])
 
@@ -382,23 +382,27 @@ def _qm_ac_tz_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def _mp_tz_keyboard(page: int = 0) -> InlineKeyboardMarkup:
+def _mp_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
     start = page * TZ_PAGE_SIZE
-    end   = start + TZ_PAGE_SIZE
+    end = start + TZ_PAGE_SIZE
     rows = [
-        [InlineKeyboardButton(label, callback_data=f"mptz:{tz}")]
-        for tz, label in TIMEZONES[start:end]
+        [InlineKeyboardButton(tz, callback_data=f"mptz:{tz}")]
+        for tz, _label in TIMEZONES[start:end]
     ]
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_MP_TZ_PAGE}{page - 1}"))
+        nav.append(InlineKeyboardButton(
+            mp_tr(language, "prev"), callback_data=f"{CB_MP_TZ_PAGE}{page - 1}"
+        ))
     if end < len(TIMEZONES):
-        nav.append(InlineKeyboardButton("▶️ Next", callback_data=f"{CB_MP_TZ_PAGE}{page + 1}"))
+        nav.append(InlineKeyboardButton(
+            mp_tr(language, "next"), callback_data=f"{CB_MP_TZ_PAGE}{page + 1}"
+        ))
     if nav:
         rows.append(nav)
     rows.append([
-        InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MP_FR),
-        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_FR),
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -1894,23 +1898,22 @@ async def cb_mp_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def _mp_prompt_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     pm = _pm(context)
-    title = escape_markdown(pm.get("mp_chat_title", "Selected group"), version=1)
+    language = await resolve_user_language(context, update.effective_user.id)
+    title = pm.get("mp_chat_title", "Selected group")
     await _mp_reply_or_edit(
         update,
-        f"Selected destination: {title}\n\n"
-        "Step 2 of 3 — Choose a Posting Interval\n\n"
-        "How often should the bot publish one random item? Choose a common interval or select Custom.",
-        _mp_quick_interval_keyboard(),
+        mp_tr(language, "interval_prompt", group=title),
+        _mp_quick_interval_keyboard(language),
     )
     return MP_SET_INTERVAL_VALUE
 
 
 async def cb_mp_custom_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     await _edit(
         query,
-        "Enter a positive whole number for the interval.\n\n"
-        "Example: enter 6, then choose Hours to post every 6 hours.",
+        mp_tr(language, "custom_prompt"),
         nav_keyboard(back_data=CB_BACK_MP_MENU),
     )
     return MP_SET_INTERVAL_VALUE
@@ -1918,16 +1921,17 @@ async def cb_mp_custom_interval(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def cb_mp_quick_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     choice = (query.data or "").replace(CB_MP_QUICK_PREFIX, "", 1)
     selected = _MP_QUICK_INTERVALS.get(choice)
     if selected is None:
-        await query.answer("Invalid interval. Please choose again.", show_alert=True)
+        await query.answer(mp_tr(language, "invalid_interval"), show_alert=True)
         return MP_SET_INTERVAL_VALUE
-    value, unit, label = selected
+    value, unit, _label = selected
     pm = _pm(context)
     pm["interval_value"] = value
     pm["interval_unit"] = unit
-    pm["interval_label"] = label
+    pm["interval_label"] = f"{value} {mp_tr(language, unit)}"
     await query.answer()
     await _mp_prompt_first_run(query, context)
     return MP_SET_FIRST_RUN
@@ -1935,23 +1939,23 @@ async def cb_mp_quick_interval(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def recv_mp_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
+    language = await resolve_user_language(context, update.effective_user.id)
     if not raw.isdigit() or int(raw) <= 0 or int(raw) > 100000:
-        await update.message.reply_text(
-            "Enter a whole number between 1 and 100000."
-        )
+        await update.message.reply_text(mp_tr(language, "invalid_interval"))
         return MP_SET_INTERVAL_VALUE
     pm = _pm(context)
     pm["interval_value"] = int(raw)
     pm.pop("interval_label", None)
     await update.message.reply_text(
-        f"Interval value: {raw}\n\nChoose the time unit:",
-        reply_markup=_mp_interval_unit_keyboard(),
+        f"{raw} — {mp_tr(language, 'custom')}",
+        reply_markup=_mp_interval_unit_keyboard(language),
     )
     return MP_SET_INTERVAL_UNIT
 
 
 async def cb_mp_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     unit_map = {
         CB_MP_IU_MINUTES: "minutes",
         CB_MP_IU_HOURS: "hours",
@@ -1959,11 +1963,11 @@ async def cb_mp_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE
     }
     unit = unit_map.get(query.data)
     if unit is None:
-        await query.answer("Please choose a time unit.", show_alert=True)
+        await query.answer(mp_tr(language, "invalid_interval"), show_alert=True)
         return MP_SET_INTERVAL_UNIT
     pm = _pm(context)
     pm["interval_unit"] = unit
-    pm["interval_label"] = f"{pm.get('interval_value', 1)} {unit}"
+    pm["interval_label"] = f"{pm.get('interval_value', 1)} {mp_tr(language, unit)}"
     await query.answer()
     await _mp_prompt_first_run(query, context)
     return MP_SET_FIRST_RUN
@@ -1971,35 +1975,34 @@ async def cb_mp_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def _mp_prompt_first_run(query: Any, context: ContextTypes.DEFAULT_TYPE) -> None:
     pm = _pm(context)
-    label = escape_markdown(pm.get("interval_label", "custom interval"), version=1)
+    language = _mp_language(context)
+    label = pm.get("interval_label", mp_tr(language, "custom"))
     await query.edit_message_text(
-        f"Posting interval: {label}\n\n"
-        "Step 3 of 3 — Choose the First Post Time\n\n"
-        "Start as soon as possible, or choose a specific time in your selected timezone.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_mp_first_run_keyboard(),
+        mp_tr(language, "first_prompt", interval=label),
+        reply_markup=_mp_first_run_keyboard(language),
     )
 
 
 async def cb_mp_first_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     pm = _pm(context)
+    language = await resolve_user_language(context, query.from_user.id)
     pm["first_run"] = "now"
     pm.setdefault("tz_page", 0)
     await query.answer()
     await query.edit_message_text(
-        "🌍 Select the timezone that should be used for this posting schedule:",
-        reply_markup=_mp_tz_keyboard(pm["tz_page"]),
+        mp_tr(language, "timezone"),
+        reply_markup=_mp_tz_keyboard(pm["tz_page"], language),
     )
     return MP_SET_TIMEZONE
 
 
 async def cb_mp_first_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     await _edit(
         query,
-        "Enter the first post time in 24-hour HH:MM format.\n"
-        "Example: 09:30. If that time has already passed today, the first post will be tomorrow.",
+        mp_tr(language, "time_prompt"),
         nav_keyboard(back_data=CB_BACK_MP_FR),
     )
     return MP_SET_FIRST_RUN
@@ -2008,92 +2011,105 @@ async def cb_mp_first_custom(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def recv_mp_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip().lower()
     pm = _pm(context)
+    language = await resolve_user_language(context, update.effective_user.id)
     if raw == "now":
         pm["first_run"] = "now"
     else:
         parsed = _parse_hhmm(raw)
         if parsed is None:
-            await update.message.reply_text(
-                "Invalid time. Enter HH:MM in 24-hour format, for example 09:30."
-            )
+            await update.message.reply_text(mp_tr(language, "invalid_time"))
             return MP_SET_FIRST_RUN
         pm["first_run"] = parsed
     pm.setdefault("tz_page", 0)
     await update.message.reply_text(
-        "🌍 Select the timezone for this schedule:",
-        reply_markup=_mp_tz_keyboard(pm["tz_page"]),
+        mp_tr(language, "timezone"),
+        reply_markup=_mp_tz_keyboard(pm["tz_page"], language),
     )
     return MP_SET_TIMEZONE
 
 
 async def cb_mp_tz_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     raw = (query.data or "").replace(CB_MP_TZ_PAGE, "", 1)
     page = int(raw) if raw.isdigit() else 0
     _pm(context)["tz_page"] = page
     await query.answer()
     await query.edit_message_text(
-        "🌍 Select the timezone for this schedule:",
-        reply_markup=_mp_tz_keyboard(page),
+        mp_tr(language, "timezone"),
+        reply_markup=_mp_tz_keyboard(page, language),
     )
     return MP_SET_TIMEZONE
 
 
 async def cb_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     tz_key = (query.data or "").replace("mptz:", "", 1)
     try:
         pytz.timezone(tz_key)
     except pytz.exceptions.UnknownTimeZoneError:
-        await query.answer("Unknown timezone. Please choose from the list.", show_alert=True)
+        await query.answer(mp_tr(language, "timezone"), show_alert=True)
         return MP_SET_TIMEZONE
     pm = _pm(context)
     pm["timezone"] = tz_key
     await query.answer()
     await query.edit_message_text(
-        "🗑 Automatically delete each published post?\n\n"
-        "Choose Yes to set a deletion delay, or No to keep posts permanently.",
+        mp_tr(language, "auto_delete"),
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Yes", callback_data=CB_MP_AD_YES),
-                InlineKeyboardButton("No, keep posts", callback_data=CB_MP_AD_NO),
+                InlineKeyboardButton(mp_tr(language, "yes"), callback_data=CB_MP_AD_YES),
+                InlineKeyboardButton(mp_tr(language, "keep_posts"), callback_data=CB_MP_AD_NO),
             ],
-            [InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_TZ)],
-            [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ)],
+            [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
         ]),
     )
     return MP_AUTO_DELETE
 
 
-def _mp_summary_text(pm: dict) -> str:
-    title = escape_markdown(pm.get("mp_chat_title", str(pm.get("mp_chat_id", "?"))), version=1)
+def _mp_summary_text(pm: dict, language: str = "en") -> str:
+    title = pm.get("mp_chat_title", str(pm.get("mp_chat_id", "?")))
     value = pm.get("interval_value", "?")
     unit = pm.get("interval_unit", "?")
-    label = pm.get("interval_label") or f"{value} {unit}"
+    label = pm.get("interval_label") or f"{value} {mp_tr(language, unit)}"
     first_run = pm.get("first_run", "?")
     tz_key = pm.get("timezone", "UTC")
-    tz_label = next((lbl for key, lbl in TIMEZONES if key == tz_key), tz_key)
-    first_run_display = "As soon as possible" if first_run == "now" else first_run
+    tz_label = next((key for key, _label in TIMEZONES if key == tz_key), tz_key)
+    first_run_display = mp_tr(language, "start_now") if first_run == "now" else first_run
     ad_hours = pm.get("mp_ad_hours")
-    ad_line = f"{ad_hours} hour(s) after publishing" if ad_hours else "Off"
-    return (
-        "📋 Schedule Review\n\n"
-        f"Destination: {title}\n"
-        f"Posting interval: {label}\n"
-        f"First post: {first_run_display}\n"
-        f"Timezone: {tz_label}\n"
-        f"Auto-delete: {ad_line}\n\n"
-        "Review these settings. Confirm to activate the schedule."
+    ad_line = (
+        f"{ad_hours} {mp_tr(language, 'hours')}"
+        if ad_hours
+        else mp_tr(language, "keep_posts")
     )
+    return mp_tr(
+        language,
+        "schedule_summary",
+        group=title,
+        interval=label,
+        first_post=first_run_display,
+        timezone=tz_label,
+        auto_delete=ad_line,
+    )
+
+
+def _mp_schedule_confirm_keyboard(language: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(tr(language, "confirm"), callback_data=CB_MP_CONFIRM),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ),
+        ],
+        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+    ])
 
 
 async def cb_mp_ad_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     await _edit(
         query,
-        "⏳ Auto-Delete Delay\n\n"
-        "How many hours after publishing should each post be deleted?\n"
-        "Enter a positive number. Decimals are supported: 1.5 means 90 minutes.",
+        mp_tr(language, "delete_delay"),
         nav_keyboard(back_data=CB_BACK_MP_TZ),
     )
     return MP_AUTO_DELETE
@@ -2101,48 +2117,50 @@ async def cb_mp_ad_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def recv_mp_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip().replace(",", ".")
+    language = await resolve_user_language(context, update.effective_user.id)
     try:
         value = float(raw)
         if value <= 0 or value > 8760:
             raise ValueError
     except ValueError:
-        await update.message.reply_text(
-            "Enter a number greater than 0 and no more than 8760 hours. Example: 24 or 1.5."
-        )
+        await update.message.reply_text(mp_tr(language, "invalid_delete_delay"))
         return MP_AUTO_DELETE
     pm = _pm(context)
     pm["mp_ad_hours"] = value
     await update.message.reply_text(
-        _mp_summary_text(pm),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=confirm_keyboard(CB_MP_CONFIRM, CB_BACK_MP_TZ),
+        _mp_summary_text(pm, language),
+        reply_markup=_mp_schedule_confirm_keyboard(language),
     )
     return MP_CONFIRM
 
 
 async def cb_mp_ad_no(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     pm = _pm(context)
     pm.pop("mp_ad_hours", None)
     await _edit(
         query,
-        _mp_summary_text(pm),
-        confirm_keyboard(CB_MP_CONFIRM, CB_BACK_MP_TZ),
+        _mp_summary_text(pm, language),
+        _mp_schedule_confirm_keyboard(language),
     )
     return MP_CONFIRM
 
 
 async def cb_back_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
     pm = _pm(context)
     pm.pop("mp_ad_hours", None)
     page = pm.get("tz_page", 0)
     await query.answer()
     await query.edit_message_text(
-        "🌍 Select the timezone for this schedule:",
-        reply_markup=_mp_tz_keyboard(page),
+        mp_tr(language, "timezone"),
+        reply_markup=_mp_tz_keyboard(page, language),
     )
     return MP_SET_TIMEZONE
+
+
 
 
 async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
