@@ -95,6 +95,7 @@ QM_ADD_TZ   = 109
 QM_CONFIRM_SLOTS = 110
 QM_INTRO = 111
 QM_TEMPLATE_PICK = 112
+QM_AUTO_DELETE = 113
 
 (
     MP_MENU,
@@ -127,6 +128,7 @@ CB_QM_CLEAR_YES    = "qm:clear_yes"
 CB_QM_CONTINUE     = "qm:intro:continue"
 CB_QM_CONFIRM_SLOTS = "qm:slots:confirm"
 CB_QM_CONFIRM_ADD  = "qm:confirm_add"
+CB_QM_AD_BACK = "qm:auto_delete:back"
 CB_QM_USE_TEMPLATE = "qm:template:open"
 CB_QM_TMPL_PAGE = "qm:template:page:"
 CB_QM_TMPL_USE = "qm:template:use:"
@@ -1481,15 +1483,14 @@ async def cb_qm_ac_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         dt_local_display = date_str
 
     await query.edit_message_text(
-        f"📋 *Queue — Confirmation*\n\n"
-        f"🗂 Chat: *{chat_title}* (`{chat_id}`)\n"
-        f"📝 Content: `{content_preview or '—'}`\n"
-        f"🕐 Post at: `{dt_local_display}` ({tz_label})\n\n"
-        "Tap *✅ Confirm* to schedule:",
+        "Queue Auto-Delete (Optional)\n\n"
+        "After the queued post is successfully sent, should it be deleted automatically?\n\n"
+        "Enter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.\n"
+        "Enter off to keep the post.",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=confirm_keyboard(CB_QM_CONFIRM_ADD, CB_BACK_QM_AC_TZ),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=CB_QM_AD_BACK)]]),
     )
-    return QM_CONFIRM_SLOT
+    return QM_AUTO_DELETE
 
 
 async def cb_qm_ac_tz_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
