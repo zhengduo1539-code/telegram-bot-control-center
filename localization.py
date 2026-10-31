@@ -556,6 +556,35 @@ _HELP_ROWS: dict[str, tuple[str, str]] = {
 for _locale, _values in _HELP_ROWS.items():
     TRANSLATIONS[_locale].update(dict(zip(_HELP_KEYS, _values, strict=True)))
 
+_ACTION_KEYS = (
+    "pause", "resume", "delete", "clone", "save_template",
+    "previous", "next", "statistics",
+)
+_ACTION_ROWS: dict[str, tuple[str, ...]] = {
+    "en": ("⏸ Pause", "▶️ Resume", "🗑 Delete", "🔁 Clone", "💾 Template", "◀️ Prev", "Next ▶️", "📊 Statistics"),
+    "my": ("⏸ ခေတ္တရပ်", "▶️ ပြန်စ", "🗑 ဖျက်ရန်", "🔁 မိတ္တူပွား", "💾 Template သိမ်းရန်", "◀️ နောက်သို့", "ရှေ့သို့ ▶️", "📊 စာရင်းအင်း"),
+    "zh": ("⏸ 暂停", "▶️ 恢复", "🗑 删除", "🔁 克隆", "💾 模板", "◀️ 上一页", "下一页 ▶️", "📊 统计"),
+    "es": ("⏸ Pausar", "▶️ Reanudar", "🗑 Eliminar", "🔁 Clonar", "💾 Plantilla", "◀️ Anterior", "Siguiente ▶️", "📊 Estadísticas"),
+    "hi": ("⏸ रोकें", "▶️ फिर शुरू करें", "🗑 हटाएँ", "🔁 क्लोन करें", "💾 टेम्पलेट", "◀️ पिछला", "अगला ▶️", "📊 आँकड़े"),
+    "ar": ("⏸ إيقاف مؤقت", "▶️ استئناف", "🗑 حذف", "🔁 نسخ", "💾 قالب", "◀️ السابق", "التالي ▶️", "📊 الإحصاءات"),
+    "pt": ("⏸ Pausar", "▶️ Retomar", "🗑 Excluir", "🔁 Clonar", "💾 Modelo", "◀️ Anterior", "Próximo ▶️", "📊 Estatísticas"),
+    "fr": ("⏸ Pause", "▶️ Reprendre", "🗑 Supprimer", "🔁 Cloner", "💾 Modèle", "◀️ Précédent", "Suivant ▶️", "📊 Statistiques"),
+    "ru": ("⏸ Приостановить", "▶️ Возобновить", "🗑 Удалить", "🔁 Копировать", "💾 Шаблон", "◀️ Назад", "Далее ▶️", "📊 Статистика"),
+    "bn": ("⏸ বিরতি দিন", "▶️ আবার চালু করুন", "🗑 মুছুন", "🔁 কপি করুন", "💾 টেমপ্লেট", "◀️ আগের", "পরের ▶️", "📊 পরিসংখ্যান"),
+    "id": ("⏸ Jeda", "▶️ Lanjutkan", "🗑 Hapus", "🔁 Klon", "💾 Templat", "◀️ Sebelumnya", "Berikutnya ▶️", "📊 Statistik"),
+    "ja": ("⏸ 一時停止", "▶️ 再開", "🗑 削除", "🔁 複製", "💾 テンプレート", "◀️ 前へ", "次へ ▶️", "📊 統計"),
+    "ko": ("⏸ 일시 중지", "▶️ 재개", "🗑 삭제", "🔁 복제", "💾 템플릿", "◀️ 이전", "다음 ▶️", "📊 통계"),
+    "th": ("⏸ หยุดชั่วคราว", "▶️ ทำต่อ", "🗑 ลบ", "🔁 ทำสำเนา", "💾 เทมเพลต", "◀️ ก่อนหน้า", "ถัดไป ▶️", "📊 สถิติ"),
+    "vi": ("⏸ Tạm dừng", "▶️ Tiếp tục", "🗑 Xóa", "🔁 Sao chép", "💾 Mẫu", "◀️ Trước", "Tiếp ▶️", "📊 Thống kê"),
+    "tr": ("⏸ Duraklat", "▶️ Sürdür", "🗑 Sil", "🔁 Kopyala", "💾 Şablon", "◀️ Önceki", "Sonraki ▶️", "📊 İstatistikler"),
+    "de": ("⏸ Pausieren", "▶️ Fortsetzen", "🗑 Löschen", "🔁 Klonen", "💾 Vorlage", "◀️ Zurück", "Weiter ▶️", "📊 Statistiken"),
+    "it": ("⏸ Pausa", "▶️ Riprendi", "🗑 Elimina", "🔁 Clona", "💾 Modello", "◀️ Precedente", "Successivo ▶️", "📊 Statistiche"),
+    "ur": ("⏸ روکیں", "▶️ دوبارہ شروع", "🗑 حذف کریں", "🔁 نقل بنائیں", "💾 ٹیمپلیٹ", "◀️ پچھلا", "اگلا ▶️", "📊 اعدادوشمار"),
+    "sw": ("⏸ Sitisha", "▶️ Endelea", "🗑 Futa", "🔁 Nakili", "💾 Kiolezo", "◀️ Iliyotangulia", "Inayofuata ▶️", "📊 Takwimu"),
+}
+for _locale, _values in _ACTION_ROWS.items():
+    TRANSLATIONS[_locale].update(dict(zip(_ACTION_KEYS, _values, strict=True)))
+
 DEFAULT_LANGUAGE = "en"
 
 
