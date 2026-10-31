@@ -441,15 +441,13 @@ async def _execute_queue_slot(bot: Bot, queue: dict[str, Any], now: datetime) ->
                 error="The queued item has no supported text or media content.")
         else:
             await update_queue_item(user_id, chat_id, item_id, "posted")
-            delete_hours = item.get("auto_delete_after_hours")
-            if delete_hours is not None and float(delete_hours) > 0:
-                fire_at = datetime.now(tz=timezone.utc) + timedelta(hours=float(delete_hours))
-                await _store_lifecycle_task(
-                    chat_id=chat_id,
-                    message_id=sent.message_id,
-                    action="delete",
-                    fire_at=fire_at,
-                )
+            # Use the shared lifecycle handler so Queue pin/unpin and delete
+            # timers behave exactly like Schedule New Post.
+            if item.get("auto_pin_unpin_after_hours") is not None:
+                ephemeral["ap_hours"] = float(item["auto_pin_unpin_after_hours"])
+            if item.get("auto_delete_after_hours") is not None:
+                ephemeral["ad_hours"] = float(item["auto_delete_after_hours"])
+            await _handle_lifecycle(bot, ephemeral, sent)
             logger.info("Queue item %s posted to chat %s.", item_id, chat_id)
     except Forbidden as exc:
         reason = "The bot cannot access this chat. Check its membership and posting permissions."
