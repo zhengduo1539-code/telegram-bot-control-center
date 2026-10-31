@@ -344,7 +344,7 @@ def test_manual_chat_id_help_and_cancel_feedback_use_selected_language(monkeypat
         )
         context = SimpleNamespace(
             user_data={"language": "my", "active_media_pool": True},
-            bot=object(),
+            bot=SimpleNamespace(username="ScheduleBot"),
         )
         update = SimpleNamespace(callback_query=query)
 
