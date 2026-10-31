@@ -1802,7 +1802,7 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         logger.exception("Item saved, but Media Pool count lookup failed for chat_id=%s", chat_id)
 
     title = escape_markdown(pm.get("mp_chat_title", str(chat_id)), version=1)
-    count_line = f"Items in this pool: {count}\\n" if count is not None else ""
+    count_line = f"Items in this pool: {count}\n" if count is not None else ""
     await msg.reply_text(
         f"✅ Item saved to {title}.\n"
         f"{count_line}\n"
