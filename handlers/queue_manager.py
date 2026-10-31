@@ -2662,7 +2662,7 @@ async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         keep_message_id=query.message.message_id,
     )
     cancel_text = (
-        tr(language, "cancelled")
+        mp_tr(language, "cancelled")
         if is_media_pool
         else "❌ *Cancelled.* Back to Main Menu."
     )
