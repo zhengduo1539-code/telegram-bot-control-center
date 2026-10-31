@@ -1,4 +1,4 @@
-name: Tests
+name: Schedule Bot checks
 
 on:
   push:
@@ -16,5 +16,5 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements-dev.txt
-      - run: python -m compileall -q main.py app
+      - run: python -m compileall -q main.py config.py database.py scheduler.py schedule_utils.py handlers
       - run: python -m pytest -q

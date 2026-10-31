@@ -4,6 +4,17 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: python main.py
     healthCheckPath: /healthz
     autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: schedule_bot
+      - key: ADMIN_IDS
+        sync: false
+      - key: SCHEDULER_INTERVAL_SECS
+        value: "60"
