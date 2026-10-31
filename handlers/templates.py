@@ -20,6 +20,9 @@ from telegram.ext import (
 )
 
 from database import list_templates, delete_template, get_template
+from handlers.language import resolve_user_language
+from localization import translate as tr
+
 from handlers.base import (
     CB_CANCEL, CB_MAIN_MENU, CB_TEMPLATES,
     cmd_cancel, main_menu_keyboard,
@@ -48,7 +51,7 @@ _PAGE_SIZE = 5
 # Keyboard builder
 # ---------------------------------------------------------------------------
 
-def _tmpl_list_keyboard(templates: list[dict], page: int) -> InlineKeyboardMarkup:
+def _tmpl_list_keyboard(templates: list[dict], page: int, language: str = "en") -> InlineKeyboardMarkup:
     total = len(templates)
     start = page * _PAGE_SIZE
     end   = min(start + _PAGE_SIZE, total)
@@ -59,18 +62,18 @@ def _tmpl_list_keyboard(templates: list[dict], page: int) -> InlineKeyboardMarku
         name = tmpl.get("name", "Unnamed")[:40]
         rows.append([
             InlineKeyboardButton(f"📄 {name}", callback_data=f"tmpl:view:{tid}"),
-            InlineKeyboardButton("🗑 Delete",  callback_data=f"{CB_TMPL_DEL}{tid}"),
+            InlineKeyboardButton(tr(language, "delete"), callback_data=f"{CB_TMPL_DEL}{tid}"),
         ])
 
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_TMPL_PAGE}{page - 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{CB_TMPL_PAGE}{page - 1}"))
     if end < total:
-        nav_row.append(InlineKeyboardButton("Next ▶️", callback_data=f"{CB_TMPL_PAGE}{page + 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{CB_TMPL_PAGE}{page + 1}"))
     if nav_row:
         rows.append(nav_row)
 
-    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)])
+    rows.append([InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -84,6 +87,7 @@ async def enter_templates(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return TMPL_MENU
     await query.answer()
     user_id = query.from_user.id
+    language = await resolve_user_language(context, user_id)
 
     try:
         templates = await list_templates(user_id)
@@ -92,51 +96,51 @@ async def enter_templates(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(
             f"❌ Error loading templates: `{str(exc).replace(chr(96), chr(39))}`",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]
+            ]),
         )
         return TMPL_MENU
 
     if not templates:
         await query.edit_message_text(
-            "📝 *My Templates*\n\n"
-            "No templates saved yet.\n\n"
-            "Go to *📋 My Posts* and tap *💾 Template #N* on any post to save it.",
+            tr(language, "templates_empty"),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]
+            ]),
         )
         return TMPL_MENU
 
     context.user_data["_tmpl_page"] = 0
     await query.edit_message_text(
-        f"📝 *My Templates* — {len(templates)} saved\n\n"
-        "💡 To use a template: *Schedule New Post → Step 2 → 📝 Use Template*",
+        f"{tr(language, 'templates_title')} — {len(templates)} saved",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_tmpl_list_keyboard(templates, 0),
+        reply_markup=_tmpl_list_keyboard(templates, 0, language),
     )
     return TMPL_MENU
-
 
 async def cb_tmpl_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     if not query or not query.from_user:
         return TMPL_MENU
-    page    = int((query.data or "0").replace(CB_TMPL_PAGE, "") or "0")
+    page = int((query.data or "0").replace(CB_TMPL_PAGE, "") or "0")
     user_id = query.from_user.id
+    language = await resolve_user_language(context, user_id)
     try:
         templates = await list_templates(user_id)
     except Exception as exc:
         await query.answer(f"Error: {exc}", show_alert=True)
         return TMPL_MENU
+
     await query.answer()
     context.user_data["_tmpl_page"] = page
     await query.edit_message_text(
-        f"📝 *My Templates* — {len(templates)} saved\n\n"
-        "💡 To use a template: *Schedule New Post → Step 2 → 📝 Use Template*",
+        f"{tr(language, 'templates_title')} — {len(templates)} saved",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_tmpl_list_keyboard(templates, page),
+        reply_markup=_tmpl_list_keyboard(templates, page, language),
     )
     return TMPL_MENU
-
 
 # ---------------------------------------------------------------------------
 # View / preview

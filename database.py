@@ -759,6 +759,38 @@ async def upsert_user(user_id: int, username: str | None, first_name: str | None
     )
 
 
+async def get_user_language(user_id: int) -> str:
+    """Return a user's saved language, or English for existing/unknown users."""
+    db = await get_db()
+    user = await db[COL_USERS].find_one(
+        {"user_id": user_id},
+        {"_id": 0, "language": 1},
+    )
+    language = user.get("language") if user else None
+    return language if isinstance(language, str) and language else "en"
+
+
+async def set_user_language(user_id: int, language: str) -> None:
+    """Persist a supported locale without overwriting other user profile fields."""
+    supported = {
+        "en", "my", "zh", "es", "hi", "ar", "pt", "fr", "ru", "bn",
+        "id", "ja", "ko", "th", "vi", "tr", "de", "it", "ur", "sw",
+    }
+    if language not in supported:
+        raise ValueError("Unsupported language code.")
+
+    db = await get_db()
+    now = datetime.now(tz=timezone.utc)
+    await db[COL_USERS].update_one(
+        {"user_id": user_id},
+        {
+            "$set": {"language": language, "last_seen_at": now},
+            "$setOnInsert": {"first_seen_at": now},
+        },
+        upsert=True,
+    )
+
+
 async def upsert_group(
     chat_id: int,
     title: str | None,

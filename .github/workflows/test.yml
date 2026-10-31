@@ -2,7 +2,7 @@ name: Schedule Bot checks
 
 on:
   push:
-    branches: [main, feature/schedule-bot-rebuild]
+    branches: [main, feature/schedule-bot-rebuild, feature/multilingual-ui-20-languages]
   pull_request:
     branches: [main]
 

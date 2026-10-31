@@ -48,6 +48,8 @@ from database import (
 from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.base import CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard, main_menu_keyboard
+from handlers.language import resolve_user_language
+from localization import translate as tr
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +187,7 @@ def _chat_list_keyboard(
     groups: list[dict],
     page: int,
     bot_username: str,
+    language: str = "en",
 ) -> InlineKeyboardMarkup:
     """
     Build the inline keyboard for the group/channel picker.
@@ -214,19 +217,19 @@ def _chat_list_keyboard(
     if nav:
         rows.append(nav)
 
-    rows.append([InlineKeyboardButton("✏️ Enter ID manually", callback_data=CB_MANUAL_CHAT_ID)])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)])
+    rows.append([InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)])
+    rows.append([InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
 
 
-def _no_groups_keyboard(bot_username: str) -> InlineKeyboardMarkup:
+def _no_groups_keyboard(bot_username: str, language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "➕ Add Bot to a Group",
             url=f"https://t.me/{bot_username}?startgroup=start",
         )],
-        [InlineKeyboardButton("✏️ Enter ID manually", callback_data=CB_MANUAL_CHAT_ID)],
-        [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)],
+        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
     ])
 
 
@@ -241,11 +244,11 @@ def _first_run_keyboard(back_data: str) -> InlineKeyboardMarkup:
     ])
 
 
-def _recurrence_keyboard() -> InlineKeyboardMarkup:
+def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔂 Interval (every X min/hr/day)", callback_data=CB_REC_INTERVAL)],
-        [InlineKeyboardButton("📆 Specific Days of Week",          callback_data=CB_REC_DOW)],
-        [InlineKeyboardButton("1️⃣  One-Time Post",                 callback_data=CB_REC_ONCE)],
+        [InlineKeyboardButton(tr(language, "recurrence_interval"), callback_data=CB_REC_INTERVAL)],
+        [InlineKeyboardButton(tr(language, "recurrence_days"), callback_data=CB_REC_DOW)],
+        [InlineKeyboardButton(tr(language, "recurrence_once"), callback_data=CB_REC_ONCE)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_MAIN_MENU),
             InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
@@ -295,7 +298,7 @@ def _dow_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def _timezone_keyboard(page: int = 0) -> InlineKeyboardMarkup:
+def _timezone_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
     start = page * TZ_PAGE_SIZE
     end   = start + TZ_PAGE_SIZE
     page_tzs = TIMEZONES[start:end]
@@ -305,14 +308,14 @@ def _timezone_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     ]
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_TZ_PAGE}{page - 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{CB_TZ_PAGE}{page - 1}"))
     if end < len(TIMEZONES):
-        nav.append(InlineKeyboardButton("▶️ Next", callback_data=f"{CB_TZ_PAGE}{page + 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{CB_TZ_PAGE}{page + 1}"))
     if nav:
         rows.append(nav)
     rows.append([
-        InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_TZ),
-        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_TZ),
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -460,6 +463,7 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     chat_cleanup.track(context.application.bot_data, query.message.chat_id, query.message.message_id)
 
     user_id      = query.from_user.id  # type: ignore[union-attr]
+    language = await resolve_user_language(context, user_id)
 
     # A private-chat /start deep-link may carry the group that initiated setup.
     # Consume it once, then re-check permissions at the point scheduling begins.
@@ -482,14 +486,9 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             w["chat_title"] = selected_title
             await query.answer("Group selected.")
             await query.edit_message_text(
-                f"✅ *Selected Group:* {escape_markdown(selected_title, version=1)} "
-                f"(`{launch_chat_id}`)\n\n"
-                "▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n"
-                "📝 *Step 2/8 — Post Content*\n\n"
-                "Send the content you want to schedule:\n"
-                "• Plain text\n"
-                "• Photo, video, document, audio, or animation\n"
-                "• Media with a caption",
+                f"✅ {tr(language, 'private_setup_body', group=escape_markdown(selected_title, version=1))}\n\n"
+                f"{tr(language, 'schedule_content_title')}\n\n"
+                f"{tr(language, 'schedule_content_prompt')}",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=_content_step_keyboard(),
             )
@@ -501,23 +500,18 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if groups:
         await query.answer()
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Chat* › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📅 *Step 1/8 — Target Chat*\n\n"
-            f"🗂 Choose the group or channel to post to:\n"
+            f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
             f"_(Showing {min(_CHAT_PAGE_SIZE, len(groups))} of {len(groups)} known chats)_",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_chat_list_keyboard(groups, 0, bot_username),
+            reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
         )
     else:
         await query.answer()
         await query.edit_message_text(
-            "▰▱▱▱▱▱▱▱ 1/8\n*Chat* › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📅 *Step 1/8 — Target Chat*\n\n"
-            "⚠️ *No groups or channels found.*\n\n"
-            "The bot hasn't been added to any group or channel yet, "
-            "or you haven't added the bot yourself.\n\n"
-            "Add the bot to your group first, then come back to schedule a post.\n\n"
-            "_Or enter the Chat ID manually if you already have it._",
+            f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
+            "⚠️ No groups or channels found. Add the bot to a group first, then return here to schedule a post.",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_no_groups_keyboard(bot_username),
+            reply_markup=_no_groups_keyboard(bot_username, language),
         )
     return WIZARD_CHAT_ID
 
@@ -538,6 +532,7 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     # Look up the title from DB record so we can show it in the summary
     user_id = query.from_user.id  # type: ignore[union-attr]
+    language = await resolve_user_language(context, user_id)
     groups = await list_groups_for_user(user_id)
     title_map = {g["chat_id"]: (g.get("title") or str(g["chat_id"])) for g in groups}
     title = title_map.get(chat_id, str(chat_id))
@@ -554,12 +549,9 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     await query.answer()
     await query.edit_message_text(
-        f"✅ Selected: *{title}* (`{chat_id}`)\n\n"
-        "▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📝 *Step 2/8 — Post Content*\n\n"
-        "Send the content you want to post:\n"
-        "• Plain text\n"
-        "• Photo, video, document, or audio\n"
-        "• Media with a caption",
+        f"✅ Selected: *{escape_markdown(title, version=1)}* ({chat_id})\n\n"
+        f"{tr(language, 'schedule_content_title')}\n\n"
+        f"{tr(language, 'schedule_content_prompt')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_content_step_keyboard(),
     )
@@ -846,8 +838,8 @@ async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     _w(context).setdefault("inline_buttons", [])
     await _edit(query,
-        "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
-        _recurrence_keyboard(),
+        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
+        _recurrence_keyboard(context.user_data.get("language", "en")),
     )
     return WIZARD_RECURRENCE
 
@@ -919,8 +911,8 @@ async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Finished adding buttons — move to recurrence."""
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
-        _recurrence_keyboard(),
+        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
+        _recurrence_keyboard(context.user_data.get("language", "en")),
     )
     return WIZARD_RECURRENCE
 
@@ -941,13 +933,13 @@ def _inline_btns_list_text(buttons: list) -> str:
 async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _w(context)["recurrence_type"] = "once"
     query = update.callback_query
-    await _edit(query,
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        "Select your timezone so the post time is interpreted correctly:",
-        _timezone_keyboard(0),
+    language = context.user_data.get("language", "en")
+    await _edit(
+        query,
+        tr(language, "timezone_prompt"),
+        _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
-
 
 async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _w(context)["recurrence_type"] = "interval"
@@ -1016,14 +1008,13 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     unit_map = {CB_IU_MINUTES: "minutes", CB_IU_HOURS: "hours", CB_IU_DAYS: "days"}
     unit = unit_map[query.data]
     _w(context)["interval_unit"] = unit
-    await _edit(query,
-        f"✅ Interval: every `{_w(context)['interval_value']} {unit}`\n\n"
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        "Select your timezone so the post time is interpreted correctly:",
-        _timezone_keyboard(0),
+    language = context.user_data.get("language", "en")
+    await _edit(
+        query,
+        f"✅ Interval: every \`{_w(context)['interval_value']} {unit}\`\n\n{tr(language, 'timezone_prompt')}",
+        _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
-
 
 # ---------------------------------------------------------------------------
 # Step 3a (DOW) — day toggles
@@ -1050,67 +1041,52 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if not selected:
         await query.answer("⚠️ Please select at least one day.", show_alert=True)
         return WIZARD_DOW_SELECT
-    await _edit(query,
-        f"✅ Days: `{', '.join(DOW_LABELS[d] for d in sorted(selected))}`\n\n"
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        "Select your timezone so the post time is interpreted correctly:",
-        _timezone_keyboard(0),
+    language = context.user_data.get("language", "en")
+    await _edit(
+        query,
+        f"✅ Days: \`{', '.join(DOW_LABELS[d] for d in sorted(selected))}\`\n\n{tr(language, 'timezone_prompt')}",
+        _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
-
 
 # ---------------------------------------------------------------------------
 # Step 4 — First run time
 # ---------------------------------------------------------------------------
 
 async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    w = _w(context)
-    tz_str = w.get("timezone", "UTC")   # timezone is always set before this step now
     text = (update.message.text or "").strip()
+    tz_str = _w(context).get("timezone", "UTC")
 
-    dt = _parse_run_time(text, tz_str)
-    if dt is None:
+    try:
+        dt = parse_user_datetime(text, tz_str)
+    except ValueError:
         await update.message.reply_text(
-            "⚠️ Couldn't parse that. Use a future `HH:MM` or `DD/MM/YYYY HH:MM` time.\n"
-            "Example: `14:30` or `25/12/2025 09:00`",
-            parse_mode=ParseMode.MARKDOWN,
+            "⚠️ Couldn't parse that. Use a future HH:MM or DD/MM/YYYY HH:MM time.\n"
+            "Example: 14:30 or 25/12/2025 09:00",
         )
         return WIZARD_FIRST_RUN
 
-    w["first_run"] = dt
-    w["first_run_raw"] = text
-    w.setdefault("time_window_enabled", False)
+    _w(context)["first_run"] = dt
+    _w(context)["first_run_raw"] = text
+    _w(context).setdefault("time_window_enabled", False)
+    language = context.user_data.get("language", "en")
     await update.message.reply_text(
-        f"✅ First run: `{text}` ({tz_str})\n\n"
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
-        "How many times should this post be sent?\n\n"
-        "Tap a preset or type a custom number:",
+        f"✅ First run: {text} ({tz_str})\n\n{tr(language, 'max_runs_prompt')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
     )
     return WIZARD_MAX_RUNS
-
 
 # ---------------------------------------------------------------------------
 # Back to first run
 # ---------------------------------------------------------------------------
 
 async def cb_back_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Called from Max Runs back button — return to First Run screen."""
+    """Return to the First Run screen."""
     query = update.callback_query
-    await _edit(query,
-        "▰▰▰▰▰▱▱▱ 5/8\nChat › Content › Recurrence › Timezone › *1st Run* › Max Runs › Advanced › Summary\n🕐 *Step 5/8 — First Run Time*\n\n"
-        "• `HH:MM` — today at this time\n"
-        "• `DD/MM/YYYY HH:MM` — specific date\n\n"
-        "Or tap *💡 Suggest Best Time* to see active hours for this chat.",
-        _first_run_keyboard(CB_BACK_TIMEZONE),
-    )
+    language = context.user_data.get("language", "en")
+    await _edit(query, tr(language, "first_run_prompt"), _first_run_keyboard(CB_BACK_TIMEZONE))
     return WIZARD_FIRST_RUN
-
-
-# ---------------------------------------------------------------------------
-# Step 4 — Smart scheduling suggestion
-# ---------------------------------------------------------------------------
 
 _MEDAL = ["🥇", "🥈", "🥉"]
 
@@ -1211,7 +1187,7 @@ async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     page = int(query.data.replace(CB_TZ_PAGE, ""))
     await query.answer()
-    await query.edit_message_reply_markup(_timezone_keyboard(page))
+    await query.edit_message_reply_markup(_timezone_keyboard(page, context.user_data.get("language", "en")))
     return WIZARD_TIMEZONE
 
 
@@ -1229,7 +1205,7 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await _edit(query,
         f"✅ Timezone: `{tz_name}`\n\n"
-        "▰▰▰▰▰▱▱▱ 5/8\nChat › Content › Recurrence › Timezone › *1st Run* › Max Runs › Advanced › Summary\n🕐 *Step 5/8 — First Run Time*\n\n"
+        f"{tr(context.user_data.get('language', 'en'), 'first_run_prompt')}\\n\\n"
         "When should this post fire?\n\n"
         "Type the date/time:\n"
         "• `HH:MM` — today at this time (e.g. `14:30`)\n"
@@ -1248,8 +1224,8 @@ async def cb_back_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Called from First Run back button — return to Timezone picker."""
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\nSelect your timezone:",
-        _timezone_keyboard(0),
+        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
+        _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
 
@@ -1274,8 +1250,8 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return WIZARD_INTERVAL_UNIT
     else:
         await _edit(query,
-            "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
-            _recurrence_keyboard(),
+            tr(context.user_data.get("language", "en"), "recurrence_prompt"),
+            _recurrence_keyboard(context.user_data.get("language", "en")),
         )
         return WIZARD_RECURRENCE
 
@@ -1743,8 +1719,8 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cb_back_recurrence(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▱▱▱▱▱ 3/8\nChat › Content › *Recurrence* › Timezone › 1st Run › Max Runs › Advanced › Summary\n🔁 *Step 3/8 — Recurrence Type*\n\nHow often should this post be sent?",
-        _recurrence_keyboard(),
+        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
+        _recurrence_keyboard(context.user_data.get("language", "en")),
     )
     return WIZARD_RECURRENCE
 
@@ -1773,9 +1749,7 @@ async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TY
 async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
-        "How many times should this post be sent?\n\n"
-        "Tap a preset or type a custom number:",
+        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
         _max_runs_keyboard(),
     )
     return WIZARD_MAX_RUNS

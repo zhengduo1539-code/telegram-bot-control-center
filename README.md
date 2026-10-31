@@ -23,6 +23,16 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 
 Only a group administrator or channel owner can create schedules for a target chat. The bot re-checks target permissions before saving.
 
+## Languages
+
+The bot provides a private-chat `/lang` command and a **🌐 Language** option in the main menu. Users can choose from 20 locales:
+
+English, Myanmar (မြန်မာ), Simplified Chinese, Spanish, Hindi, Arabic, Portuguese, French, Russian, Bengali, Indonesian, Japanese, Korean, Thai, Vietnamese, Turkish, German, Italian, Urdu and Swahili.
+
+The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard; after the user selects a language, the bot removes that temporary keyboard and shows the localized inline main menu.
+
+Localized screens include the main menu, group-to-private onboarding, Help Guide, initial Schedule New Post steps, recurrence/timezone/first-run setup, Queue Manager overview, My Posts and Templates. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
+
 ## Project structure
 
 - main.py: Telegram application startup, ASGI lifecycle and health-server integration.

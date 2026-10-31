@@ -5,10 +5,12 @@ import importlib
 def test_runtime_modules_import_without_external_services():
     modules = (
         "config",
+        "localization",
         "database",
         "scheduler",
         "main",
         "handlers.base",
+        "handlers.language",
         "handlers.chat_cleanup",
         "handlers.permissions",
         "handlers.owner_panel",
