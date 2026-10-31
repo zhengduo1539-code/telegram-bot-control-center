@@ -302,15 +302,15 @@ def _posts_keyboard(posts: list[dict], page: int, language: str = "en") -> Inlin
         # Row 1: status controls + delete
         ctrl: list[InlineKeyboardButton] = []
         if status == "pending":
-            ctrl.append(InlineKeyboardButton(f"{tr(language, \"pause\")} #{idx}",  callback_data=f"{CB_MPP_PAUSE}{pid}"))
+            ctrl.append(InlineKeyboardButton(f"{tr(language, "pause")} #{idx}",  callback_data=f"{CB_MPP_PAUSE}{pid}"))
         elif status == "paused":
-            ctrl.append(InlineKeyboardButton(f"{tr(language, \"resume\")} #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
-        ctrl.append(InlineKeyboardButton(f"{tr(language, \"delete\")} #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
+            ctrl.append(InlineKeyboardButton(f"{tr(language, "resume")} #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
+        ctrl.append(InlineKeyboardButton(f"{tr(language, "delete")} #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
         buttons.append(ctrl)
         # Row 2: utilities
         buttons.append([
-            InlineKeyboardButton(f"{tr(language, \"clone\")} #{idx}",    callback_data=f"{CB_MPP_CLONE}{pid}"),
-            InlineKeyboardButton(f"{tr(language, \"save_template\")} #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
+            InlineKeyboardButton(f"{tr(language, "clone")} #{idx}",    callback_data=f"{CB_MPP_CLONE}{pid}"),
+            InlineKeyboardButton(f"{tr(language, "save_template")} #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
         ])
 
     nav_row: list[InlineKeyboardButton] = []
