@@ -30,6 +30,7 @@ from typing import Any
 import pytz
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.constants import ParseMode
+from telegram.helpers import escape_markdown
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -459,6 +460,41 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     chat_cleanup.track(context.application.bot_data, query.message.chat_id, query.message.message_id)
 
     user_id      = query.from_user.id  # type: ignore[union-attr]
+
+    # A private-chat /start deep-link may carry the group that initiated setup.
+    # Consume it once, then re-check permissions at the point scheduling begins.
+    launch_chat = context.user_data.pop("launch_chat", None)
+    if isinstance(launch_chat, dict):
+        try:
+            launch_chat_id = int(launch_chat.get("chat_id"))
+            target_chat = await ensure_chat_access(context.bot, launch_chat_id, user_id)
+        except (TypeError, ValueError, ChatAccessError) as exc:
+            logger.info("Deep-linked group is no longer available to user %s: %s", user_id, exc)
+            await query.answer(
+                "The linked group is unavailable or your admin permissions changed. "
+                "Please select a group manually.",
+                show_alert=True,
+            )
+        else:
+            selected_title = target_chat.title or str(launch_chat_id)
+            w = _w(context)
+            w["chat_id"] = launch_chat_id
+            w["chat_title"] = selected_title
+            await query.answer("Group selected.")
+            await query.edit_message_text(
+                f"✅ *Selected Group:* {escape_markdown(selected_title, version=1)} "
+                f"(`{launch_chat_id}`)\n\n"
+                "▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n"
+                "📝 *Step 2/8 — Post Content*\n\n"
+                "Send the content you want to schedule:\n"
+                "• Plain text\n"
+                "• Photo, video, document, audio, or animation\n"
+                "• Media with a caption",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=_content_step_keyboard(),
+            )
+            return WIZARD_CONTENT
+
     bot_username = (await query.get_bot().get_me()).username
     groups = await list_groups_for_user(user_id)
 
