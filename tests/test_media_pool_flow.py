@@ -9,7 +9,7 @@ from telegram import InlineKeyboardMarkup
 from database import COL_MEDIA_POOLS, COL_POSTS
 from handlers import queue_manager as media_pool
 from localization import LANGUAGES
-from media_pool_localization import _KEYS, TRANSLATIONS, translate_media_pool
+from media_pool_localization import _EXTRA_ROWS, _KEYS, TRANSLATIONS, translate_media_pool
 
 
 def _button_labels(keyboard):
@@ -270,6 +270,33 @@ def test_media_pool_catalog_covers_all_twenty_languages_with_matching_keys():
     for language, catalog in TRANSLATIONS.items():
         assert set(catalog) == expected, language
         assert all(isinstance(value, str) and value.strip() for value in catalog.values())
+
+
+def test_media_pool_timezone_error_translation_covers_all_locales():
+    assert set(_EXTRA_ROWS) == set(LANGUAGES)
+    for language, catalog in _EXTRA_ROWS.items():
+        assert catalog["invalid_timezone"].strip()
+        assert translate_media_pool(language, "invalid_timezone") == catalog["invalid_timezone"]
+
+
+def test_media_pool_navigation_buttons_use_selected_language():
+    keyboard = media_pool._mp_nav_keyboard("my", back_data=media_pool.CB_BACK_MP_MENU)
+    labels = _button_labels(keyboard)
+
+    from localization import translate
+
+    assert translate("my", "back") in labels
+    assert translate("my", "cancel") in labels
+    assert "⬅️ Back" not in labels
+    assert "❌ Cancel" not in labels
+
+
+def test_media_pool_and_queue_manager_use_separate_cancel_handlers():
+    queue_conversation = media_pool.build_queue_manager()
+    pool_conversation = media_pool.build_media_pool()
+
+    assert queue_conversation.fallbacks[0].callback.__name__ == "cmd_cancel"
+    assert pool_conversation.fallbacks[0].callback.__name__ == "cmd_mp_cancel"
 
 
 def test_media_pool_translations_format_placeholders_and_fallback():
