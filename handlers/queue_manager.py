@@ -96,6 +96,7 @@ QM_CONFIRM_SLOTS = 110
 QM_INTRO = 111
 QM_TEMPLATE_PICK = 112
 QM_AUTO_DELETE = 113
+QM_AUTO_PIN = 114
 
 (
     MP_MENU,
@@ -129,7 +130,9 @@ CB_QM_CONTINUE     = "qm:intro:continue"
 CB_QM_CONFIRM_SLOTS = "qm:slots:confirm"
 CB_QM_CONFIRM_ADD  = "qm:confirm_add"
 CB_QM_AD_BACK = "qm:auto_delete:back"
+CB_QM_AP_BACK = "qm:auto_pin:back"
 CB_QM_AD_BACK = "qm:auto_delete:back"
+CB_QM_AP_BACK = "qm:auto_pin:back"
 CB_QM_USE_TEMPLATE = "qm:template:open"
 CB_QM_TMPL_PAGE = "qm:template:page:"
 CB_QM_TMPL_USE = "qm:template:use:"
@@ -1507,11 +1510,34 @@ async def recv_qm_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE
             return QM_AUTO_DELETE
         wizard["add_auto_delete_hours"] = hours
         label = raw
-    await update.message.reply_text(
-        "Queue confirmation\\nAuto-Delete: " + label + "\\n\\nTap Confirm to save this queue item.",
-        reply_markup=confirm_keyboard(CB_QM_CONFIRM_ADD, CB_BACK_QM_AC_TZ),
-    )
+    wizard["add_auto_delete_label"] = label
+    await update.message.reply_text("📌 Queue Auto-Pin (Optional)\\n\\nEnter `off` or a duration such as `5 minutes` or `2 hours`. Minimum: 5 minutes.", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=CB_QM_AP_BACK)]]))
+    return QM_AUTO_PIN
+
+
+async def recv_qm_auto_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
+    wizard = _w(context)
+    if raw.lower() == "off":
+        wizard.pop("add_auto_pin_hours", None)
+        label = "Off"
+    else:
+        hours = _parse_auto_delete_duration(raw)
+        if hours is None:
+            await update.message.reply_text("Enter 5 minutes or more, e.g. 5 minutes or 2 hours. Type off to disable Auto-Pin.")
+            return QM_AUTO_PIN
+        wizard["add_auto_pin_hours"] = hours
+        label = raw
+    await update.message.reply_text("Queue confirmation\\nAuto-Delete: " + wizard.get("add_auto_delete_label", "Off") + "\\nAuto-Pin / Remove Pin: " + label + "\\n\\nTap Confirm to save this queue item.", reply_markup=confirm_keyboard(CB_QM_CONFIRM_ADD, CB_BACK_QM_AC_TZ))
     return QM_CONFIRM_SLOT
+
+
+async def cb_qm_auto_pin_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    _w(context).pop("add_auto_pin_hours", None)
+    await query.answer()
+    await query.edit_message_text("Queue Auto-Delete (Optional)\\n\\nEnter `off` or a duration such as `5 minutes` or `2 hours`. Minimum: 5 minutes.", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=CB_QM_AD_BACK)]]))
+    return QM_AUTO_DELETE
 
 
 async def cb_qm_auto_delete_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1668,6 +1694,8 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         }
         if wizard.get("add_auto_delete_hours") is not None:
             payload["auto_delete_after_hours"] = wizard["add_auto_delete_hours"]
+        if wizard.get("add_auto_pin_hours") is not None:
+            payload["auto_pin_unpin_after_hours"] = wizard["add_auto_pin_hours"]
         if not payload["text"] and not payload["media_file_id"]:
             raise ValueError("Queue content is empty.")
         item_id = await add_to_queue(user_id, int(chat_id), payload)
@@ -3340,6 +3368,10 @@ def build_queue_manager() -> ConversationHandler:
             QM_AUTO_DELETE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_auto_delete),
                 CallbackQueryHandler(cb_qm_auto_delete_back, pattern=f"^{CB_QM_AD_BACK}$"),
+            ],
+            QM_AUTO_PIN: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_auto_pin),
+                CallbackQueryHandler(cb_qm_auto_pin_back, pattern=f"^{CB_QM_AP_BACK}$"),
             ],
             QM_ADD_TZ: [
                 CallbackQueryHandler(cb_qm_ac_tz,            pattern=qm_ac_tz_pattern),
