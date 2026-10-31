@@ -322,7 +322,7 @@ def _mp_interval_unit_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📅 Days",    callback_data=CB_MP_IU_DAYS),
         ],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MP_IV),
+            InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MP_IU),
             InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
         ],
     ])
@@ -1620,6 +1620,25 @@ async def cb_mp_group_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return await _mp_show_group_picker(query, context, page)
 
 
+async def cb_mp_group_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    raw = (query.data or "").replace(CB_MP_PICK, "", 1)
+    try:
+        chat_id = int(raw)
+        target_chat = await ensure_chat_access(
+            query.get_bot(),
+            chat_id,
+            query.from_user.id,
+        )
+    except ValueError:
+        await query.answer("Invalid group selection. Please choose again.", show_alert=True)
+        return MP_CHAT_ID
+    except ChatAccessError as exc:
+        await query.answer(str(exc), show_alert=True)
+        return MP_CHAT_ID
+    return await _mp_continue_after_chat_selection(update, context, target_chat)
+
+
 async def cb_mp_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(
@@ -1802,6 +1821,31 @@ async def cb_mp_add_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         _mp_menu_keyboard(),
     )
     return MP_MENU
+
+
+async def cb_mp_add_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    pm = _pm(context)
+    chat_id = pm.get("mp_chat_id")
+    if not chat_id:
+        await query.answer("Your group selection expired. Please start again.", show_alert=True)
+        _clear_mp(context)
+        await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
+        return MP_MENU
+    try:
+        db = await get_db()
+        pool = await db[COL_MEDIA_POOLS].find_one(
+            {"user_id": query.from_user.id, "chat_id": int(chat_id)}
+        )
+        if not pool or not pool.get("items"):
+            await query.answer("Add at least one content item before scheduling.", show_alert=True)
+            return MP_ADD_ITEM
+    except Exception:
+        logger.exception("Could not verify Media Pool items before scheduling")
+        await query.answer("Could not check this pool. Please try again.", show_alert=True)
+        return MP_ADD_ITEM
+    pm["mode"] = "interval"
+    return await _mp_prompt_interval(update, context)
 
 
 async def _mp_prompt_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
