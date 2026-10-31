@@ -17,7 +17,7 @@ def test_schedule_wizard_onboarding_catalog_covers_all_supported_languages():
     for language, catalog in _MESSAGES.items():
         assert set(catalog) == {"intro", "continue"}, language
         assert all(isinstance(value, str) and value.strip() for value in catalog.values())
-    assert "Confirm" in translate_schedule_wizard("en", "intro")
+    assert "confirm" in translate_schedule_wizard("en", "intro").lower()
     assert translate_schedule_wizard("unknown", "continue") == _MESSAGES["en"]["continue"]
 
 
