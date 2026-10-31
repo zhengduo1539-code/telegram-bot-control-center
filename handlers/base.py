@@ -346,9 +346,9 @@ def _posts_keyboard(
         status = post.get("status", "pending")
         controls: list[InlineKeyboardButton] = []
         if status == "pending":
-            controls.append(InlineKeyboardButton(f"⏸ Pause #{idx}", callback_data=f"{CB_MPP_PAUSE}{pid}"))
+            controls.append(InlineKeyboardButton(f"⏸ {tr(language, 'pause')} #{idx}", callback_data=f"{CB_MPP_PAUSE}{pid}"))
         elif status == "paused":
-            controls.append(InlineKeyboardButton(f"▶️ Resume #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
+            controls.append(InlineKeyboardButton(f"▶️ {tr(language, 'resume')} #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
         controls.append(InlineKeyboardButton(f"🗑 Delete #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
         buttons.append(controls)
         buttons.append([
