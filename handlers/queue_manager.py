@@ -448,14 +448,10 @@ async def enter_queue_manager(update: Update, context: ContextTypes.DEFAULT_TYPE
     language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
     chat_cleanup.reset(context.application.bot_data, query.message.chat_id)
     chat_cleanup.track(context.application.bot_data, query.message.chat_id, query.message.message_id)
-    await _edit(query,
-        "🗂 *Queue Manager*\n\n"
-        "Set up daily posting slots and auto-fill them with content.\n\n"
-        "📌 *How it works:*\n"
-        "1. Set daily time slots (e.g. 09:00, 14:00, 20:00)\n"
-        "2. Add content — specify the exact date/time to post\n"
-        "3. The bot fires each piece of content at its assigned time",
-        _qm_menu_keyboard(context.user_data.get("language", "en")),
+    await _edit(
+        query,
+        f"{tr(language, 'queue_title')}\n\n{tr(language, 'queue_intro')}",
+        _qm_menu_keyboard(language),
     )
     return QM_MENU
 
