@@ -2895,7 +2895,7 @@ async def cmd_qm_cancel(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> int:
-    """Handle /cancel in Queue Manager using the selected language."""
+    """Handle /cancel in Queue Manager using localized confirmation and cleanup."""
     message = update.effective_message
     user = update.effective_user
     language = (
@@ -2907,19 +2907,20 @@ async def cmd_qm_cancel(
     _clear(context)
     if message is None:
         return ConversationHandler.END
+
     chat_id = update.effective_chat.id if update.effective_chat else message.chat_id
-    await chat_cleanup.cleanup(
-        context,
-        chat_id,
-        keep_message_id=message.message_id,
-    )
-    await message.reply_text(
+    confirmation = await message.reply_text(
         qm_tr(language, "cancelled"),
         reply_markup=main_menu_keyboard(
             bot=context.bot,
             user_id=user.id if user is not None else None,
             language=language,
         ),
+    )
+    await chat_cleanup.cleanup(
+        context,
+        chat_id,
+        keep_message_id=confirmation.message_id,
     )
     return ConversationHandler.END
 
