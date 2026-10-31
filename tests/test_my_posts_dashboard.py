@@ -56,6 +56,20 @@ def test_posts_keyboard_exposes_filters_and_preserves_existing_actions():
     assert f"{base.CB_MPP_SAVE_TMPL}{post['_id']}" in callbacks
 
 
+
+def test_posts_rich_message_builds_native_compact_table():
+    posts = [_post("pending"), _post("paused", "b" * 24)]
+    rich = base._posts_rich_message(posts, 0, "en", all_posts=posts, filter_key="all")
+    table = next(block for block in rich["blocks"] if block["type"] == "table")
+    assert table["is_bordered"] is True
+    assert table["is_striped"] is True
+    assert table["is_compact"] is True
+    assert len(table["cells"]) == 3
+    assert table["cells"][1][0]["text"].startswith("#1\nAnnouncements")
+    assert table["cells"][1][2]["text"] == "⏳ Active"
+    assert table["cells"][2][2]["text"] == "⏸ Paused"
+
+
 def test_empty_state_offers_create_first_post_action(monkeypatch):
     async def scenario():
         fake_db = ModuleType("database")
@@ -94,12 +108,20 @@ def test_dashboard_shows_summary_and_filter_empty_state(monkeypatch):
 
         context.user_data["_mp_filter"] = "all"
         query.edit_message_text.reset_mock()
+        context.bot = SimpleNamespace(do_api_request=AsyncMock(return_value={}))
         await base._render_my_posts(query, 123, 0, context)
-        text = query.edit_message_text.await_args.args[0]
-        assert "3 total" in text
-        assert "1 active" in text
-        assert "1 paused" in text
-        assert "1 completed" in text
+        context.bot.do_api_request.assert_awaited_once()
+        method = context.bot.do_api_request.await_args.args[0]
+        payload = context.bot.do_api_request.await_args.kwargs["api_kwargs"]
+        assert method == "editMessageText"
+        assert payload["rich_message"]["blocks"][0]["text"] == "📋 My Posts"
+        table = next(block for block in payload["rich_message"]["blocks"] if block["type"] == "table")
+        assert table["is_bordered"] is True
+        assert table["is_striped"] is True
+        assert table["is_compact"] is True
+        assert len(table["cells"]) == 4
+        assert [cell["text"] for cell in table["cells"][0]] == ["Post", "Content", "Status", "Next run"]
+        assert query.edit_message_text.await_count == 0
 
     asyncio.run(scenario())
 
