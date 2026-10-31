@@ -1200,7 +1200,7 @@ async def recv_qm_add_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE
             timezone=escape_markdown(str(timezone_label), version=1),
         ),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_qm_nav_keyboard(language, back_data=CB_BACK_QM_AC_CHAT),
+        reply_markup=_qm_content_keyboard(language),
     )
     return QM_ADD_CONTENT
 
