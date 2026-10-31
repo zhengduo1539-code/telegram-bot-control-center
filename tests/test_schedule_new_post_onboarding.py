@@ -113,3 +113,14 @@ def test_schedule_empty_template_preview_explains_manual_entry():
     preview = wizard._wizard_template_page_text([], 0)
     assert "No User Templates Found" in preview
     assert "Send your post content manually" in preview
+
+
+def test_schedule_template_pick_uses_owner_scoped_template_loader():
+    conversation = wizard.build_schedule_wizard()
+    callbacks = {
+        handler.callback.__name__
+        for handler in conversation.states[wizard.WIZARD_TMPL_PICK]
+        if isinstance(handler, wizard.CallbackQueryHandler)
+    }
+    assert "cb_tmpl_pick" in callbacks
+    assert "cb_tmpl_page_wiz" in callbacks
