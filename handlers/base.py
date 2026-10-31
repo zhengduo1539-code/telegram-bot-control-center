@@ -302,27 +302,27 @@ def _posts_keyboard(posts: list[dict], page: int, language: str = "en") -> Inlin
         # Row 1: status controls + delete
         ctrl: list[InlineKeyboardButton] = []
         if status == "pending":
-            ctrl.append(InlineKeyboardButton(f"⏸ Pause #{idx}",  callback_data=f"{CB_MPP_PAUSE}{pid}"))
+            ctrl.append(InlineKeyboardButton(f"{tr(language, \"pause\")} #{idx}",  callback_data=f"{CB_MPP_PAUSE}{pid}"))
         elif status == "paused":
-            ctrl.append(InlineKeyboardButton(f"▶️ Resume #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
-        ctrl.append(InlineKeyboardButton(f"🗑 Delete #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
+            ctrl.append(InlineKeyboardButton(f"{tr(language, \"resume\")} #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
+        ctrl.append(InlineKeyboardButton(f"{tr(language, \"delete\")} #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
         buttons.append(ctrl)
         # Row 2: utilities
         buttons.append([
-            InlineKeyboardButton(f"🔁 Clone #{idx}",    callback_data=f"{CB_MPP_CLONE}{pid}"),
-            InlineKeyboardButton(f"💾 Template #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
+            InlineKeyboardButton(f"{tr(language, \"clone\")} #{idx}",    callback_data=f"{CB_MPP_CLONE}{pid}"),
+            InlineKeyboardButton(f"{tr(language, \"save_template\")} #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
         ])
 
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_MPP_PAGE}{page - 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{CB_MPP_PAGE}{page - 1}"))
     if end < total:
-        nav_row.append(InlineKeyboardButton("Next ▶️", callback_data=f"{CB_MPP_PAGE}{page + 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{CB_MPP_PAGE}{page + 1}"))
     if nav_row:
         buttons.append(nav_row)
 
     buttons.append([
-        InlineKeyboardButton("📊 Statistics",  callback_data=CB_MY_STATS),
+        InlineKeyboardButton(tr(language, "statistics"), callback_data=CB_MY_STATS),
         InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
     ])
     return InlineKeyboardMarkup(buttons)
@@ -355,7 +355,7 @@ async def _render_my_posts(
             tr(language, "posts_empty"),
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]
+                [[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]
             ),
         )
         return MY_POSTS
