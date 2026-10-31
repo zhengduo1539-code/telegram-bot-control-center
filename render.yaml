@@ -12,7 +12,7 @@ services:
         sync: false
       - key: MONGODB_URI
         sync: false
-      - key: MONGODB_DATABASE
+      - key: SCHEDULE_BOT_DATABASE
         value: schedule_bot
       - key: ADMIN_IDS
         sync: false
