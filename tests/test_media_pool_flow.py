@@ -105,6 +105,47 @@ def test_media_pool_entry_shows_guide_and_continue_opens_existing_menu(monkeypat
     asyncio.run(scenario())
 
 
+def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(
+            media_pool, "resolve_user_language", AsyncMock(return_value="my")
+        )
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            user_data={
+                "language": "my",
+                "active_media_pool": True,
+                "mpwiz": {"mp_chat_id": -1001234567890},
+            },
+            bot=None,
+        )
+
+        state = await media_pool.cb_mp_main_menu(
+            SimpleNamespace(callback_query=query), context
+        )
+
+        from localization import translate
+
+        assert state == media_pool.ConversationHandler.END
+        assert "active_media_pool" not in context.user_data
+        assert "mpwiz" not in context.user_data
+        assert query.edit_message_text.await_args.args[0] == translate("my", "menu_title")
+        keyboard = query.edit_message_text.await_args.kwargs["reply_markup"]
+        callbacks = [
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+            if button.callback_data
+        ]
+        assert media_pool.CB_MEDIA_POOL in callbacks
+
+    asyncio.run(scenario())
+
+
 def test_media_pool_group_picker_shows_known_groups_and_manual_fallback():
     keyboard = media_pool._mp_group_picker_keyboard(
         [{
