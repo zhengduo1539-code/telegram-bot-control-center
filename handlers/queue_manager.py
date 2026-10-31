@@ -455,7 +455,7 @@ async def enter_queue_manager(update: Update, context: ContextTypes.DEFAULT_TYPE
         "1. Set daily time slots (e.g. 09:00, 14:00, 20:00)\n"
         "2. Add content — specify the exact date/time to post\n"
         "3. The bot fires each piece of content at its assigned time",
-        _qm_menu_keyboard(context.user_data.get("language", language)),
+        _qm_menu_keyboard(context.user_data.get("language", "en")),
     )
     return QM_MENU
 
@@ -481,7 +481,7 @@ async def cb_qm_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         logger.exception("Failed to load daily queues for user_id=%s", user_id)
         await query.edit_message_text(
             "⚠️ Unable to load your queues right now. Please try again.",
-            reply_markup=_qm_menu_keyboard(context.user_data.get("language", language)),
+            reply_markup=_qm_menu_keyboard(context.user_data.get("language", "en")),
         )
         return QM_MENU
 
@@ -490,7 +490,7 @@ async def cb_qm_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             query,
             "📭 *No Daily Queues Yet*\n\n"
             "Set daily posting slots first, then add content to the queue.",
-            _qm_menu_keyboard(context.user_data.get("language", language)),
+            _qm_menu_keyboard(context.user_data.get("language", "en")),
         )
         return QM_MENU
 
@@ -547,7 +547,7 @@ async def cb_qm_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if len(queues) == 5:
         lines.extend(["", "_Showing the 5 most recently updated queues._"])
 
-    await _edit(query, "\n".join(lines), _qm_menu_keyboard(context.user_data.get("language", language)))
+    await _edit(query, "\n".join(lines), _qm_menu_keyboard(context.user_data.get("language", "en")))
     return QM_MENU
 
 
@@ -749,7 +749,7 @@ async def cb_qm_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"🌍 Timezone: `{tz_label}`\n\n"
         "Now use *Add Content to Queue* to schedule posts!",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_qm_menu_keyboard(context.user_data.get("language", language)),
+        reply_markup=_qm_menu_keyboard(context.user_data.get("language", "en")),
     )
     return QM_MENU
 
@@ -1260,7 +1260,7 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     chat_id = w.get("add_chat_id")
     if not chat_id:
         _clear(context)
-        await query.edit_message_text("⚠️ This setup expired. Please start Add Content again.", reply_markup=_qm_menu_keyboard(context.user_data.get("language", language)))
+        await query.edit_message_text("⚠️ This setup expired. Please start Add Content again.", reply_markup=_qm_menu_keyboard(context.user_data.get("language", "en")))
         return QM_MENU
 
     tz_key = w.get("add_tz", "UTC")
@@ -1274,14 +1274,14 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         queue = await get_queue(user_id, int(chat_id))
     except (ChatAccessError, ValueError) as exc:
         _clear(context)
-        await query.edit_message_text(f"⚠️ {exc}", reply_markup=_qm_menu_keyboard(context.user_data.get("language", language)))
+        await query.edit_message_text(f"⚠️ {exc}", reply_markup=_qm_menu_keyboard(context.user_data.get("language", "en")))
         return QM_MENU
     except Exception:
         logger.exception("Failed to save queue item.")
         _clear(context)
         await query.edit_message_text(
             "❌ I couldn't save this item. Your existing queue has not been cleared. Please try again.",
-            reply_markup=_qm_menu_keyboard(context.user_data.get("language", language)),
+            reply_markup=_qm_menu_keyboard(context.user_data.get("language", "en")),
         )
         return QM_MENU
 
@@ -1297,7 +1297,7 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"🆔 Queue item: `{item_id[:10]}`\n\n"
         "The bot publishes one pending item at each configured daily slot. Use *View Queue* to check its status.",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_qm_menu_keyboard(context.user_data.get("language", language)),
+        reply_markup=_qm_menu_keyboard(context.user_data.get("language", "en")),
     )
     return QM_MENU
 
@@ -1336,7 +1336,7 @@ async def cb_qm_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.edit_message_text(
         f"✅ Cleared `{count}` queue(s).",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_qm_menu_keyboard(context.user_data.get("language", language)),
+        reply_markup=_qm_menu_keyboard(context.user_data.get("language", "en")),
     )
     return QM_MENU
 
@@ -1347,7 +1347,7 @@ async def cb_back_qm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await _edit(query,
         "🗂 *Queue Manager*\n\nWhat would you like to do?",
-        _qm_menu_keyboard(context.user_data.get("language", language)),
+        _qm_menu_keyboard(context.user_data.get("language", "en")),
     )
     return QM_MENU
 
