@@ -400,6 +400,136 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     for code, values in _CATALOG_ROWS.items()
 }
 
+_EXTRA_KEYS = (
+    "queue_title", "queue_intro", "queue_set_slots", "queue_add_content",
+    "queue_view", "queue_clear", "templates_empty", "templates_title",
+    "posts_empty", "posts_title",
+)
+_EXTRA_ROWS: dict[str, tuple[str, ...]] = {
+    "en": (
+        "🗂 Queue Manager", "Set daily posting slots and add content. The bot publishes one item at each configured slot.",
+        "⏰ Set Daily Slots", "➕ Add Content to Queue", "👁 View Queue", "🗑 Clear Queue",
+        "📝 No templates saved yet. Save a post as a template from My Posts.",
+        "📝 My Templates", "📋 No posts yet. Choose Schedule New Post to create one.", "📋 My Posts",
+    ),
+    "my": (
+        "🗂 Queue စီမံခန့်ခွဲမှု", "နေ့စဉ်တင်မည့်အချိန်များ သတ်မှတ်ပြီး အကြောင်းအရာများ ထည့်ပါ။ သတ်မှတ်ထားသော အချိန်တိုင်းတွင် တစ်ခုစီ ပို့ပေးပါမည်။",
+        "⏰ နေ့စဉ်အချိန် သတ်မှတ်ရန်", "➕ Queue ထဲသို့ အကြောင်းအရာထည့်ရန်", "👁 Queue ကြည့်ရန်", "🗑 Queue ရှင်းရန်",
+        "📝 Template မသိမ်းရသေးပါ။ My Posts မှ Post တစ်ခုကို Template အဖြစ် သိမ်းနိုင်ပါသည်။",
+        "📝 ကျွန်ုပ်၏ Templates", "📋 Post မရှိသေးပါ။ Schedule New Post ကိုရွေးပြီး စတင်ပါ။", "📋 ကျွန်ုပ်၏ Posts",
+    ),
+    "zh": (
+        "🗂 队列管理", "设置每日发布时间并添加内容。机器人会在每个设定时段发布一条内容。",
+        "⏰ 设置每日时段", "➕ 添加队列内容", "👁 查看队列", "🗑 清空队列",
+        "📝 尚无模板。您可以在“我的帖子”中将帖子保存为模板。",
+        "📝 我的模板", "📋 还没有帖子。选择“创建定时帖子”开始使用。", "📋 我的帖子",
+    ),
+    "es": (
+        "🗂 Gestor de cola", "Configura horarios diarios y añade contenido. El bot publicará un elemento en cada horario.",
+        "⏰ Configurar horarios diarios", "➕ Añadir contenido a la cola", "👁 Ver cola", "🗑 Vaciar cola",
+        "📝 Aún no hay plantillas. Guarda una publicación como plantilla desde Mis publicaciones.",
+        "📝 Mis plantillas", "📋 Aún no hay publicaciones. Elige Programar publicación para crear una.", "📋 Mis publicaciones",
+    ),
+    "hi": (
+        "🗂 कतार प्रबंधन", "दैनिक पोस्ट समय तय करें और सामग्री जोड़ें। बॉट हर तय समय पर एक सामग्री प्रकाशित करेगा।",
+        "⏰ दैनिक समय तय करें", "➕ कतार में सामग्री जोड़ें", "👁 कतार देखें", "🗑 कतार साफ़ करें",
+        "📝 अभी कोई टेम्पलेट नहीं है। मेरी पोस्ट से किसी पोस्ट को टेम्पलेट के रूप में सहेजें।",
+        "📝 मेरे टेम्पलेट", "📋 अभी कोई पोस्ट नहीं है। नई पोस्ट शेड्यूल करें चुनें।", "📋 मेरी पोस्ट",
+    ),
+    "ar": (
+        "🗂 إدارة قائمة الانتظار", "حدّد أوقات النشر اليومية وأضف المحتوى. سينشر البوت عنصراً واحداً في كل موعد محدد.",
+        "⏰ تحديد المواعيد اليومية", "➕ إضافة محتوى إلى القائمة", "👁 عرض القائمة", "🗑 مسح القائمة",
+        "📝 لا توجد قوالب محفوظة بعد. احفظ منشوراً كقالب من منشوراتي.",
+        "📝 قوالبي", "📋 لا توجد منشورات بعد. اختر جدولة منشور جديد للبدء.", "📋 منشوراتي",
+    ),
+    "pt": (
+        "🗂 Gerenciador da fila", "Defina horários diários e adicione conteúdo. O bot publicará um item em cada horário configurado.",
+        "⏰ Definir horários diários", "➕ Adicionar conteúdo à fila", "👁 Ver fila", "🗑 Limpar fila",
+        "📝 Nenhum modelo salvo ainda. Salve uma publicação como modelo em Minhas publicações.",
+        "📝 Meus modelos", "📋 Ainda não há publicações. Escolha Agendar nova publicação para criar uma.", "📋 Minhas publicações",
+    ),
+    "fr": (
+        "🗂 Gestion de la file", "Définissez les horaires quotidiens et ajoutez du contenu. Le bot publiera un élément à chaque créneau.",
+        "⏰ Définir les créneaux quotidiens", "➕ Ajouter du contenu à la file", "👁 Voir la file", "🗑 Vider la file",
+        "📝 Aucun modèle enregistré. Enregistrez une publication comme modèle depuis Mes publications.",
+        "📝 Mes modèles", "📋 Aucune publication. Choisissez Programmer une publication pour commencer.", "📋 Mes publications",
+    ),
+    "ru": (
+        "🗂 Управление очередью", "Настройте ежедневные интервалы и добавьте контент. Бот будет публиковать по одному элементу в каждый заданный слот.",
+        "⏰ Настроить ежедневные слоты", "➕ Добавить в очередь", "👁 Просмотреть очередь", "🗑 Очистить очередь",
+        "📝 Шаблонов пока нет. Сохраните публикацию как шаблон в разделе «Мои публикации».",
+        "📝 Мои шаблоны", "📋 Публикаций пока нет. Выберите «Запланировать публикацию», чтобы создать первую.", "📋 Мои публикации",
+    ),
+    "bn": (
+        "🗂 কিউ পরিচালনা", "প্রতিদিনের পোস্টের সময় নির্ধারণ করে কনটেন্ট যোগ করুন। বট প্রতিটি নির্ধারিত সময়ে একটি করে পোস্ট করবে।",
+        "⏰ দৈনিক সময় নির্ধারণ", "➕ কিউতে কনটেন্ট যোগ করুন", "👁 কিউ দেখুন", "🗑 কিউ খালি করুন",
+        "📝 এখনো কোনো টেমপ্লেট নেই। আমার পোস্ট থেকে একটি পোস্ট টেমপ্লেট হিসেবে সংরক্ষণ করুন।",
+        "📝 আমার টেমপ্লেট", "📋 এখনো কোনো পোস্ট নেই। শুরু করতে নতুন পোস্টের সময় নির্ধারণ করুন বেছে নিন।", "📋 আমার পোস্ট",
+    ),
+    "id": (
+        "🗂 Pengelola Antrean", "Atur jadwal posting harian dan tambahkan konten. Bot akan menerbitkan satu item pada setiap slot.",
+        "⏰ Atur Slot Harian", "➕ Tambahkan Konten ke Antrean", "👁 Lihat Antrean", "🗑 Bersihkan Antrean",
+        "📝 Belum ada templat. Simpan postingan sebagai templat dari Postingan Saya.",
+        "📝 Templat Saya", "📋 Belum ada postingan. Pilih Jadwalkan Postingan Baru untuk membuatnya.", "📋 Postingan Saya",
+    ),
+    "ja": (
+        "🗂 キュー管理", "毎日の投稿時間を設定して内容を追加します。設定した各時間に1件ずつ投稿します。",
+        "⏰ 毎日の時間を設定", "➕ キューに内容を追加", "👁 キューを表示", "🗑 キューを削除",
+        "📝 保存されたテンプレートはありません。「自分の投稿」から投稿をテンプレートとして保存できます。",
+        "📝 マイテンプレート", "📋 投稿はまだありません。「新しい投稿を予約」から作成してください。", "📋 自分の投稿",
+    ),
+    "ko": (
+        "🗂 대기열 관리", "매일 게시할 시간을 설정하고 콘텐츠를 추가하세요. 설정된 각 시간에 항목 하나씩 게시됩니다.",
+        "⏰ 일일 시간 설정", "➕ 대기열에 콘텐츠 추가", "👁 대기열 보기", "🗑 대기열 비우기",
+        "📝 저장된 템플릿이 없습니다. 내 게시물에서 게시물을 템플릿으로 저장하세요.",
+        "📝 내 템플릿", "📋 게시물이 없습니다. 새 게시물 예약을 선택해 시작하세요.", "📋 내 게시물",
+    ),
+    "th": (
+        "🗂 จัดการคิว", "ตั้งเวลาโพสต์ประจำวันและเพิ่มเนื้อหา บอทจะโพสต์หนึ่งรายการในแต่ละช่วงเวลาที่กำหนด",
+        "⏰ ตั้งเวลาโพสต์รายวัน", "➕ เพิ่มเนื้อหาในคิว", "👁 ดูคิว", "🗑 ล้างคิว",
+        "📝 ยังไม่มีเทมเพลต บันทึกโพสต์เป็นเทมเพลตได้จากโพสต์ของฉัน",
+        "📝 เทมเพลตของฉัน", "📋 ยังไม่มีโพสต์ เลือกตั้งเวลาโพสต์ใหม่เพื่อสร้างโพสต์", "📋 โพสต์ของฉัน",
+    ),
+    "vi": (
+        "🗂 Quản lý hàng đợi", "Thiết lập giờ đăng hằng ngày và thêm nội dung. Bot sẽ đăng một mục vào mỗi khung giờ đã đặt.",
+        "⏰ Đặt khung giờ hằng ngày", "➕ Thêm nội dung vào hàng đợi", "👁 Xem hàng đợi", "🗑 Xóa hàng đợi",
+        "📝 Chưa có mẫu nào. Hãy lưu một bài đăng thành mẫu từ Bài đăng của tôi.",
+        "📝 Mẫu của tôi", "📋 Chưa có bài đăng. Chọn Lên lịch bài đăng mới để tạo.", "📋 Bài đăng của tôi",
+    ),
+    "tr": (
+        "🗂 Kuyruk Yönetimi", "Günlük paylaşım saatlerini ayarlayın ve içerik ekleyin. Bot, belirlenen her zaman aralığında bir öğe yayınlar.",
+        "⏰ Günlük Saatleri Ayarla", "➕ Kuyruğa İçerik Ekle", "👁 Kuyruğu Görüntüle", "🗑 Kuyruğu Temizle",
+        "📝 Henüz şablon yok. Gönderilerim bölümünden bir gönderiyi şablon olarak kaydedin.",
+        "📝 Şablonlarım", "📋 Henüz gönderi yok. Oluşturmak için Yeni Gönderi Planla seçeneğini seçin.", "📋 Gönderilerim",
+    ),
+    "de": (
+        "🗂 Warteschlangenverwaltung", "Lege tägliche Veröffentlichungszeiten fest und füge Inhalte hinzu. Der Bot veröffentlicht zu jedem Zeitfenster einen Eintrag.",
+        "⏰ Tägliche Zeitfenster festlegen", "➕ Inhalt zur Warteschlange hinzufügen", "👁 Warteschlange ansehen", "🗑 Warteschlange leeren",
+        "📝 Noch keine Vorlagen gespeichert. Speichere einen Beitrag unter Meine Beiträge als Vorlage.",
+        "📝 Meine Vorlagen", "📋 Noch keine Beiträge. Wähle Neuen Beitrag planen, um einen zu erstellen.", "📋 Meine Beiträge",
+    ),
+    "it": (
+        "🗂 Gestione coda", "Imposta gli orari giornalieri e aggiungi contenuti. Il bot pubblicherà un elemento in ogni fascia oraria configurata.",
+        "⏰ Imposta orari giornalieri", "➕ Aggiungi contenuto alla coda", "👁 Visualizza coda", "🗑 Svuota coda",
+        "📝 Nessun modello salvato. Salva un post come modello da I miei post.",
+        "📝 I miei modelli", "📋 Nessun post ancora. Scegli Programma nuovo post per crearne uno.", "📋 I miei post",
+    ),
+    "ur": (
+        "🗂 قطار کا انتظام", "روزانہ پوسٹنگ کے اوقات مقرر کریں اور مواد شامل کریں۔ بوٹ ہر مقررہ وقت پر ایک آئٹم شائع کرے گا۔",
+        "⏰ روزانہ اوقات مقرر کریں", "➕ قطار میں مواد شامل کریں", "👁 قطار دیکھیں", "🗑 قطار صاف کریں",
+        "📝 ابھی کوئی ٹیمپلیٹ محفوظ نہیں۔ میری پوسٹس سے کسی پوسٹ کو ٹیمپلیٹ کے طور پر محفوظ کریں۔",
+        "📝 میرے ٹیمپلیٹس", "📋 ابھی کوئی پوسٹ نہیں۔ شروع کرنے کے لیے نئی پوسٹ شیڈول کریں منتخب کریں۔", "📋 میری پوسٹس",
+    ),
+    "sw": (
+        "🗂 Usimamizi wa Foleni", "Weka nyakati za kila siku za kuchapisha na uongeze maudhui. Boti itachapisha kipengee kimoja kwa kila muda uliowekwa.",
+        "⏰ Weka Nyakati za Kila Siku", "➕ Ongeza Maudhui kwenye Foleni", "👁 Tazama Foleni", "🗑 Futa Foleni",
+        "📝 Hakuna violezo vilivyohifadhiwa. Hifadhi chapisho kama kiolezo kutoka Machapisho Yangu.",
+        "📝 Violezo Vyangu", "📋 Bado hakuna machapisho. Chagua Panga Chapisho Jipya ili kuunda.", "📋 Machapisho Yangu",
+    ),
+}
+for _locale, _values in _EXTRA_ROWS.items():
+    TRANSLATIONS[_locale].update(dict(zip(_EXTRA_KEYS, _values, strict=True)))
+
 DEFAULT_LANGUAGE = "en"
 
 
