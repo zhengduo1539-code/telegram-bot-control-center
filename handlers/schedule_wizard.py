@@ -935,7 +935,7 @@ async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     query = update.callback_query
     await _edit(query,
         "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        "Select your timezone so the post time is interpreted correctly:",
+        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
         _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
@@ -1011,7 +1011,7 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await _edit(query,
         f"✅ Interval: every `{_w(context)['interval_value']} {unit}`\n\n"
         "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        "Select your timezone so the post time is interpreted correctly:",
+        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
         _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
@@ -1045,7 +1045,7 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await _edit(query,
         f"✅ Days: `{', '.join(DOW_LABELS[d] for d in sorted(selected))}`\n\n"
         "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\n"
-        "Select your timezone so the post time is interpreted correctly:",
+        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
         _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
@@ -1074,8 +1074,8 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     w.setdefault("time_window_enabled", False)
     await update.message.reply_text(
         f"✅ First run: `{text}` ({tz_str})\n\n"
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
-        "How many times should this post be sent?\n\n"
+        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
+        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
         "Tap a preset or type a custom number:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
@@ -1091,7 +1091,7 @@ async def cb_back_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Called from Max Runs back button — return to First Run screen."""
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▰▰▱▱▱ 5/8\nChat › Content › Recurrence › Timezone › *1st Run* › Max Runs › Advanced › Summary\n🕐 *Step 5/8 — First Run Time*\n\n"
+        f"{tr(context.user_data.get('language', 'en'), 'first_run_prompt')}\\n\\n"
         "• `HH:MM` — today at this time\n"
         "• `DD/MM/YYYY HH:MM` — specific date\n\n"
         "Or tap *💡 Suggest Best Time* to see active hours for this chat.",
@@ -1186,8 +1186,8 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await query.answer()
     await query.edit_message_text(
         f"✅ First run: `{time_str}` ({tz_str})\n\n"
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
-        "How many times should this post be sent?\n\n"
+        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
+        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
         "Tap a preset or type a custom number:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
@@ -1221,7 +1221,7 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await _edit(query,
         f"✅ Timezone: `{tz_name}`\n\n"
-        "▰▰▰▰▰▱▱▱ 5/8\nChat › Content › Recurrence › Timezone › *1st Run* › Max Runs › Advanced › Summary\n🕐 *Step 5/8 — First Run Time*\n\n"
+        f"{tr(context.user_data.get('language', 'en'), 'first_run_prompt')}\\n\\n"
         "When should this post fire?\n\n"
         "Type the date/time:\n"
         "• `HH:MM` — today at this time (e.g. `14:30`)\n"
@@ -1240,7 +1240,7 @@ async def cb_back_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Called from First Run back button — return to Timezone picker."""
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▰▱▱▱▱ 4/8\nChat › Content › Recurrence › *Timezone* › 1st Run › Max Runs › Advanced › Summary\n🌍 *Step 4/8 — Timezone*\n\nSelect your timezone:",
+        tr(context.user_data.get('language', 'en'), 'timezone_prompt'),
         _timezone_keyboard(0, context.user_data.get("language", "en")),
     )
     return WIZARD_TIMEZONE
@@ -1765,8 +1765,8 @@ async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TY
 async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
-        "How many times should this post be sent?\n\n"
+        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
+        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}\\n\\n"
         "Tap a preset or type a custom number:",
         _max_runs_keyboard(),
     )
