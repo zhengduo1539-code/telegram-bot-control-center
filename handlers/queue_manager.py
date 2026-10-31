@@ -1560,7 +1560,7 @@ async def cb_back_qm_ac_content(update: Update, context: ContextTypes.DEFAULT_TY
             slots=escape_markdown(" • ".join(queue.get("slots", [])), version=1),
             timezone=escape_markdown(str(timezone_label), version=1),
         ),
-        _qm_nav_keyboard(language, back_data=CB_BACK_QM_AC_CHAT),
+        _qm_content_keyboard(language),
     )
     return QM_ADD_CONTENT
 
