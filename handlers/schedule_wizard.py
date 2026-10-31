@@ -933,12 +933,13 @@ def _inline_btns_list_text(buttons: list) -> str:
 async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _w(context)["recurrence_type"] = "once"
     query = update.callback_query
-    await _edit(query,
-        tr(context.user_data.get("language", "en"), "timezone_prompt"),
-        _timezone_keyboard(0, context.user_data.get("language", "en")),
+    language = context.user_data.get("language", "en")
+    await _edit(
+        query,
+        tr(language, "timezone_prompt"),
+        _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
-
 
 async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _w(context)["recurrence_type"] = "interval"
@@ -1007,13 +1008,13 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     unit_map = {CB_IU_MINUTES: "minutes", CB_IU_HOURS: "hours", CB_IU_DAYS: "days"}
     unit = unit_map[query.data]
     _w(context)["interval_unit"] = unit
-    await _edit(query,
-        f"✅ Interval: every `{_w(context)['interval_value']} {unit}`\n\n"
-        tr(context.user_data.get("language", "en"), "timezone_prompt"),
-        _timezone_keyboard(0, context.user_data.get("language", "en")),
+    language = context.user_data.get("language", "en")
+    await _edit(
+        query,
+        f"✅ Interval: every \`{_w(context)['interval_value']} {unit}\`\n\n{tr(language, 'timezone_prompt')}",
+        _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
-
 
 # ---------------------------------------------------------------------------
 # Step 3a (DOW) — day toggles
@@ -1040,13 +1041,13 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if not selected:
         await query.answer("⚠️ Please select at least one day.", show_alert=True)
         return WIZARD_DOW_SELECT
-    await _edit(query,
-        f"✅ Days: `{', '.join(DOW_LABELS[d] for d in sorted(selected))}`\n\n"
-        tr(context.user_data.get("language", "en"), "timezone_prompt"),
-        _timezone_keyboard(0, context.user_data.get("language", "en")),
+    language = context.user_data.get("language", "en")
+    await _edit(
+        query,
+        f"✅ Days: \`{', '.join(DOW_LABELS[d] for d in sorted(selected))}\`\n\n{tr(language, 'timezone_prompt')}",
+        _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
-
 
 # ---------------------------------------------------------------------------
 # Step 4 — First run time
