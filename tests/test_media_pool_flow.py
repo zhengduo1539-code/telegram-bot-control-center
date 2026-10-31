@@ -325,3 +325,35 @@ def test_media_pool_timezone_keyboard_uses_stable_timezone_identifiers_and_local
     assert any("Asia/" in label for label in labels)
     assert media_pool.CB_BACK_MP_FR in callbacks
     assert all(button.text != "◀️ Prev" for row in keyboard.inline_keyboard for button in row)
+
+
+def test_manual_chat_id_help_and_cancel_feedback_use_selected_language(monkeypatch):
+    async def scenario():
+        cleanup = AsyncMock()
+        monkeypatch.setattr(media_pool.chat_cleanup, "cleanup", cleanup)
+
+        prompt = translate_media_pool("my", "manual_id_prompt")
+        assert "/id" in prompt
+        assert "Chat ID" in prompt
+
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            message=SimpleNamespace(chat_id=42, message_id=88),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            user_data={"language": "my", "active_media_pool": True},
+            bot=object(),
+        )
+        update = SimpleNamespace(callback_query=query)
+
+        state = await media_pool.cb_cancel_local(update, context)
+
+        assert state == media_pool.ConversationHandler.END
+        text = query.edit_message_text.await_args.args[0]
+        assert "ပယ်ဖျက်" in text
+        assert "active_media_pool" not in context.user_data
+        cleanup.assert_awaited_once()
+
+    asyncio.run(scenario())
