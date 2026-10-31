@@ -85,6 +85,8 @@ async def handle_language_choice(
     user = update.effective_user
     if message is None or user is None:
         return
+    if update.effective_chat is None or update.effective_chat.type != ChatType.PRIVATE:
+        return
     if not context.user_data.get("awaiting_language_choice"):
         return
 
@@ -111,6 +113,19 @@ async def handle_language_choice(
         translate(language, "lang_saved"),
         reply_markup=ReplyKeyboardRemove(),
     )
+
+    # ReplyKeyboardMarkup sends the selected label as a normal user message.
+    # Remove that temporary selection bubble so it does not remain in chat history.
+    try:
+        await context.bot.delete_message(
+            chat_id=message.chat_id,
+            message_id=message.message_id,
+        )
+    except Exception as exc:
+        # Removing the keyboard and saving the locale remain successful even
+        # when Telegram does not permit deleting the user's selection message.
+        logger.debug("Could not remove language selection message: %s", exc)
+
     from handlers.base import main_menu_keyboard
 
     await message.reply_text(
