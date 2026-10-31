@@ -405,9 +405,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             [InlineKeyboardButton(tr(language, "open_private"), url=private_url)]
         ])
         await message.reply_text(
-            f"{tr(language, 'group_start_title')}\\n\\n"
-            f"{tr(language, 'group_start_body', group=group_title)}\\n\\n"
-            f"🔒 {tr(language, 'private_setup_action')}\\n"
+            f"{tr(language, 'group_start_title')}\n\n"
+            f"{tr(language, 'group_start_body', group=group_title)}\n\n"
+            f"🔒 {tr(language, 'private_setup_action')}\n"
             f"{tr(language, 'group_admin_note')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
@@ -428,7 +428,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         except ChatAccessError as exc:
             launch_notice = (
                 "⚠️ *Group not linked:* "
-                f"{escape_markdown(str(exc), version=1)}\\n\\n"
+                f"{escape_markdown(str(exc), version=1)}\n\n"
                 "You can still choose a group manually, or ask a group administrator "
                 "to open this setup link."
             )
@@ -443,14 +443,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         linked = context.user_data["launch_chat"]
         safe_title = escape_markdown(str(linked["title"]), version=1)
         menu_text = (
-            f"{tr(language, 'private_setup_title')}\\n\\n"
-            f"{tr(language, 'private_setup_body', group=safe_title)}\\n\\n"
+            f"{tr(language, 'private_setup_title')}\n\n"
+            f"{tr(language, 'private_setup_body', group=safe_title)}\n\n"
             f"{tr(language, 'private_setup_action')}"
         )
     else:
         menu_text = tr(language, "menu_title")
         if launch_notice:
-            menu_text = f"{launch_notice}\\n\\n{menu_text}"
+            menu_text = f"{launch_notice}\n\n{menu_text}"
 
     await message.reply_text(
         menu_text,
@@ -502,6 +502,9 @@ async def cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
     await query.answer("Cancelled.")
 
+    language = await resolve_user_language(
+        context, query.from_user.id if query.from_user else None
+    )
     # Wipe any in-progress wizard state so the next session starts clean
     context.user_data.clear()
 
