@@ -467,10 +467,10 @@ async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
     language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
     await query.edit_message_text(
-        HELP_TEXT,
+        tr(language, "help_text"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)],
+            [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
         ]),
     )
     return MAIN_MENU
