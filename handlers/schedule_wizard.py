@@ -1615,10 +1615,11 @@ async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         return WIZARD_AD_HOURS
     _w(context)["ad_hours"] = val
+    _w(context)["ad_duration_label"] = (update.message.text or "").strip()
     w = _w(context)
     if w.get("self_destruct"):
         await update.message.reply_text(
-            f"✅ Auto-delete: `{val}h`\n\n"
+            f"✅ Auto-delete: `{update.message.text.strip()}`\n\n"
             "💣 *Self-Destruct — After how many seconds?*\n\n"
             "Type a positive integer:",
             parse_mode=ParseMode.MARKDOWN,
