@@ -47,6 +47,7 @@ from database import (
     list_groups_for_user,
     COL_QUEUE_SLOTS,
     COL_MEDIA_POOLS,
+    COL_POSTS,
 )
 from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
@@ -85,6 +86,8 @@ QM_ADD_TZ   = 109
     MP_AUTO_DELETE,
     MP_CONFIRM,
 ) = range(200, 209)
+MP_MANAGE_CHAT = 209
+MP_MANAGE_ACTION = 210
 
 # ---------------------------------------------------------------------------
 # Callback-data constants  (all ≤ 64 bytes)
@@ -125,6 +128,19 @@ CB_MP_CONFIRM      = "mp:confirm"
 CB_MP_IU_MINUTES   = "mp:iu:minutes"
 CB_MP_IU_HOURS     = "mp:iu:hours"
 CB_MP_IU_DAYS      = "mp:iu:days"
+CB_MP_MANAGE       = "mp:manage"
+CB_MP_PICK         = "mp:pick:"
+CB_MP_PAGE         = "mp:page:"
+CB_MP_MANUAL       = "mp:manual"
+CB_MP_ADD_SELECTED = "mp:add:selected"
+CB_MP_ADD_DONE     = "mp:add:done"
+CB_MP_ADD_SCHEDULE = "mp:add:schedule"
+CB_MP_MANAGE_PICK  = "mp:manage:pick:"
+CB_MP_MANAGE_PAGE  = "mp:manage:page:"
+CB_MP_CUSTOM_INTERVAL = "mp:interval:custom"
+CB_MP_QUICK_PREFIX = "mp:quick:"
+CB_MP_FIRST_NOW    = "mp:first:now"
+CB_MP_FIRST_CUSTOM = "mp:first:custom"
 
 # Back targets
 CB_BACK_QM_MENU         = "back:qm_menu"
@@ -1349,184 +1365,496 @@ async def cb_back_qm_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 # ============================================================================
-#  B) MEDIA POOL (Random Shuffler)
+#  B) MEDIA POOL — guided random-post workflow
 # ============================================================================
+
+_MP_POOL_PAGE_SIZE = 5
+_MP_QUICK_INTERVALS: dict[str, tuple[int, str, str]] = {
+    "15m": (15, "minutes", "15 minutes"),
+    "30m": (30, "minutes", "30 minutes"),
+    "1h": (1, "hours", "1 hour"),
+    "3h": (3, "hours", "3 hours"),
+    "6h": (6, "hours", "6 hours"),
+    "12h": (12, "hours", "12 hours"),
+    "24h": (24, "hours", "24 hours"),
+}
+
+
+def _mp_menu_text() -> str:
+    return (
+        "🎲 Media Pool\n\n"
+        "Automatically publish one random item from a collection at a regular interval.\n\n"
+        "How it works:\n"
+        "1. Choose a group or channel.\n"
+        "2. Add your content items. You can send them one after another.\n"
+        "3. Choose when the bot should publish.\n\n"
+        "Each item is used once in a cycle. After every item has been published, "
+        "the next cycle starts automatically."
+    )
+
 
 def _mp_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        # ── Phase 1: Build your pool ──────────────────────────────
-        [InlineKeyboardButton("➕ Add Items to Pool",          callback_data=CB_MP_ADD_ITEM)],
+        [InlineKeyboardButton("➕ Add Content", callback_data=CB_MP_ADD_ITEM)],
+        [InlineKeyboardButton("⏱ Set Posting Schedule", callback_data=CB_MP_SET_INTERVAL)],
         [
-            InlineKeyboardButton("👁 View Stats",             callback_data=CB_MP_VIEW),
-            InlineKeyboardButton("🔄 Reset Pool",             callback_data=CB_MP_RESET),
-            InlineKeyboardButton("🗑 Clear All",              callback_data=CB_MP_CLEAR),
+            InlineKeyboardButton("📊 Pool Overview", callback_data=CB_MP_VIEW),
+            InlineKeyboardButton("🛠 Manage Pool", callback_data=CB_MP_MANAGE),
         ],
-        # ── Phase 2: Start posting ─────────────────────────────────
-        [InlineKeyboardButton("▶️ Configure & Start Posting", callback_data=CB_MP_SET_INTERVAL)],
         [
             InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton("❌ Cancel",    callback_data=CB_CANCEL),
+            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
         ],
     ])
+
+
+def _mp_add_item_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏱ Configure Posting Schedule", callback_data=CB_MP_ADD_SCHEDULE)],
+        [InlineKeyboardButton("✅ Finish Adding", callback_data=CB_MP_ADD_DONE)],
+        [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+    ])
+
+
+def _mp_quick_interval_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("15 min", callback_data=f"{CB_MP_QUICK_PREFIX}15m"),
+            InlineKeyboardButton("30 min", callback_data=f"{CB_MP_QUICK_PREFIX}30m"),
+            InlineKeyboardButton("1 hour", callback_data=f"{CB_MP_QUICK_PREFIX}1h"),
+        ],
+        [
+            InlineKeyboardButton("3 hours", callback_data=f"{CB_MP_QUICK_PREFIX}3h"),
+            InlineKeyboardButton("6 hours", callback_data=f"{CB_MP_QUICK_PREFIX}6h"),
+            InlineKeyboardButton("12 hours", callback_data=f"{CB_MP_QUICK_PREFIX}12h"),
+        ],
+        [
+            InlineKeyboardButton("24 hours", callback_data=f"{CB_MP_QUICK_PREFIX}24h"),
+            InlineKeyboardButton("✏️ Custom", callback_data=CB_MP_CUSTOM_INTERVAL),
+        ],
+        [
+            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_MENU),
+            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        ],
+    ])
+
+
+def _mp_first_run_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ Start as soon as possible", callback_data=CB_MP_FIRST_NOW)],
+        [InlineKeyboardButton("🕒 Choose a specific time", callback_data=CB_MP_FIRST_CUSTOM)],
+        [
+            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_IV),
+            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        ],
+    ])
+
+
+def _mp_group_picker_keyboard(groups: list[dict], page: int) -> InlineKeyboardMarkup:
+    return _qm_group_picker_keyboard(
+        groups,
+        page,
+        CB_MP_PICK,
+        CB_MP_PAGE,
+        CB_MP_MANUAL,
+        CB_BACK_MP_MENU,
+    )
+
+
+def _mp_manage_picker_keyboard(
+    pools: list[dict], group_titles: dict[int, str], page: int
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    start = page * _MP_POOL_PAGE_SIZE
+    end = min(start + _MP_POOL_PAGE_SIZE, len(pools))
+    for pool in pools[start:end]:
+        chat_id = int(pool["chat_id"])
+        count = len(pool.get("items", []))
+        title = escape_markdown(
+            group_titles.get(chat_id) or f"Chat {chat_id}", version=1
+        )
+        rows.append([
+            InlineKeyboardButton(
+                f"🗂 {title[:28]} · {count} item(s)",
+                callback_data=f"{CB_MP_MANAGE_PICK}{chat_id}",
+            )
+        ])
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(
+            "⬅️ Prev", callback_data=f"{CB_MP_MANAGE_PAGE}{page - 1}"
+        ))
+    if end < len(pools):
+        nav.append(InlineKeyboardButton(
+            "Next ➡️", callback_data=f"{CB_MP_MANAGE_PAGE}{page + 1}"
+        ))
+    if nav:
+        rows.append(nav)
+    rows.append([
+        InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_MENU),
+        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+def _mp_manage_actions_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Reset Posting Cycle", callback_data=CB_MP_RESET)],
+        [InlineKeyboardButton("🗑 Clear This Pool", callback_data=CB_MP_CLEAR)],
+        [
+            InlineKeyboardButton("⬅️ All Pools", callback_data=CB_BACK_MP_MANAGE),
+            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        ],
+    ])
+
+
+def _mp_manage_confirm_keyboard(confirm_callback: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Confirm", callback_data=confirm_callback),
+            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_DETAILS),
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+    ])
+
+
+async def _mp_reply_or_edit(
+    update: Update,
+    text: str,
+    keyboard: InlineKeyboardMarkup,
+) -> None:
+    query = update.callback_query
+    if query is not None:
+        await query.answer()
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboard,
+        )
+    elif update.effective_message is not None:
+        await update.effective_message.reply_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboard,
+        )
 
 
 async def enter_media_pool(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     _clear_mp(context)
     chat_cleanup.reset(context.application.bot_data, query.message.chat_id)
-    chat_cleanup.track(context.application.bot_data, query.message.chat_id, query.message.message_id)
-    await _edit(query,
-        "🎲 *Media Pool — Random Shuffler*\n\n"
-        "Upload content once, and the bot randomly posts from the pool on a schedule "
-        "— resetting automatically when all items have been sent.\n\n"
-        "📥 *Step 1 — Build Your Pool*\n"
-        "Add items (text, photos, videos, etc.), view stats, reset or clear.\n\n"
-        "▶️ *Step 2 — Start Posting*\n"
-        "Set the chat, posting interval, and timezone — then go live.",
+    chat_cleanup.track(
+        context.application.bot_data,
+        query.message.chat_id,
+        query.message.message_id,
+    )
+    await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
+    return MP_MENU
+
+
+async def _mp_show_group_picker(
+    query: Any,
+    context: ContextTypes.DEFAULT_TYPE,
+    page: int = 0,
+) -> int:
+    user_id = query.from_user.id
+    try:
+        groups = await list_groups_for_user(user_id)
+    except Exception:
+        logger.exception("Media Pool group picker failed for user_id=%s", user_id)
+        await query.answer("Unable to load your groups. Please try again.", show_alert=True)
+        return MP_CHAT_ID
+
+    if not groups:
+        bot_username = (await query.get_bot().get_me()).username or "YourSchedulerBot"
+        mode_label = (
+            "add content to"
+            if _pm(context).get("mode") == "add"
+            else "set a posting schedule for"
+        )
+        await _edit(
+            query,
+            "No groups or channels are linked to your account yet.\n\n"
+            "Add the bot to your group or channel first, then make sure you are an administrator. "
+            "You can also enter a Chat ID manually.\n\n"
+            f"Choose where you want to {mode_label} the Media Pool:",
+            _qm_no_groups_keyboard(
+                CB_MP_MANUAL,
+                CB_BACK_MP_MENU,
+                bot_username,
+            ),
+        )
+        return MP_CHAT_ID
+
+    total = len(groups)
+    page = max(0, min(page, (total - 1) // _QM_CHAT_PAGE_SIZE))
+    await _edit(
+        query,
+        "Step 1 of 3 — Select a Group or Channel\n\n"
+        "Choose the destination where the Media Pool will save content and publish posts.\n"
+        f"Showing {page * _QM_CHAT_PAGE_SIZE + 1}–"
+        f"{min((page + 1) * _QM_CHAT_PAGE_SIZE, total)} of {total}.",
+        _mp_group_picker_keyboard(groups, page),
+    )
+    return MP_CHAT_ID
+
+
+async def cb_mp_add_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    _pm(context).clear()
+    _pm(context)["mode"] = "add"
+    return await _mp_show_group_picker(update.callback_query, context)
+
+
+async def cb_mp_set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    _pm(context).clear()
+    _pm(context)["mode"] = "interval"
+    return await _mp_show_group_picker(update.callback_query, context)
+
+
+async def cb_mp_group_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    raw = (query.data or "").replace(CB_MP_PAGE, "", 1)
+    page = int(raw) if raw.isdigit() else 0
+    return await _mp_show_group_picker(query, context, page)
+
+
+async def cb_mp_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await _edit(
+        query,
+        "Enter the numeric Chat ID of your group or channel.\n\n"
+        "Tip: Send /id in the target group to see its Chat ID. "
+        "Example: -1001234567890",
+        nav_keyboard(back_data=CB_BACK_MP_MENU),
+    )
+    return MP_CHAT_ID
+
+
+async def _mp_continue_after_chat_selection(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    target_chat: Any,
+) -> int:
+    pm = _pm(context)
+    chat_id = int(target_chat.id)
+    title = target_chat.title or str(chat_id)
+    pm["mp_chat_id"] = chat_id
+    pm["mp_chat_title"] = title
+
+    if pm.get("mode") == "interval":
+        try:
+            db = await get_db()
+            pool = await db[COL_MEDIA_POOLS].find_one(
+                {"user_id": update.effective_user.id, "chat_id": chat_id}
+            )
+            item_count = len(pool.get("items", [])) if pool else 0
+        except Exception:
+            logger.exception("Could not inspect Media Pool for chat_id=%s", chat_id)
+            await _mp_reply_or_edit(
+                update,
+                "I couldn't check this group's content right now. Please try again.",
+                nav_keyboard(back_data=CB_BACK_MP_MENU),
+            )
+            return MP_CHAT_ID
+
+        if item_count == 0:
+            pm["mode"] = "add"
+            await _mp_reply_or_edit(
+                update,
+                f"Selected: {escape_markdown(title, version=1)}\n\n"
+                "This group does not have any Media Pool content yet. "
+                "Add at least one item before creating a posting schedule.",
+                InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "➕ Add Content to This Group",
+                        callback_data=CB_MP_ADD_SELECTED,
+                    )],
+                    [InlineKeyboardButton("⬅️ Back to Menu", callback_data=CB_BACK_MP_MENU)],
+                    [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+                ]),
+            )
+            return MP_CHAT_ID
+
+        return await _mp_prompt_interval(update, context)
+
+    await _mp_prompt_add_item(update, context)
+    return MP_ADD_ITEM
+
+
+async def _mp_prompt_add_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    pm = _pm(context)
+    title = escape_markdown(pm.get("mp_chat_title", "Selected group"), version=1)
+    await _mp_reply_or_edit(
+        update,
+        f"Selected destination: {title}\n\n"
+        "Step 2 of 3 — Add Content\n\n"
+        "Send a text message, photo, video, GIF/animation, document, audio, or voice message. "
+        "The bot saves each message as one item in this group's pool.\n\n"
+        "You can send several items one after another. When you are finished, tap "
+        "Finish Adding. Captions are kept with their media.",
+        _mp_add_item_keyboard(),
+    )
+
+
+async def cb_mp_add_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    pm = _pm(context)
+    if not pm.get("mp_chat_id"):
+        await query.answer("Please select a group again.", show_alert=True)
+        _clear_mp(context)
+        await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
+        return MP_MENU
+    pm["mode"] = "add"
+    await _mp_prompt_add_item(update, context)
+    return MP_ADD_ITEM
+
+
+async def recv_mp_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
+    try:
+        chat_id = int(raw)
+    except ValueError:
+        await update.message.reply_text(
+            "Please enter a valid numeric Chat ID, for example -1001234567890."
+        )
+        return MP_CHAT_ID
+
+    try:
+        target_chat = await ensure_chat_access(
+            context.bot,
+            chat_id,
+            update.effective_user.id,
+        )
+    except ChatAccessError as exc:
+        await update.message.reply_text(
+            f"Cannot use this chat: {escape_markdown(str(exc), version=1)}"
+        )
+        return MP_CHAT_ID
+
+    return await _mp_continue_after_chat_selection(update, context, target_chat)
+
+
+async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    msg = update.message
+    pm = _pm(context)
+    if not pm.get("mp_chat_id"):
+        await msg.reply_text("Your group selection expired. Please start Add Content again.")
+        _clear_mp(context)
+        return MP_MENU
+
+    item: dict[str, Any] = {"posted": False}
+    if msg.photo:
+        item.update(media_file_id=msg.photo[-1].file_id, media_type="photo", text=msg.caption)
+    elif msg.video:
+        item.update(media_file_id=msg.video.file_id, media_type="video", text=msg.caption)
+    elif msg.document:
+        item.update(media_file_id=msg.document.file_id, media_type="document", text=msg.caption)
+    elif msg.audio:
+        item.update(media_file_id=msg.audio.file_id, media_type="audio", text=msg.caption)
+    elif msg.animation:
+        item.update(media_file_id=msg.animation.file_id, media_type="animation", text=msg.caption)
+    elif msg.voice:
+        item.update(media_file_id=msg.voice.file_id, media_type="voice", text=msg.caption)
+    elif msg.text:
+        item.update(media_file_id=None, media_type=None, text=msg.text)
+    else:
+        await msg.reply_text(
+            "Unsupported content type. Send text, photo, video, GIF/animation, document, audio, or voice."
+        )
+        return MP_ADD_ITEM
+
+    user_id = msg.from_user.id
+    chat_id = int(pm["mp_chat_id"])
+    try:
+        await add_to_media_pool(user_id, chat_id, item)
+        db = await get_db()
+        pool = await db[COL_MEDIA_POOLS].find_one(
+            {"user_id": user_id, "chat_id": chat_id}
+        )
+        count = len(pool.get("items", [])) if pool else 1
+    except Exception:
+        logger.exception("Could not save Media Pool item for user_id=%s chat_id=%s", user_id, chat_id)
+        await msg.reply_text(
+            "The item could not be saved. Please try sending it again."
+        )
+        return MP_ADD_ITEM
+
+    title = escape_markdown(pm.get("mp_chat_title", str(chat_id)), version=1)
+    await msg.reply_text(
+        f"✅ Item saved to {title}.\n"
+        f"Items in this pool: {count}\n\n"
+        "Send the next item to continue, or use the buttons below when you are finished.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_mp_add_item_keyboard(),
+    )
+    return MP_ADD_ITEM
+
+
+async def cb_mp_add_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    _clear_mp(context)
+    await _edit(
+        query,
+        "✅ Content collection saved.\n\n"
+        "You can review your pools or configure a posting schedule from this menu.",
         _mp_menu_keyboard(),
     )
     return MP_MENU
 
 
-# ── Add Item ──
-
-async def cb_mp_add_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    _pm(context)["mode"] = "add"
-    await _edit(query,
-        "➕ *Add Item to Pool*\n\n"
-        "First, type the *Chat ID* of the channel/group for this pool:",
-        nav_keyboard(back_data=CB_BACK_MP_MENU),
-    )
-    return MP_CHAT_ID
-
-
-async def cb_mp_set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    _pm(context)["mode"] = "interval"
-    await _edit(query,
-        "⚙️ *Set Posting Schedule*\n\n"
-        "Type the *Chat ID* of the pool you want to schedule:\n"
-        "_(Use /id in your group to get the Chat ID)_",
-        nav_keyboard(back_data=CB_BACK_MP_MENU),
-    )
-    return MP_CHAT_ID
-
-
-async def recv_mp_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    try:
-        chat_id = int(text)
-    except ValueError:
-        await update.message.reply_text("⚠️ Enter a valid numeric Chat ID.", parse_mode=ParseMode.MARKDOWN)
-        return MP_CHAT_ID
-
-    try:
-        target_chat = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
-    except ChatAccessError as exc:
-        await update.message.reply_text(f"⚠️ {exc}")
-        return MP_CHAT_ID
+async def _mp_prompt_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     pm = _pm(context)
-    pm["mp_chat_id"] = chat_id
-    pm["mp_chat_title"] = target_chat.title or str(chat_id)
+    title = escape_markdown(pm.get("mp_chat_title", "Selected group"), version=1)
+    await _mp_reply_or_edit(
+        update,
+        f"Selected destination: {title}\n\n"
+        "Step 2 of 3 — Choose a Posting Interval\n\n"
+        "How often should the bot publish one random item? Choose a common interval or select Custom.",
+        _mp_quick_interval_keyboard(),
+    )
+    return MP_SET_INTERVAL_VALUE
 
-    if pm.get("mode") == "interval":
-        await update.message.reply_text(
-            f"✅ Chat: `{chat_id}`\n\n"
-            "⏱ *How often should the bot post from this pool?*\n"
-            "Type a positive number (e.g. `6` for every 6 hours):",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_MP_MENU),
-        )
+
+async def cb_mp_custom_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await _edit(
+        query,
+        "Enter a positive whole number for the interval.\n\n"
+        "Example: enter 6, then choose Hours to post every 6 hours.",
+        nav_keyboard(back_data=CB_BACK_MP_MENU),
+    )
+    return MP_SET_INTERVAL_VALUE
+
+
+async def cb_mp_quick_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    choice = (query.data or "").replace(CB_MP_QUICK_PREFIX, "", 1)
+    selected = _MP_QUICK_INTERVALS.get(choice)
+    if selected is None:
+        await query.answer("Invalid interval. Please choose again.", show_alert=True)
         return MP_SET_INTERVAL_VALUE
+    value, unit, label = selected
+    pm = _pm(context)
+    pm["interval_value"] = value
+    pm["interval_unit"] = unit
+    pm["interval_label"] = label
+    await query.answer()
+    await _mp_prompt_first_run(query, context)
+    return MP_SET_FIRST_RUN
 
-    # Default: add-item flow
-    await update.message.reply_text(
-        f"✅ Chat: `{chat_id}`\n\n"
-        "🎲 Now send the content item to add to the pool.\n"
-        "(Text, photo, video, document, audio — all supported.)",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=nav_keyboard(back_data=CB_BACK_MP_MENU),
-    )
-    return MP_ADD_ITEM
-
-
-async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    msg = update.message
-    pm  = _pm(context)
-
-    item: dict[str, Any] = {"posted": False}
-
-    if msg.photo:
-        item.update(media_file_id=msg.photo[-1].file_id, media_type="photo",    text=msg.caption)
-    elif msg.video:
-        item.update(media_file_id=msg.video.file_id,     media_type="video",    text=msg.caption)
-    elif msg.document:
-        item.update(media_file_id=msg.document.file_id,  media_type="document", text=msg.caption)
-    elif msg.audio:
-        item.update(media_file_id=msg.audio.file_id,     media_type="audio",    text=msg.caption)
-    elif msg.animation:
-        item.update(media_file_id=msg.animation.file_id, media_type="animation",text=msg.caption)
-    elif msg.voice:
-        item.update(media_file_id=msg.voice.file_id,     media_type="voice",    text=msg.caption)
-    elif msg.text:
-        item.update(media_file_id=None, media_type=None, text=msg.text)
-    else:
-        await msg.reply_text("⚠️ Unsupported type. Send text or media.")
-        return MP_ADD_ITEM
-
-    user_id: int = msg.from_user.id  # type: ignore[union-attr]
-    chat_id: int = pm["mp_chat_id"]
-
-    try:
-        await add_to_media_pool(user_id, chat_id, item)
-    except Exception as exc:
-        logger.exception("add_to_media_pool failed: %s", exc)
-        await msg.reply_text(f"❌ Error: `{exc}`", parse_mode=ParseMode.MARKDOWN)
-        return MP_MENU
-
-    preview = (item.get("text") or "")[:50]
-    if item.get("media_type"):
-        preview = f"[{item['media_type'].upper()}] {preview}"
-
-    try:
-        db    = await get_db()
-        pool  = await db[COL_MEDIA_POOLS].find_one({"user_id": user_id, "chat_id": chat_id})
-        count = len(pool.get("items", [])) if pool else 0
-    except Exception:
-        count = 1
-
-    pm["last_item_preview"] = preview
-
-    await msg.reply_text(
-        f"✅ *Item added to pool!*\n"
-        f"📝 `{preview or '—'}`\n"
-        f"🎲 Pool now has `{count}` item(s).\n\n"
-        + ("Would you like to *set the posting interval* for this pool now?\n"
-           "Use the menu below to add more items or configure the interval."
-           if count == 1 else
-           "Add more items or return to the pool menu."),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_mp_menu_keyboard(),
-    )
-    _clear_mp(context)
-    return MP_MENU
-
-
-# ── Set Posting Schedule — wizard steps ──
 
 async def recv_mp_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    if not text.isdigit() or int(text) <= 0:
+    raw = (update.message.text or "").strip()
+    if not raw.isdigit() or int(raw) <= 0 or int(raw) > 100000:
         await update.message.reply_text(
-            "⚠️ Enter a positive number (e.g. `6` for every 6 hours).",
-            parse_mode=ParseMode.MARKDOWN,
+            "Enter a whole number between 1 and 100000."
         )
         return MP_SET_INTERVAL_VALUE
-    _pm(context)["interval_value"] = int(text)
+    pm = _pm(context)
+    pm["interval_value"] = int(raw)
+    pm.pop("interval_label", None)
     await update.message.reply_text(
-        f"✅ Interval: every *{text}* …\n\nNow choose the time unit:",
-        parse_mode=ParseMode.MARKDOWN,
+        f"Interval value: {raw}\n\nChoose the time unit:",
         reply_markup=_mp_interval_unit_keyboard(),
     )
     return MP_SET_INTERVAL_UNIT
@@ -1535,147 +1863,169 @@ async def recv_mp_interval_value(update: Update, context: ContextTypes.DEFAULT_T
 async def cb_mp_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     unit_map = {
-        CB_MP_IU_MINUTES: ("minutes", "minute(s)"),
-        CB_MP_IU_HOURS:   ("hours",   "hour(s)"),
-        CB_MP_IU_DAYS:    ("days",    "day(s)"),
+        CB_MP_IU_MINUTES: "minutes",
+        CB_MP_IU_HOURS: "hours",
+        CB_MP_IU_DAYS: "days",
     }
-    unit, label = unit_map.get(query.data, ("hours", "hour(s)"))
+    unit = unit_map.get(query.data)
+    if unit is None:
+        await query.answer("Please choose a time unit.", show_alert=True)
+        return MP_SET_INTERVAL_UNIT
     pm = _pm(context)
     pm["interval_unit"] = unit
-    value = pm.get("interval_value", 1)
+    pm["interval_label"] = f"{pm.get('interval_value', 1)} {unit}"
+    await query.answer()
+    await _mp_prompt_first_run(query, context)
+    return MP_SET_FIRST_RUN
+
+
+async def _mp_prompt_first_run(query: Any, context: ContextTypes.DEFAULT_TYPE) -> None:
+    pm = _pm(context)
+    label = escape_markdown(pm.get("interval_label", "custom interval"), version=1)
+    await query.edit_message_text(
+        f"Posting interval: {label}\n\n"
+        "Step 3 of 3 — Choose the First Post Time\n\n"
+        "Start as soon as possible, or choose a specific time in your selected timezone.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_mp_first_run_keyboard(),
+    )
+
+
+async def cb_mp_first_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    pm = _pm(context)
+    pm["first_run"] = "now"
+    pm.setdefault("tz_page", 0)
     await query.answer()
     await query.edit_message_text(
-        f"✅ Every *{value} {label}*\n\n"
-        "📅 When should the *first post* fire?\n"
-        "Type a time in `HH:MM` format (e.g. `09:00`), or type `now` to start immediately:",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=nav_keyboard(back_data=CB_BACK_MP_IU),
+        "🌍 Select the timezone that should be used for this posting schedule:",
+        reply_markup=_mp_tz_keyboard(pm["tz_page"]),
+    )
+    return MP_SET_TIMEZONE
+
+
+async def cb_mp_first_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await _edit(
+        query,
+        "Enter the first post time in 24-hour HH:MM format.\n"
+        "Example: 09:30. If that time has already passed today, the first post will be tomorrow.",
+        nav_keyboard(back_data=CB_BACK_MP_FR),
     )
     return MP_SET_FIRST_RUN
 
 
 async def recv_mp_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip().lower()
+    raw = (update.message.text or "").strip().lower()
     pm = _pm(context)
-    if text == "now":
+    if raw == "now":
         pm["first_run"] = "now"
     else:
-        t = _parse_hhmm(text)
-        if t is None:
+        parsed = _parse_hhmm(raw)
+        if parsed is None:
             await update.message.reply_text(
-                "⚠️ Enter a time in `HH:MM` format (e.g. `09:00`), or `now`.",
-                parse_mode=ParseMode.MARKDOWN,
+                "Invalid time. Enter HH:MM in 24-hour format, for example 09:30."
             )
             return MP_SET_FIRST_RUN
-        pm["first_run"] = t
+        pm["first_run"] = parsed
     pm.setdefault("tz_page", 0)
     await update.message.reply_text(
-        "🌍 *Select your timezone:*",
-        parse_mode=ParseMode.MARKDOWN,
+        "🌍 Select the timezone for this schedule:",
         reply_markup=_mp_tz_keyboard(pm["tz_page"]),
     )
     return MP_SET_TIMEZONE
 
 
 async def cb_mp_tz_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query    = update.callback_query
-    page_str = (query.data or "").replace(CB_MP_TZ_PAGE, "")
-    page     = int(page_str) if page_str.isdigit() else 0
+    query = update.callback_query
+    raw = (query.data or "").replace(CB_MP_TZ_PAGE, "", 1)
+    page = int(raw) if raw.isdigit() else 0
     _pm(context)["tz_page"] = page
     await query.answer()
     await query.edit_message_text(
-        "🌍 *Select your timezone:*",
-        parse_mode=ParseMode.MARKDOWN,
+        "🌍 Select the timezone for this schedule:",
         reply_markup=_mp_tz_keyboard(page),
     )
     return MP_SET_TIMEZONE
 
 
 async def cb_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query  = update.callback_query
+    query = update.callback_query
     tz_key = (query.data or "").replace("mptz:", "", 1)
     try:
         pytz.timezone(tz_key)
     except pytz.exceptions.UnknownTimeZoneError:
-        await query.answer("Unknown timezone — please choose from the list.", show_alert=True)
+        await query.answer("Unknown timezone. Please choose from the list.", show_alert=True)
         return MP_SET_TIMEZONE
     pm = _pm(context)
     pm["timezone"] = tz_key
     await query.answer()
-
     await query.edit_message_text(
-        "🗑 *Auto-Delete After Posting?*\n\n"
-        "Should the bot automatically delete each pool post after a set time?\n\n"
-        "Tap *Yes* to set a duration, or *No* to keep posts permanently.",
-        parse_mode=ParseMode.MARKDOWN,
+        "🗑 Automatically delete each published post?\n\n"
+        "Choose Yes to set a deletion delay, or No to keep posts permanently.",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✅ Yes", callback_data=CB_MP_AD_YES),
-                InlineKeyboardButton("❌ No",  callback_data=CB_MP_AD_NO),
+                InlineKeyboardButton("No, keep posts", callback_data=CB_MP_AD_NO),
             ],
             [InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MP_TZ)],
+            [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
         ]),
     )
     return MP_AUTO_DELETE
 
 
 def _mp_summary_text(pm: dict) -> str:
-    chat_id   = pm.get("mp_chat_id", "?")
-    value     = pm.get("interval_value", "?")
-    unit      = pm.get("interval_unit", "?")
+    title = escape_markdown(pm.get("mp_chat_title", str(pm.get("mp_chat_id", "?"))), version=1)
+    value = pm.get("interval_value", "?")
+    unit = pm.get("interval_unit", "?")
+    label = pm.get("interval_label") or f"{value} {unit}"
     first_run = pm.get("first_run", "?")
-    tz_key    = pm.get("timezone", "UTC")
-    tz_label  = next((lbl for k, lbl in TIMEZONES if k == tz_key), tz_key)
-    first_run_display = "Now (immediately)" if first_run == "now" else first_run
-    ad_hours  = pm.get("mp_ad_hours")
-    ad_line   = f"`{ad_hours}h` after posting" if ad_hours else "OFF"
+    tz_key = pm.get("timezone", "UTC")
+    tz_label = next((lbl for key, lbl in TIMEZONES if key == tz_key), tz_key)
+    first_run_display = "As soon as possible" if first_run == "now" else first_run
+    ad_hours = pm.get("mp_ad_hours")
+    ad_line = f"{ad_hours} hour(s) after publishing" if ad_hours else "Off"
     return (
-        f"📋 *Schedule Summary*\n\n"
-        f"🗂 Chat: `{chat_id}`\n"
-        f"⏱ Interval: every `{value} {unit}`\n"
-        f"🕐 First post: `{first_run_display}`\n"
-        f"🌍 Timezone: `{tz_label}`\n"
-        f"🗑 Auto-delete: {ad_line}\n\n"
-        "Tap *✅ Confirm* to activate:"
+        "📋 Schedule Review\n\n"
+        f"Destination: {title}\n"
+        f"Posting interval: {label}\n"
+        f"First post: {first_run_display}\n"
+        f"Timezone: {tz_label}\n"
+        f"Auto-delete: {ad_line}\n\n"
+        "Review these settings. Confirm to activate the schedule."
     )
 
 
 async def cb_mp_ad_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "⏳ *Auto-Delete Duration*\n\n"
-        "How many hours after posting should the message be deleted?\n"
-        "Enter a number (decimals OK, e.g. `24` or `1.5`):",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=nav_keyboard(back_data=CB_BACK_MP_TZ),
+    await _edit(
+        query,
+        "⏳ Auto-Delete Delay\n\n"
+        "How many hours after publishing should each post be deleted?\n"
+        "Enter a positive number. Decimals are supported: 1.5 means 90 minutes.",
+        nav_keyboard(back_data=CB_BACK_MP_TZ),
     )
     return MP_AUTO_DELETE
 
 
 async def recv_mp_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip().replace(",", ".")
+    raw = (update.message.text or "").strip().replace(",", ".")
     try:
-        val = float(text)
-        if val <= 0:
+        value = float(raw)
+        if value <= 0 or value > 8760:
             raise ValueError
     except ValueError:
         await update.message.reply_text(
-            "⚠️ Enter a positive number (e.g. `24` for 24 hours, `1.5` for 90 minutes).",
-            parse_mode=ParseMode.MARKDOWN,
+            "Enter a number greater than 0 and no more than 8760 hours. Example: 24 or 1.5."
         )
         return MP_AUTO_DELETE
     pm = _pm(context)
-    pm["mp_ad_hours"] = val
+    pm["mp_ad_hours"] = value
     await update.message.reply_text(
         _mp_summary_text(pm),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data=CB_MP_CONFIRM),
-                InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MP_TZ),
-            ],
-        ]),
+        reply_markup=confirm_keyboard(CB_MP_CONFIRM, CB_BACK_MP_TZ),
     )
     return MP_CONFIRM
 
@@ -1684,16 +2034,10 @@ async def cb_mp_ad_no(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     query = update.callback_query
     pm = _pm(context)
     pm.pop("mp_ad_hours", None)
-    await query.answer()
-    await query.edit_message_text(
+    await _edit(
+        query,
         _mp_summary_text(pm),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data=CB_MP_CONFIRM),
-                InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MP_TZ),
-            ],
-        ]),
+        confirm_keyboard(CB_MP_CONFIRM, CB_BACK_MP_TZ),
     )
     return MP_CONFIRM
 
@@ -1705,8 +2049,7 @@ async def cb_back_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     page = pm.get("tz_page", 0)
     await query.answer()
     await query.edit_message_text(
-        "🌍 *Select your timezone:*",
-        parse_mode=ParseMode.MARKDOWN,
+        "🌍 Select the timezone for this schedule:",
         reply_markup=_mp_tz_keyboard(page),
     )
     return MP_SET_TIMEZONE
@@ -1715,20 +2058,56 @@ async def cb_back_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from database import build_scheduled_post, insert_post
 
-    query   = update.callback_query
-    pm      = _pm(context)
-    user_id: int = query.from_user.id  # type: ignore[union-attr]
-    chat_id  = pm.get("mp_chat_id")
-    value    = pm.get("interval_value")
-    unit     = pm.get("interval_unit")
+    query = update.callback_query
+    pm = _pm(context)
+    user_id = query.from_user.id
+    chat_id = pm.get("mp_chat_id")
+    value = pm.get("interval_value")
+    unit = pm.get("interval_unit")
     first_run = pm.get("first_run")
-    tz_str   = pm.get("timezone", "UTC")
+    tz_str = pm.get("timezone", "UTC")
 
     if not all([chat_id, value, unit, first_run]):
-        await query.answer("Missing data — please start again.", show_alert=True)
+        await query.answer("The setup is incomplete. Please start again.", show_alert=True)
         return MP_MENU
 
-    await query.answer("Saving…")
+    await query.answer("Checking and saving…")
+    try:
+        db = await get_db()
+        pool = await db[COL_MEDIA_POOLS].find_one(
+            {"user_id": user_id, "chat_id": chat_id}
+        )
+        if not pool or not pool.get("items"):
+            _clear_mp(context)
+            await query.edit_message_text(
+                "This pool has no content, so no schedule was created. Add content first.",
+                reply_markup=_mp_menu_keyboard(),
+            )
+            return MP_MENU
+
+        existing = await db[COL_POSTS].find_one({
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "recurrence.type": "pool",
+            "status": "pending",
+        })
+        if existing:
+            _clear_mp(context)
+            await query.edit_message_text(
+                "An active Media Pool schedule already exists for this destination.\n\n"
+                "To avoid duplicate posts, no second schedule was created. "
+                "You can manage the existing schedule from My Posts.",
+                reply_markup=_mp_menu_keyboard(),
+            )
+            return MP_MENU
+    except Exception:
+        logger.exception("Could not validate Media Pool before schedule creation")
+        await query.edit_message_text(
+            "The pool could not be checked right now. No schedule was created. Please try again.",
+            reply_markup=_mp_menu_keyboard(),
+        )
+        _clear_mp(context)
+        return MP_MENU
 
     try:
         zone = pytz.timezone(tz_str)
@@ -1739,14 +2118,18 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if first_run == "now":
         first_run_dt = datetime.now(tz=timezone.utc) + timedelta(minutes=1)
     else:
-        h, mi = int(first_run[:2]), int(first_run[3:])
-        candidate = now_local.replace(hour=h, minute=mi, second=0, microsecond=0)
+        hour, minute = int(first_run[:2]), int(first_run[3:])
+        candidate = now_local.replace(
+            hour=hour,
+            minute=minute,
+            second=0,
+            microsecond=0,
+        )
         if candidate <= now_local:
             candidate += timedelta(days=1)
         first_run_dt = candidate.astimezone(timezone.utc)
 
-    ad_hours = pm.get("mp_ad_hours")
-
+    auto_delete_hours = pm.get("mp_ad_hours")
     try:
         doc = build_scheduled_post(
             user_id=user_id,
@@ -1756,59 +2139,56 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             interval_unit=unit,
             next_run_at=first_run_dt,
             timezone_str=tz_str,
-            auto_delete_enabled=bool(ad_hours),
-            auto_delete_after_hours=ad_hours,
+            auto_delete_enabled=bool(auto_delete_hours),
+            auto_delete_after_hours=auto_delete_hours,
         )
         post_id = await insert_post(doc)
-    except Exception as exc:
-        logger.exception("media pool schedule save failed: %s", exc)
-        _clear_mp(context)
-        await chat_cleanup.cleanup(context, query.message.chat_id, keep_message_id=query.message.message_id)
+    except Exception:
+        logger.exception("Media Pool schedule save failed for chat_id=%s", chat_id)
         await query.edit_message_text(
-            f"❌ Failed to save schedule: `{str(exc).replace(chr(96), chr(39))}`",
-            parse_mode=ParseMode.MARKDOWN,
+            "The schedule could not be saved. No changes were made. Please try again.",
             reply_markup=_mp_menu_keyboard(),
         )
+        _clear_mp(context)
         return MP_MENU
 
-    tz_label = next((lbl for k, lbl in TIMEZONES if k == tz_str), tz_str)
-    first_run_display = "Now (in ~1 min)" if first_run == "now" else first_run
+    title = escape_markdown(pm.get("mp_chat_title", str(chat_id)), version=1)
+    tz_label = next((label for key, label in TIMEZONES if key == tz_str), tz_str)
+    first_display = "As soon as possible (about 1 minute)" if first_run == "now" else first_run
+    interval_label = pm.get("interval_label") or f"{value} {unit}"
     _clear_mp(context)
-    # ── Cleanup wizard messages, keep success message ──
-    await chat_cleanup.cleanup(context, query.message.chat_id, keep_message_id=query.message.message_id)
+    await chat_cleanup.cleanup(
+        context,
+        query.message.chat_id,
+        keep_message_id=query.message.message_id,
+    )
     await query.edit_message_text(
-        f"✅ *Posting schedule saved!*\n\n"
-        f"🗂 Chat: `{chat_id}`\n"
-        f"⏱ Every `{value} {unit}`, first at `{first_run_display}` ({tz_label})\n"
-        f"🆔 Schedule ID: `{post_id}`\n\n"
-        "The bot will now pick a random item from this pool at each interval. "
-        "Make sure you have items added via *Add Item to Pool*.",
+        "✅ Media Pool schedule activated.\n\n"
+        f"Destination: {title}\n"
+        f"Interval: every {interval_label}\n"
+        f"First post: {first_display}\n"
+        f"Timezone: {tz_label}\n"
+        f"Auto-delete: {'Off' if not auto_delete_hours else str(auto_delete_hours) + ' hour(s)'}\n\n"
+        "The bot will choose a random item that has not yet been published in the current cycle.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_mp_menu_keyboard(),
     )
     return MP_MENU
 
 
-# ── Back-navigation for interval wizard ──
-
 async def cb_back_mp_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     _clear_mp(context)
-    await _edit(query,
-        "🎲 *Media Pool — Random Shuffler*\n\nWhat would you like to do?",
-        _mp_menu_keyboard(),
-    )
+    await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
     return MP_MENU
 
 
 async def cb_back_mp_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "⏱ *How often should the bot post from this pool?*\n"
-        "Type a positive number (e.g. `6` for every 6 hours):",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=nav_keyboard(back_data=CB_BACK_MP_MENU),
+    await _edit(
+        query,
+        "Choose a common posting interval, or select Custom to enter your own interval.",
+        _mp_quick_interval_keyboard(),
     )
     return MP_SET_INTERVAL_VALUE
 
@@ -1816,52 +2196,60 @@ async def cb_back_mp_interval_unit(update: Update, context: ContextTypes.DEFAULT
 async def cb_back_mp_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     pm = _pm(context)
-    value = pm.get("interval_value", "?")
-    unit  = pm.get("interval_unit", "?")
-    await query.answer()
-    await query.edit_message_text(
-        f"✅ Every *{value} {unit}*\n\nNow choose the time unit:",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_mp_interval_unit_keyboard(),
+    label = escape_markdown(pm.get("interval_label", "custom interval"), version=1)
+    await _edit(
+        query,
+        f"Posting interval: {label}\n\nChoose when the first post should be published.",
+        _mp_first_run_keyboard(),
     )
-    return MP_SET_INTERVAL_UNIT
+    return MP_SET_FIRST_RUN
 
-
-# ── View Pool Stats ──
 
 async def cb_mp_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    user_id: int = query.from_user.id  # type: ignore[union-attr]
-
+    user_id = query.from_user.id
     try:
-        db     = await get_db()
-        cursor = db[COL_MEDIA_POOLS].find({"user_id": user_id})
-        docs   = await cursor.to_list(length=50)
-    except Exception as exc:
-        await query.edit_message_text(f"❌ Error: `{exc}`", parse_mode=ParseMode.MARKDOWN)
-        return MP_MENU
-
-    if not docs:
+        db = await get_db()
+        cursor = db[COL_MEDIA_POOLS].find({"user_id": user_id}).sort("updated_at", -1)
+        pools = await cursor.to_list(length=50)
+        groups = await list_groups_for_user(user_id)
+    except Exception:
+        logger.exception("Could not load Media Pool overview for user_id=%s", user_id)
         await query.edit_message_text(
-            "🎲 *Media Pools*\n\nNo pools yet. Add items to get started.",
-            parse_mode=ParseMode.MARKDOWN,
+            "The pool overview is unavailable right now. Please try again.",
             reply_markup=_mp_menu_keyboard(),
         )
         return MP_MENU
 
-    lines = ["🎲 *Your Media Pools*\n"]
-    for doc in docs:
-        items    = doc.get("items", [])
-        total    = len(items)
-        unposted = sum(1 for i in items if not i.get("posted", False))
-        lines.append(
-            f"🗂 Chat `{doc['chat_id']}`\n"
-            f"  📦 Total items: `{total}`\n"
-            f"  🔄 Un-posted:   `{unposted}`\n"
-            f"  ✅ Posted:      `{total - unposted}`\n"
+    if not pools:
+        await query.edit_message_text(
+            "📊 Pool Overview\n\nNo content pools yet. Choose Add Content to create your first pool.",
+            reply_markup=_mp_menu_keyboard(),
         )
+        return MP_MENU
 
+    title_map = {
+        int(group["chat_id"]): group.get("title") or str(group["chat_id"])
+        for group in groups
+    }
+    lines = ["📊 Pool Overview", ""]
+    for pool in pools:
+        items = pool.get("items", [])
+        total = len(items)
+        remaining = sum(1 for item in items if not item.get("posted", False))
+        title = escape_markdown(
+            title_map.get(int(pool["chat_id"])) or f"Chat {pool['chat_id']}",
+            version=1,
+        )
+        lines.extend([
+            f"🗂 {title}",
+            f"Total items: {total}",
+            f"Remaining this cycle: {remaining}",
+            f"Published this cycle: {total - remaining}",
+            "",
+        ])
+    lines.append("When Remaining reaches zero, the next scheduled run starts a new cycle.")
     await query.edit_message_text(
         "\n".join(lines),
         parse_mode=ParseMode.MARKDOWN,
@@ -1870,95 +2258,221 @@ async def cb_mp_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return MP_MENU
 
 
-# ── Reset Pool ──
+async def _mp_load_manage_data(user_id: int) -> tuple[list[dict], dict[int, str]]:
+    db = await get_db()
+    pools = await db[COL_MEDIA_POOLS].find({"user_id": user_id}).to_list(length=100)
+    groups = await list_groups_for_user(user_id)
+    title_map = {
+        int(group["chat_id"]): group.get("title") or str(group["chat_id"])
+        for group in groups
+    }
+    return pools, title_map
+
+
+async def _mp_show_manage_picker(query: Any, context: ContextTypes.DEFAULT_TYPE, page: int = 0) -> int:
+    user_id = query.from_user.id
+    try:
+        pools, title_map = await _mp_load_manage_data(user_id)
+    except Exception:
+        logger.exception("Could not load Media Pool management list")
+        await query.answer("Unable to load your pools. Please try again.", show_alert=True)
+        return MP_MANAGE_CHAT
+
+    if not pools:
+        await _edit(
+            query,
+            "🛠 Manage Pool\n\nYou do not have any content pools yet. Add content first.",
+            _mp_menu_keyboard(),
+        )
+        return MP_MENU
+
+    pools.sort(key=lambda pool: (title_map.get(int(pool["chat_id"])) or str(pool["chat_id"])).casefold())
+    total = len(pools)
+    page = max(0, min(page, (total - 1) // _MP_POOL_PAGE_SIZE))
+    await _edit(
+        query,
+        "🛠 Manage Pool\n\nSelect the pool you want to manage. Changes will affect only the selected group or channel.",
+        _mp_manage_picker_keyboard(pools, title_map, page),
+    )
+    return MP_MANAGE_CHAT
+
+
+async def cb_mp_manage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await _mp_show_manage_picker(update.callback_query, context)
+
+
+async def cb_mp_manage_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    raw = (query.data or "").replace(CB_MP_MANAGE_PAGE, "", 1)
+    page = int(raw) if raw.isdigit() else 0
+    return await _mp_show_manage_picker(query, context, page)
+
+
+async def _mp_manage_summary(user_id: int, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    db = await get_db()
+    pool = await db[COL_MEDIA_POOLS].find_one({"user_id": user_id, "chat_id": chat_id})
+    if not pool:
+        raise LookupError("This Media Pool no longer exists.")
+    groups = await list_groups_for_user(user_id)
+    title_map = {
+        int(group["chat_id"]): group.get("title") or str(group["chat_id"])
+        for group in groups
+    }
+    title = escape_markdown(
+        title_map.get(chat_id) or f"Chat {chat_id}",
+        version=1,
+    )
+    items = pool.get("items", [])
+    total = len(items)
+    remaining = sum(1 for item in items if not item.get("posted", False))
+    text = (
+        f"🗂 {title}\n\n"
+        f"Total items: {total}\n"
+        f"Remaining this cycle: {remaining}\n"
+        f"Published this cycle: {total - remaining}\n\n"
+        "Choose an action for this pool only."
+    )
+    return text, _mp_manage_actions_keyboard()
+
+
+async def cb_mp_manage_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    raw = (query.data or "").replace(CB_MP_MANAGE_PICK, "", 1)
+    try:
+        chat_id = int(raw)
+        target_chat = await ensure_chat_access(query.get_bot(), chat_id, query.from_user.id)
+        text, keyboard = await _mp_manage_summary(query.from_user.id, chat_id)
+    except (ValueError, ChatAccessError, LookupError) as exc:
+        await query.answer(str(exc) or "Invalid pool selection.", show_alert=True)
+        return MP_MANAGE_CHAT
+    except Exception:
+        logger.exception("Could not open Media Pool details")
+        await query.answer("Could not load this pool. Please try again.", show_alert=True)
+        return MP_MANAGE_CHAT
+
+    pm = _pm(context)
+    pm["mp_chat_id"] = chat_id
+    pm["mp_chat_title"] = target_chat.title or str(chat_id)
+    await _edit(query, text, keyboard)
+    return MP_MANAGE_ACTION
+
+
+async def cb_back_mp_manage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    _pm(context).pop("mp_chat_id", None)
+    _pm(context).pop("mp_chat_title", None)
+    return await _mp_show_manage_picker(query, context)
+
+
+async def cb_back_mp_manage_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    pm = _pm(context)
+    chat_id = pm.get("mp_chat_id")
+    if not chat_id:
+        return await _mp_show_manage_picker(query, context)
+    try:
+        text, keyboard = await _mp_manage_summary(query.from_user.id, int(chat_id))
+    except Exception:
+        logger.exception("Could not reload Media Pool details")
+        await query.answer("This pool is no longer available.", show_alert=True)
+        return await _mp_show_manage_picker(query, context)
+    await _edit(query, text, keyboard)
+    return MP_MANAGE_ACTION
+
 
 async def cb_mp_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await _edit(query,
-        "🔄 *Reset Pool*\n\n"
-        "This marks all items as *un-posted* so the cycle restarts.\n"
-        "No items will be deleted.\n\nProceed?",
-        InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Yes, reset",  callback_data=CB_MP_RESET_YES),
-                InlineKeyboardButton("⬅️ Back",        callback_data=CB_BACK_MP_MENU),
-            ],
-        ]),
+    pm = _pm(context)
+    title = escape_markdown(pm.get("mp_chat_title", "selected group"), version=1)
+    await _edit(
+        query,
+        f"🔄 Reset posting cycle for {title}?\n\n"
+        "All items will become available for random selection again. "
+        "No content will be deleted.",
+        _mp_manage_confirm_keyboard(CB_MP_RESET_YES),
     )
-    return MP_MENU
+    return MP_MANAGE_ACTION
 
 
 async def cb_mp_reset_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer("Resetting…")
-    user_id: int = query.from_user.id  # type: ignore[union-attr]
-
+    pm = _pm(context)
+    chat_id = pm.get("mp_chat_id")
+    if not chat_id:
+        await query.answer("Select a pool first.", show_alert=True)
+        return MP_MANAGE_CHAT
     try:
-        db     = await get_db()
-        pools  = await db[COL_MEDIA_POOLS].find({"user_id": user_id}).to_list(length=50)
-        count  = 0
-        for pool in pools:
-            await reset_media_pool(user_id, pool["chat_id"])
-            count += 1
-    except Exception as exc:
-        await query.edit_message_text(f"❌ Error: `{exc}`", parse_mode=ParseMode.MARKDOWN)
-        return MP_MENU
+        await reset_media_pool(query.from_user.id, int(chat_id))
+        text, keyboard = await _mp_manage_summary(query.from_user.id, int(chat_id))
+    except Exception:
+        logger.exception("Could not reset Media Pool cycle for chat_id=%s", chat_id)
+        await query.answer("The pool could not be reset. Please try again.", show_alert=True)
+        return MP_MANAGE_ACTION
+    await _edit(query, "✅ Posting cycle reset.\n\n" + text, keyboard)
+    return MP_MANAGE_ACTION
 
-    await query.edit_message_text(
-        f"✅ Reset `{count}` pool(s). All items are un-posted again.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_mp_menu_keyboard(),
-    )
-    return MP_MENU
-
-
-# ── Clear Pool ──
 
 async def cb_mp_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await _edit(query,
-        "🗑 *Clear Pool*\n\n"
-        "⚠️ This will *permanently delete* all items from all your pools.\n"
-        "Are you sure?",
-        InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Yes, delete all", callback_data=CB_MP_CLEAR_YES),
-                InlineKeyboardButton("⬅️ Back",            callback_data=CB_BACK_MP_MENU),
-            ],
-        ]),
+    pm = _pm(context)
+    title = escape_markdown(pm.get("mp_chat_title", "selected group"), version=1)
+    await _edit(
+        query,
+        f"🗑 Clear the Media Pool for {title}?\n\n"
+        "This permanently deletes the content items in this one pool. "
+        "Any active random-post schedule for this destination will be paused. "
+        "Other groups and channels will not be affected.",
+        _mp_manage_confirm_keyboard(CB_MP_CLEAR_YES),
     )
-    return MP_MENU
+    return MP_MANAGE_ACTION
 
 
 async def cb_mp_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer("Clearing…")
-    user_id: int = query.from_user.id  # type: ignore[union-attr]
-
+    user_id = query.from_user.id
+    chat_id = _pm(context).get("mp_chat_id")
+    if not chat_id:
+        await query.answer("Select a pool first.", show_alert=True)
+        return MP_MANAGE_CHAT
     try:
-        db     = await get_db()
-        result = await db[COL_MEDIA_POOLS].delete_many({"user_id": user_id})
-        count  = result.deleted_count
-    except Exception as exc:
-        await query.edit_message_text(f"❌ Error: `{exc}`", parse_mode=ParseMode.MARKDOWN)
-        return MP_MENU
+        db = await get_db()
+        result = await db[COL_MEDIA_POOLS].delete_one({
+            "user_id": user_id,
+            "chat_id": int(chat_id),
+        })
+        await db[COL_POSTS].update_many(
+            {
+                "user_id": user_id,
+                "chat_id": int(chat_id),
+                "recurrence.type": "pool",
+                "status": "pending",
+            },
+            {
+                "$set": {
+                    "status": "paused",
+                    "updated_at": datetime.now(tz=timezone.utc),
+                }
+            },
+        )
+    except Exception:
+        logger.exception("Could not clear Media Pool for user_id=%s chat_id=%s", user_id, chat_id)
+        await query.answer("The pool could not be cleared. Please try again.", show_alert=True)
+        return MP_MANAGE_ACTION
 
-    await query.edit_message_text(
-        f"✅ Deleted `{count}` pool(s).",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_mp_menu_keyboard(),
+    _clear_mp(context)
+    message = (
+        "✅ This Media Pool has been cleared. Its pending random-post schedule has been paused."
+        if result.deleted_count
+        else "This Media Pool was already empty or no longer exists."
     )
+    await _edit(query, message, _mp_menu_keyboard())
     return MP_MENU
 
 
-# ── Back to MP menu ──
-
 async def cb_back_mp_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await _edit(query,
-        "🎲 *Media Pool — Random Shuffler*\n\nWhat would you like to do?",
-        _mp_menu_keyboard(),
-    )
+    _clear_mp(context)
+    await _edit(query, _mp_menu_text(), _mp_menu_keyboard())
     return MP_MENU
 
 
