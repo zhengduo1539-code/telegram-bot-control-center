@@ -1906,6 +1906,7 @@ def build_schedule_wizard() -> ConversationHandler:
             ],
             WIZARD_CONTENT: [
                 CallbackQueryHandler(cb_use_template, pattern=f"^{CB_USE_TEMPLATE}$"),
+                CallbackQueryHandler(cb_back_to_content, pattern=f"^{CB_BACK_TO_CONTENT}$"),
                 MessageHandler(
                     (filters.TEXT | filters.PHOTO | filters.VIDEO |
                      filters.Document.ALL | filters.AUDIO | filters.ANIMATION |
