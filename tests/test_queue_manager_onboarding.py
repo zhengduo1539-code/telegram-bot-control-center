@@ -357,7 +357,7 @@ def test_queue_cancel_command_uses_saved_language_and_returns_main_menu(monkeypa
         message = SimpleNamespace(
             chat_id=42,
             message_id=101,
-            reply_text=AsyncMock(),
+            reply_text=AsyncMock(return_value=SimpleNamespace(message_id=102)),
         )
         context = SimpleNamespace(
             user_data={
@@ -378,6 +378,8 @@ def test_queue_cancel_command_uses_saved_language_and_returns_main_menu(monkeypa
         assert "active_queue_manager" not in context.user_data
         assert "qwiz" not in context.user_data
         assert "ပယ်ဖျက်" in message.reply_text.await_args.args[0]
-        cleanup.assert_awaited_once()
+        cleanup.assert_awaited_once_with(
+            context, 42, keep_message_id=102
+        )
 
     asyncio.run(scenario())
