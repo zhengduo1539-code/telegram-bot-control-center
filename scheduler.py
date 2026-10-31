@@ -42,6 +42,7 @@ from database import (
     claim_queue_item,
     update_queue_item,
     set_queue_next_run,
+    cleanup_expired_queue_history,
     COL_POSTS,
     COL_MEDIA_POOLS,
 )
@@ -634,6 +635,16 @@ async def scheduler_tick(bot: Bot) -> None:
                 logger.exception("Failed to mark post %s as posted: %s", post_id, exc)
 
 
+async def cleanup_storage_history() -> None:
+    """Prune old terminal queue entries without touching active content."""
+    try:
+        removed = await cleanup_expired_queue_history()
+        if removed:
+            logger.info("Storage cleanup removed %d expired queue-history document(s).", removed)
+    except Exception:
+        logger.exception("Scheduled storage cleanup failed; it will retry at the next run.")
+
+
 # ---------------------------------------------------------------------------
 # Scheduler setup
 # ---------------------------------------------------------------------------
@@ -663,7 +674,17 @@ def setup_scheduler(bot: Bot, event_loop: Any = None) -> AsyncIOScheduler:
         coalesce=True,            # collapse missed fires into one
     )
 
+    scheduler.add_job(
+        cleanup_storage_history,
+        trigger="interval",
+        hours=24,
+        id="storage_retention_cleanup",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Scheduler configured — tick every %ds", SCHEDULER_INTERVAL_SECS
+        "Scheduler configured — tick every %ds; storage cleanup every 24h",
+        SCHEDULER_INTERVAL_SECS,
     )
     return scheduler

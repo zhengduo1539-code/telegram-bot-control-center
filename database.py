@@ -395,9 +395,12 @@ async def update_post_status(post_id: str, status: str) -> None:
     now = datetime.now(tz=timezone.utc)
     fields: dict = {"status": status, "updated_at": now}
     update: dict[str, Any] = {"$set": fields}
-    if status in ("pending", "paused"):
-        # Remove stale TTL dates left by older versions so a paused schedule
-        # cannot disappear while the user expects to resume it.
+    if status in ("posted", "failed"):
+        # Retain completed history for POST_TTL_DAYS, then let MongoDB TTL
+        # remove it. Recurring posts are not marked completed until stopped.
+        fields["expire_at"] = _post_expire_at()
+    else:
+        # Pending/paused posts must never expire while users may resume them.
         update["$unset"] = {"expire_at": ""}
     await db[COL_POSTS].update_one(
         {"_id": ObjectId(post_id)},
@@ -575,6 +578,33 @@ async def add_to_queue(user_id: int, chat_id: int, content: dict[str, Any]) -> s
 async def get_queue(user_id: int, chat_id: int) -> dict[str, Any] | None:
     db = await get_db()
     return await db[COL_QUEUE_SLOTS].find_one({"user_id": user_id, "chat_id": chat_id})
+
+
+async def cleanup_expired_queue_history(days: int = POST_TTL_DAYS) -> int:
+    """
+    Remove only completed queue entries older than the retention window.
+    Pending, sending, retryable, and otherwise active entries are preserved.
+    Queue documents, daily slots, and media-pool items are never deleted here.
+    """
+    if days < 1:
+        raise ValueError("Queue history retention must be at least one day.")
+    db = await get_db()
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+    result = await db[COL_QUEUE_SLOTS].update_many(
+        {},
+        {
+            "$pull": {
+                "contents": {
+                    "$or": [
+                        {"state": "posted", "posted_at": {"$lte": cutoff}},
+                        {"state": "failed", "failed_at": {"$lte": cutoff}},
+                    ]
+                }
+            },
+            "$set": {"updated_at": datetime.now(tz=timezone.utc)},
+        },
+    )
+    return result.modified_count
 
 
 async def get_due_queue_slots(now: datetime, limit: int = 100) -> list[dict[str, Any]]:
