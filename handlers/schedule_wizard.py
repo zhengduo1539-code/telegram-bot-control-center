@@ -50,6 +50,7 @@ from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.base import CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard, main_menu_keyboard
 from handlers.language import resolve_user_language
 from localization import translate as tr
+from schedule_wizard_localization import translate_schedule_wizard as sw_tr
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +79,13 @@ logger = logging.getLogger(__name__)
 ) = range(10, 28)
 
 WIZARD_TMPL_PICK = 28   # template picker during content step
+WIZARD_INTRO = 29       # guided introduction before the setup wizard
 
 # ---------------------------------------------------------------------------
 # Callback-data constants (all ≤ 64 bytes)
 # ---------------------------------------------------------------------------
 CB_SCHEDULE_NEW  = "action:schedule_new"
+CB_WIZARD_CONTINUE = "wizard:continue"
 CB_REC_ONCE      = "rec:once"
 CB_REC_INTERVAL  = "rec:interval"
 CB_REC_DOW       = "rec:dow"
@@ -454,19 +457,41 @@ async def _edit(query: Any, text: str, keyboard: InlineKeyboardMarkup) -> None:
 # Wizard entry
 # ---------------------------------------------------------------------------
 
+def _wizard_intro_keyboard(language: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(sw_tr(language, "continue"), callback_data=CB_WIZARD_CONTINUE),
+    ]])
+
+
 async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Entry point — triggered by 'Schedule New Post' button."""
+    """Show a short, localized introduction before starting Schedule New Post."""
     query = update.callback_query
     _clear(context)
-    _w(context)   # initialise empty wizard dict
+    _w(context)
     chat_cleanup.reset(context.application.bot_data, query.message.chat_id)
-    chat_cleanup.track(context.application.bot_data, query.message.chat_id, query.message.message_id)
+    chat_cleanup.track(
+        context.application.bot_data, query.message.chat_id, query.message.message_id
+    )
+    user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
+    await query.answer()
+    await query.edit_message_text(
+        sw_tr(language, "intro"),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_wizard_intro_keyboard(language),
+    )
+    return WIZARD_INTRO
 
-    user_id      = query.from_user.id  # type: ignore[union-attr]
+
+async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Continue from onboarding into the existing destination-selection flow."""
+    query = update.callback_query
+    user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
 
-    # A private-chat /start deep-link may carry the group that initiated setup.
-    # Consume it once, then re-check permissions at the point scheduling begins.
+    # A private-chat deep-link may carry the group that initiated setup.
+    # Consume it only after the user chooses Continue.
     launch_chat = context.user_data.pop("launch_chat", None)
     if isinstance(launch_chat, dict):
         try:
@@ -484,7 +509,7 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             w = _w(context)
             w["chat_id"] = launch_chat_id
             w["chat_title"] = selected_title
-            await query.answer("Group selected.")
+            await query.answer()
             await query.edit_message_text(
                 f"✅ {tr(language, 'private_setup_body', group=escape_markdown(selected_title, version=1))}\n\n"
                 f"{tr(language, 'schedule_content_title')}\n\n"
@@ -496,12 +521,12 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     bot_username = (await query.get_bot().get_me()).username
     groups = await list_groups_for_user(user_id)
-
     if groups:
+        shown = min(_CHAT_PAGE_SIZE, len(groups))
         await query.answer()
         await query.edit_message_text(
             f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
-            f"_(Showing {min(_CHAT_PAGE_SIZE, len(groups))} of {len(groups)} known chats)_",
+            f"_(Showing {shown} of {len(groups)} known chats)_",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
         )
@@ -1824,6 +1849,9 @@ def build_schedule_wizard() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(enter_wizard, pattern=f"^{CB_SCHEDULE_NEW}$")],
         states={
+            WIZARD_INTRO: [
+                CallbackQueryHandler(cb_wizard_continue, pattern=f"^{CB_WIZARD_CONTINUE}$"),
+            ],
             WIZARD_CHAT_ID: [
                 CallbackQueryHandler(cb_chat_pick,       pattern=r"^chat:pick:-?\d+$"),
                 CallbackQueryHandler(cb_chat_page,       pattern=r"^chat:page:\d+$"),
