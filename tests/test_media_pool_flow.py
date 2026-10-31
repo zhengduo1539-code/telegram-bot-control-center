@@ -414,7 +414,7 @@ def test_media_pool_and_queue_manager_use_separate_cancel_handlers():
     queue_conversation = media_pool.build_queue_manager()
     pool_conversation = media_pool.build_media_pool()
 
-    assert queue_conversation.fallbacks[0].callback.__name__ == "cmd_cancel"
+    assert queue_conversation.fallbacks[0].callback.__name__ == "cmd_qm_cancel"
     assert pool_conversation.fallbacks[0].callback.__name__ == "cmd_mp_cancel"
 
 
