@@ -1054,140 +1054,39 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 # ---------------------------------------------------------------------------
 
 async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    w = _w(context)
-    tz_str = w.get("timezone", "UTC")   # timezone is always set before this step now
     text = (update.message.text or "").strip()
+    tz_str = _w(context).get("timezone", "UTC")
 
-    dt = _parse_run_time(text, tz_str)
-    if dt is None:
+    try:
+        dt = parse_user_datetime(text, tz_str)
+    except ValueError:
         await update.message.reply_text(
-            "⚠️ Couldn't parse that. Use a future `HH:MM` or `DD/MM/YYYY HH:MM` time.\n"
-            "Example: `14:30` or `25/12/2025 09:00`",
-            parse_mode=ParseMode.MARKDOWN,
+            "⚠️ Couldn't parse that. Use a future HH:MM or DD/MM/YYYY HH:MM time.\n"
+            "Example: 14:30 or 25/12/2025 09:00",
         )
         return WIZARD_FIRST_RUN
 
-    w["first_run"] = dt
-    w["first_run_raw"] = text
-    w.setdefault("time_window_enabled", False)
+    _w(context)["first_run"] = dt
+    _w(context)["first_run_raw"] = text
+    _w(context).setdefault("time_window_enabled", False)
+    language = context.user_data.get("language", "en")
     await update.message.reply_text(
-        f"✅ First run: `{text}` ({tz_str})\n\n"
-        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
+        f"✅ First run: {text} ({tz_str})\n\n{tr(language, 'max_runs_prompt')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
     )
     return WIZARD_MAX_RUNS
-
 
 # ---------------------------------------------------------------------------
 # Back to first run
 # ---------------------------------------------------------------------------
 
 async def cb_back_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Called from Max Runs back button — return to First Run screen."""
+    """Return to the First Run screen."""
     query = update.callback_query
-    await _edit(query,
-        f"{tr(context.user_data.get('language', 'en'), 'first_run_prompt')}\\n\\n"
-        "• `HH:MM` — today at this time\n"
-        "• `DD/MM/YYYY HH:MM` — specific date\n\n"
-        "Or tap *💡 Suggest Best Time* to see active hours for this chat.",
-        _first_run_keyboard(CB_BACK_TIMEZONE),
-    )
+    language = context.user_data.get("language", "en")
+    await _edit(query, tr(language, "first_run_prompt"), _first_run_keyboard(CB_BACK_TIMEZONE))
     return WIZARD_FIRST_RUN
-
-
-# ---------------------------------------------------------------------------
-# Step 4 — Smart scheduling suggestion
-# ---------------------------------------------------------------------------
-
-_MEDAL = ["🥇", "🥈", "🥉"]
-
-
-async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show top active hours for the chosen chat as tappable time buttons."""
-    query = update.callback_query
-    await query.answer()
-
-    chat_id = _w(context).get("chat_id")
-    results = await get_best_hours(chat_id, top_n=3) if chat_id else []
-
-    if not results:
-        await query.edit_message_text(
-            "💡 *Smart Scheduling*\n\n"
-            "⚠️ *Not enough data yet.*\n\n"
-            "The bot learns active hours by observing messages in the group. "
-            "Come back after the bot has been active there for a while.\n\n"
-            "For now, type the time manually:\n"
-            "• `HH:MM` — e.g. `09:00`\n"
-            "• `DD/MM/YYYY HH:MM` — e.g. `25/12/2025 09:00`",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN)],
-            ]),
-        )
-        return WIZARD_FIRST_RUN
-
-    total = sum(r["count"] for r in results)
-
-    def _label(count: int) -> str:
-        pct = count / total * 100 if total else 0
-        if pct >= 40:
-            return "high activity"
-        if pct >= 20:
-            return "good activity"
-        return "moderate activity"
-
-    lines = []
-    btn_rows: list[list[InlineKeyboardButton]] = []
-    for i, r in enumerate(results):
-        h = r["hour"]
-        time_str = f"{h:02d}:00"
-        medal = _MEDAL[i] if i < 3 else "•"
-        lines.append(f"{medal} *{time_str}* — {_label(r['count'])} ({r['count']} msgs)")
-        btn_rows.append([InlineKeyboardButton(
-            f"{medal} {time_str}",
-            callback_data=f"{CB_SMART_PICK_PREFIX}{time_str}",
-        )])
-
-    btn_rows.append([InlineKeyboardButton("✏️ Enter custom time", callback_data=CB_BACK_FIRST_RUN)])
-
-    await query.edit_message_text(
-        "💡 *Suggested Best Times*\n\n"
-        "Based on message activity in this chat:\n\n" +
-        "\n".join(lines) +
-        "\n\nTap a time to use it, or enter a custom time:",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup(btn_rows),
-    )
-    return WIZARD_FIRST_RUN
-
-
-async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User tapped a suggested time — save it and move to timezone step."""
-    query = update.callback_query
-    time_str = (query.data or "").replace(CB_SMART_PICK_PREFIX, "", 1)  # "HH:MM"
-
-    w = _w(context)
-    tz_str = w.get("timezone", "UTC")
-    dt = _parse_run_time(time_str, tz_str)
-    if dt is None:
-        await query.answer("Could not parse time — please enter manually.", show_alert=True)
-        return WIZARD_FIRST_RUN
-
-    w["first_run"] = dt
-    w["first_run_raw"] = time_str
-    w.setdefault("time_window_enabled", False)
-
-    tz_str = w.get("timezone", "UTC")
-    await query.answer()
-    await query.edit_message_text(
-        f"✅ First run: `{time_str}` ({tz_str})\n\n"
-        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(),
-    )
-    return WIZARD_MAX_RUNS
-
 
 # ---------------------------------------------------------------------------
 # Step 5 — Timezone
