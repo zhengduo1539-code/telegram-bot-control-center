@@ -111,9 +111,11 @@ async def handle_language_choice(
         translate(language, "lang_saved"),
         reply_markup=ReplyKeyboardRemove(),
     )
+    from handlers.base import main_menu_keyboard
+
     await message.reply_text(
         translate(language, "menu_title"),
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=main_menu_keyboard(context.bot, user.id, language),
     )
 
 
