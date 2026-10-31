@@ -1599,6 +1599,7 @@ async def _mp_reply_or_edit(
 async def enter_media_pool(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     language = await resolve_user_language(context, query.from_user.id)
+    context.user_data["active_media_pool"] = True
     _clear_mp(context)
     chat_cleanup.reset(context.application.bot_data, query.message.chat_id)
     chat_cleanup.track(
@@ -2329,6 +2330,7 @@ async def cb_back_mp_first_run(update: Update, context: ContextTypes.DEFAULT_TYP
 async def cb_mp_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     language = await resolve_user_language(context, query.from_user.id)
+    context.user_data.pop("active_media_pool", None)
     _clear_mp(context)
     await query.answer()
     await query.edit_message_text(
@@ -2643,6 +2645,39 @@ async def cb_back_mp_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 # ── Cancel (with full message cleanup) ──
 
+async def cmd_mp_cancel(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    """Handle /cancel inside Media Pool using the user's selected language."""
+    message = update.effective_message
+    user = update.effective_user
+    language = (
+        await resolve_user_language(context, user.id)
+        if user is not None
+        else "en"
+    )
+    context.user_data.pop("active_media_pool", None)
+    _clear_mp(context)
+    if message is None:
+        return ConversationHandler.END
+    chat_id = update.effective_chat.id if update.effective_chat else message.chat_id
+    await chat_cleanup.cleanup(
+        context,
+        chat_id,
+        keep_message_id=message.message_id,
+    )
+    await message.reply_text(
+        mp_tr(language, "cancelled"),
+        reply_markup=main_menu_keyboard(
+            bot=context.bot,
+            user_id=user.id if user is not None else None,
+            language=language,
+        ),
+    )
+    return ConversationHandler.END
+
+
 async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     user_id = query.from_user.id if query.from_user else None
@@ -2651,7 +2686,10 @@ async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if user_id is not None
         else "en"
     )
-    is_media_pool = "mpwiz" in context.user_data
+    is_media_pool = (
+        context.user_data.pop("active_media_pool", False)
+        or "mpwiz" in context.user_data
+    )
     await query.answer()
     _clear(context)
     _clear_mp(context)
@@ -2766,7 +2804,7 @@ def build_queue_manager() -> ConversationHandler:
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", cmd_cancel),
+            CommandHandler("cancel", cmd_mp_cancel),
             CallbackQueryHandler(cb_cancel_local, pattern=f"^{CB_CANCEL}$"),
         ],
         allow_reentry=True,
