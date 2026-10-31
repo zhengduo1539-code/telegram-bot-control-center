@@ -24,6 +24,7 @@ from typing import Any
 import pytz
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.constants import ParseMode
+from telegram.helpers import escape_markdown
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -453,6 +454,97 @@ async def enter_queue_manager(update: Update, context: ContextTypes.DEFAULT_TYPE
         "3. The bot fires each piece of content at its assigned time",
         _qm_menu_keyboard(),
     )
+    return QM_MENU
+
+
+async def cb_qm_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show a concise overview of this user's daily queues and item states."""
+    query = update.callback_query
+    if query is None or query.from_user is None:
+        return QM_MENU
+
+    user_id = query.from_user.id
+    try:
+        db = await get_db()
+        cursor = (
+            db[COL_QUEUE_SLOTS]
+            .find({"user_id": user_id})
+            .sort("updated_at", -1)
+            .limit(5)
+        )
+        queues = await cursor.to_list(length=5)
+        groups = await list_groups_for_user(user_id)
+    except Exception:
+        logger.exception("Failed to load daily queues for user_id=%s", user_id)
+        await query.edit_message_text(
+            "⚠️ Unable to load your queues right now. Please try again.",
+            reply_markup=_qm_menu_keyboard(),
+        )
+        return QM_MENU
+
+    if not queues:
+        await _edit(
+            query,
+            "📭 *No Daily Queues Yet*\n\n"
+            "Set daily posting slots first, then add content to the queue.",
+            _qm_menu_keyboard(),
+        )
+        return QM_MENU
+
+    group_names = {
+        int(group.get("chat_id")): str(group.get("title") or group.get("chat_id"))
+        for group in groups
+        if group.get("chat_id") is not None
+    }
+
+    lines = ["👁 *Your Daily Queues*", ""]
+    for index, queue in enumerate(queues, start=1):
+        chat_id = queue.get("chat_id")
+        title = group_names.get(int(chat_id), f"Chat {chat_id}") if chat_id is not None else "Unknown chat"
+        slots = queue.get("slots") or []
+        timezone_name = str(queue.get("timezone") or "UTC")
+        items = queue.get("contents") or []
+
+        counts = {"pending": 0, "sending": 0, "posted": 0, "failed": 0}
+        for item in items:
+            state = str(item.get("state") or ("posted" if item.get("posted") else "pending")).lower()
+            if state in ("queued", "pending"):
+                counts["pending"] += 1
+            elif state in counts:
+                counts[state] += 1
+
+        lines.extend([
+            f"{index}. *{escape_markdown(title, version=1)}*",
+            f"🆔 Chat ID: `{chat_id}`",
+            f"🕒 Slots: `{escape_markdown(', '.join(str(slot) for slot in slots) or 'Not set', version=1)}`",
+            f"🌍 Timezone: *{escape_markdown(timezone_name, version=1)}*",
+            f"📦 Pending: {counts['pending']}  ⏳ Sending: {counts['sending']}",
+            f"✅ Posted: {counts['posted']}  ❌ Failed: {counts['failed']}",
+        ])
+
+        recent_items = items[-2:]
+        for item in recent_items:
+            state = str(item.get("state") or ("posted" if item.get("posted") else "pending")).lower()
+            status_icon = {
+                "pending": "🕓", "queued": "🕓", "sending": "⏳",
+                "posted": "✅", "failed": "❌",
+            }.get(state, "•")
+            preview = str(item.get("text") or "").replace("\n", " ").strip()
+            if not preview:
+                media_type = str(item.get("media_type") or "media").replace("_", " ").title()
+                preview = f"[{media_type}]"
+            if len(preview) > 54:
+                preview = preview[:51] + "..."
+            lines.append(
+                f"  {status_icon} {escape_markdown(preview, version=1)}"
+            )
+        if index < len(queues):
+            lines.append("")
+
+    if len(queues) == 5:
+        lines.extend(["", "_Showing the 5 most recently updated queues._"])
+
+    await _edit(query, "\n".join(lines), _qm_menu_keyboard())
     return QM_MENU
 
 
