@@ -265,8 +265,10 @@ def test_media_pool_conversation_registers_group_and_management_states():
 def test_media_pool_catalog_covers_all_twenty_languages_with_matching_keys():
     assert set(TRANSLATIONS) == set(LANGUAGES)
     assert len(TRANSLATIONS) == 20
-    expected = set(_KEYS)
-    assert len(expected) == len(_KEYS)
+    expected = set(_KEYS) | {
+        key for extra_catalog in _EXTRA_ROWS.values() for key in extra_catalog
+    }
+    assert len(expected) == len(_KEYS) + len(_EXTRA_ROWS["en"])
     for language, catalog in TRANSLATIONS.items():
         assert set(catalog) == expected, language
         assert all(isinstance(value, str) and value.strip() for value in catalog.values())
