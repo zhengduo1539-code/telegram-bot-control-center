@@ -1458,8 +1458,8 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w["tw_end"]   = None
     if w.get("auto_delete"):
         await _edit(query,
-            "🗑 *Auto-Delete — After how many hours?*\n\n"
-            "Type a positive number (decimals OK, e.g. `24` or `0.5`):",
+            "🗑 *Auto-Delete — When should the post be deleted?*\n\n"
+            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
             nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
