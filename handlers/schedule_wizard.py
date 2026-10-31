@@ -1472,8 +1472,8 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
         await _edit(query,
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number (e.g. `12`):",
+            "📌 *Auto-Pin — Unpin after how long?*\n\n"
+            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
             nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_AP_HOURS
@@ -1544,8 +1544,8 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w["auto_pin"]:
         await update.message.reply_text(
             f"✅ Window: `{start}` → `{parsed}`\n\n"
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number (e.g. `12`):",
+            "📌 *Auto-Pin — Unpin after how long?*\n\n"
+            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=nav_keyboard(back_data=CB_BACK_TW),
         )
@@ -1594,8 +1594,8 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
         await _edit(query,
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number (e.g. `12`):",
+            "📌 *Auto-Pin — Unpin after how long?*\n\n"
+            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
             nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_AP_HOURS
@@ -1658,14 +1658,13 @@ async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    try:
-        val = float(update.message.text.strip())
-        if val <= 0:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("⚠️ Please enter a positive number, e.g. `12`.", parse_mode=ParseMode.MARKDOWN)
+    raw = (update.message.text or "").strip()
+    val = _parse_auto_delete_duration(raw)
+    if val is None:
+        await update.message.reply_text("⚠️ Enter `5 minutes` or more, e.g. `5 minutes` or `2 hours`.", parse_mode=ParseMode.MARKDOWN)
         return WIZARD_AP_HOURS
     _w(context)["ap_hours"] = val
+    _w(context)["ap_duration_label"] = raw
     return await _show_summary_from_message(update, context)
 
 
@@ -1688,7 +1687,7 @@ def _build_summary(w: dict[str, Any]) -> str:
 
     ad  = f"`{w.get('ad_duration_label', str(w.get('ad_hours')) + ' hours')}`" if w.get('auto_delete') else 'OFF'
     sd  = f"`{w.get('sd_secs')}s`"   if w.get("self_destruct") else "OFF"
-    ap  = f"`{w.get('ap_hours')}h`"  if w.get("auto_pin")      else "OFF"
+    ap  = f"`{w.get('ap_duration_label', str(w.get('ap_hours')) + ' hours')}`"  if w.get("auto_pin") else "OFF"
 
     max_r = w.get("max_runs")
     max_line = f"`{max_r}` runs" if max_r else "Unlimited"

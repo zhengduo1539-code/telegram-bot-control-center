@@ -96,6 +96,7 @@ QM_CONFIRM_SLOTS = 110
 QM_INTRO = 111
 QM_TEMPLATE_PICK = 112
 QM_AUTO_DELETE = 113
+QM_AUTO_PIN = 114
 
 (
     MP_MENU,
@@ -112,6 +113,7 @@ MP_MANAGE_CHAT = 209
 MP_MANAGE_ACTION = 210
 MP_INTRO = 211
 MP_TEMPLATE_PICK = 212
+MP_AUTO_PIN = 213
 
 # ---------------------------------------------------------------------------
 # Callback-data constants  (all ≤ 64 bytes)
@@ -129,7 +131,7 @@ CB_QM_CONTINUE     = "qm:intro:continue"
 CB_QM_CONFIRM_SLOTS = "qm:slots:confirm"
 CB_QM_CONFIRM_ADD  = "qm:confirm_add"
 CB_QM_AD_BACK = "qm:auto_delete:back"
-CB_QM_AD_BACK = "qm:auto_delete:back"
+CB_QM_AP_BACK = "qm:auto_pin:back"
 CB_QM_USE_TEMPLATE = "qm:template:open"
 CB_QM_TMPL_PAGE = "qm:template:page:"
 CB_QM_TMPL_USE = "qm:template:use:"
@@ -193,6 +195,8 @@ CB_BACK_QM_AC_TZ        = "back:qm_ac_tz"        # back to Add Content timezone 
 CB_QM_TZ_PAGE = "qmtz:page:"
 CB_MP_AD_YES       = "mp:ad:yes"
 CB_MP_AD_NO        = "mp:ad:no"
+CB_MP_AP_YES       = "mp:ap:yes"
+CB_MP_AP_NO        = "mp:ap:no"
 
 CB_BACK_MP_MENU    = "back:mp_menu"
 CB_BACK_MP_IV      = "back:mp_iv"
@@ -1507,11 +1511,34 @@ async def recv_qm_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE
             return QM_AUTO_DELETE
         wizard["add_auto_delete_hours"] = hours
         label = raw
-    await update.message.reply_text(
-        "Queue confirmation\\nAuto-Delete: " + label + "\\n\\nTap Confirm to save this queue item.",
-        reply_markup=confirm_keyboard(CB_QM_CONFIRM_ADD, CB_BACK_QM_AC_TZ),
-    )
+    wizard["add_auto_delete_label"] = label
+    await update.message.reply_text("📌 Queue Auto-Pin (Optional)\\n\\nEnter `off` or a duration such as `5 minutes` or `2 hours`. Minimum: 5 minutes.", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=CB_QM_AP_BACK)]]))
+    return QM_AUTO_PIN
+
+
+async def recv_qm_auto_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
+    wizard = _w(context)
+    if raw.lower() == "off":
+        wizard.pop("add_auto_pin_hours", None)
+        label = "Off"
+    else:
+        hours = _parse_auto_delete_duration(raw)
+        if hours is None:
+            await update.message.reply_text("Enter 5 minutes or more, e.g. 5 minutes or 2 hours. Type off to disable Auto-Pin.")
+            return QM_AUTO_PIN
+        wizard["add_auto_pin_hours"] = hours
+        label = raw
+    await update.message.reply_text("Queue confirmation\\nAuto-Delete: " + wizard.get("add_auto_delete_label", "Off") + "\\nAuto-Pin / Remove Pin: " + label + "\\n\\nTap Confirm to save this queue item.", reply_markup=confirm_keyboard(CB_QM_CONFIRM_ADD, CB_BACK_QM_AC_TZ))
     return QM_CONFIRM_SLOT
+
+
+async def cb_qm_auto_pin_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    _w(context).pop("add_auto_pin_hours", None)
+    await query.answer()
+    await query.edit_message_text("Queue Auto-Delete (Optional)\\n\\nEnter `off` or a duration such as `5 minutes` or `2 hours`. Minimum: 5 minutes.", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=CB_QM_AD_BACK)]]))
+    return QM_AUTO_DELETE
 
 
 async def cb_qm_auto_delete_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1668,6 +1695,8 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         }
         if wizard.get("add_auto_delete_hours") is not None:
             payload["auto_delete_after_hours"] = wizard["add_auto_delete_hours"]
+        if wizard.get("add_auto_pin_hours") is not None:
+            payload["auto_pin_unpin_after_hours"] = wizard["add_auto_pin_hours"]
         if not payload["text"] and not payload["media_file_id"]:
             raise ValueError("Queue content is empty.")
         item_id = await add_to_queue(user_id, int(chat_id), payload)
@@ -2584,6 +2613,8 @@ def _mp_summary_text(pm: dict, language: str = "en") -> str:
         if ad_hours
         else mp_tr(language, "keep_posts")
     )
+    ap_hours = pm.get("mp_ap_hours")
+    ap_line = pm.get("mp_ap_duration_label", f"{ap_hours} hours") if ap_hours else "OFF"
     return mp_tr(
         language,
         "schedule_summary",
@@ -2592,7 +2623,7 @@ def _mp_summary_text(pm: dict, language: str = "en") -> str:
         first_post=first_run_display,
         timezone=tz_label,
         auto_delete=ad_line,
-    )
+    ) + "\\n📌 Auto-Pin / Remove Pin: " + ap_line
 
 
 def _mp_schedule_confirm_keyboard(language: str) -> InlineKeyboardMarkup:
@@ -2628,11 +2659,8 @@ async def recv_mp_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     pm = _pm(context)
     pm["mp_ad_hours"] = value
     pm["mp_ad_duration_label"] = raw
-    await update.message.reply_text(
-        _mp_summary_text(pm, language),
-        reply_markup=_mp_schedule_confirm_keyboard(language),
-    )
-    return MP_CONFIRM
+    await update.message.reply_text("📌 Auto-Pin / Remove Pin (Optional)\\n\\nPin each Media Pool post after it is sent?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Yes", callback_data=CB_MP_AP_YES), InlineKeyboardButton("No", callback_data=CB_MP_AP_NO)], [InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ)]]))
+    return MP_AUTO_PIN
 
 
 async def cb_mp_ad_no(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2640,11 +2668,36 @@ async def cb_mp_ad_no(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     language = await resolve_user_language(context, query.from_user.id)
     pm = _pm(context)
     pm.pop("mp_ad_hours", None)
-    await _edit(
-        query,
-        _mp_summary_text(pm, language),
-        _mp_schedule_confirm_keyboard(language),
-    )
+    await _edit(query, "📌 Auto-Pin / Remove Pin (Optional)\\n\\nPin each Media Pool post after it is sent?", InlineKeyboardMarkup([[InlineKeyboardButton("✅ Yes", callback_data=CB_MP_AP_YES), InlineKeyboardButton("No", callback_data=CB_MP_AP_NO)], [InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ)]]))
+    return MP_AUTO_PIN
+
+
+async def cb_mp_ap_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
+    await _edit(query, "📌 When should each Media Pool post be unpinned?\\n\\nEnter `5 minutes`, `30 minutes`, or `2 hours`. Minimum: 5 minutes.", _mp_nav_keyboard(language, back_data=CB_BACK_MP_TZ))
+    return MP_AUTO_PIN
+
+
+async def recv_mp_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
+    language = await resolve_user_language(context, update.effective_user.id)
+    value = _parse_auto_delete_duration(raw)
+    if value is None:
+        await update.message.reply_text("⚠️ Enter a valid duration: 5 minutes or more, e.g. 5 minutes or 2 hours.")
+        return MP_AUTO_PIN
+    pm = _pm(context)
+    pm["mp_ap_hours"] = value
+    pm["mp_ap_duration_label"] = raw
+    await update.message.reply_text(_mp_summary_text(pm, language), reply_markup=_mp_schedule_confirm_keyboard(language))
+    return MP_CONFIRM
+
+
+async def cb_mp_ap_no(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id)
+    _pm(context).pop("mp_ap_hours", None)
+    await _edit(query, _mp_summary_text(_pm(context), language), _mp_schedule_confirm_keyboard(language))
     return MP_CONFIRM
 
 
@@ -2653,6 +2706,7 @@ async def cb_back_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     language = await resolve_user_language(context, query.from_user.id)
     pm = _pm(context)
     pm.pop("mp_ad_hours", None)
+    pm.pop("mp_ap_hours", None)
     page = pm.get("tz_page", 0)
     await query.answer()
     await query.edit_message_text(
@@ -2755,6 +2809,8 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             timezone_str=tz_str,
             auto_delete_enabled=bool(auto_delete_hours),
             auto_delete_after_hours=auto_delete_hours,
+            auto_pin_enabled=bool(pm.get("mp_ap_hours")),
+            auto_pin_unpin_after_hours=pm.get("mp_ap_hours"),
         )
         await insert_post(doc)
     except Exception:
@@ -3341,6 +3397,10 @@ def build_queue_manager() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_auto_delete),
                 CallbackQueryHandler(cb_qm_auto_delete_back, pattern=f"^{CB_QM_AD_BACK}$"),
             ],
+            QM_AUTO_PIN: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_qm_auto_pin),
+                CallbackQueryHandler(cb_qm_auto_pin_back, pattern=f"^{CB_QM_AP_BACK}$"),
+            ],
             QM_ADD_TZ: [
                 CallbackQueryHandler(cb_qm_ac_tz,            pattern=qm_ac_tz_pattern),
                 CallbackQueryHandler(cb_qm_ac_tz_page,       pattern=qm_ac_tzp_pattern),
@@ -3445,6 +3505,13 @@ def build_media_pool() -> ConversationHandler:
                 CallbackQueryHandler(cb_back_mp_tz, pattern=f"^{CB_BACK_MP_TZ}$"),
                 CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_ad_hours),
+            ],
+            MP_AUTO_PIN: [
+                CallbackQueryHandler(cb_mp_ap_yes, pattern=f"^{CB_MP_AP_YES}$"),
+                CallbackQueryHandler(cb_mp_ap_no, pattern=f"^{CB_MP_AP_NO}$"),
+                CallbackQueryHandler(cb_back_mp_tz, pattern=f"^{CB_BACK_MP_TZ}$"),
+                CallbackQueryHandler(cb_back_mp_menu, pattern=f"^{CB_BACK_MP_MENU}$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_mp_ap_hours),
             ],
             MP_CONFIRM: [
                 CallbackQueryHandler(cb_mp_confirm, pattern=f"^{CB_MP_CONFIRM}$"),

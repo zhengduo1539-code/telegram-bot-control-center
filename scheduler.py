@@ -244,14 +244,17 @@ async def _handle_lifecycle(bot: Bot, post: dict[str, Any], sent_msg: Message) -
     message_id  = sent_msg.message_id
     # Auto-pin  (ap_hours present = enabled; None value = pin forever)
     if "ap_hours" in post:
+        pinned = False
         try:
             await bot.pin_chat_message(chat_id, message_id, disable_notification=True)
+            pinned = True
             logger.info("Pinned message %s in chat %s", message_id, chat_id)
         except (Forbidden, BadRequest) as exc:
             logger.warning("Could not pin message %s: %s", message_id, exc)
 
+        # Never enqueue an unpin for a message Telegram did not let us pin.
         unpin_hrs: float | None = post["ap_hours"]
-        if unpin_hrs and unpin_hrs > 0:
+        if pinned and unpin_hrs is not None and unpin_hrs > 0:
             fire_at = datetime.now(tz=timezone.utc) + timedelta(hours=unpin_hrs)
             await _store_lifecycle_task(
                 chat_id=chat_id, message_id=message_id,
@@ -441,15 +444,13 @@ async def _execute_queue_slot(bot: Bot, queue: dict[str, Any], now: datetime) ->
                 error="The queued item has no supported text or media content.")
         else:
             await update_queue_item(user_id, chat_id, item_id, "posted")
-            delete_hours = item.get("auto_delete_after_hours")
-            if delete_hours is not None and float(delete_hours) > 0:
-                fire_at = datetime.now(tz=timezone.utc) + timedelta(hours=float(delete_hours))
-                await _store_lifecycle_task(
-                    chat_id=chat_id,
-                    message_id=sent.message_id,
-                    action="delete",
-                    fire_at=fire_at,
-                )
+            # Use the shared lifecycle handler so Queue pin/unpin and delete
+            # timers behave exactly like Schedule New Post.
+            if item.get("auto_pin_unpin_after_hours") is not None:
+                ephemeral["ap_hours"] = float(item["auto_pin_unpin_after_hours"])
+            if item.get("auto_delete_after_hours") is not None:
+                ephemeral["ad_hours"] = float(item["auto_delete_after_hours"])
+            await _handle_lifecycle(bot, ephemeral, sent)
             logger.info("Queue item %s posted to chat %s.", item_id, chat_id)
     except Forbidden as exc:
         reason = "The bot cannot access this chat. Check its membership and posting permissions."
