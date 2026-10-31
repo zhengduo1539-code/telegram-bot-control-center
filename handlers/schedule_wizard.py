@@ -31,6 +31,7 @@ import pytz
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.constants import ParseMode
 from telegram.helpers import escape_markdown
+from telegram.helpers import escape_markdown
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -48,6 +49,8 @@ from database import (
 from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.base import CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard, main_menu_keyboard
+from handlers.language import resolve_user_language
+from localization import translate as tr
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +188,7 @@ def _chat_list_keyboard(
     groups: list[dict],
     page: int,
     bot_username: str,
+    language: str = "en",
 ) -> InlineKeyboardMarkup:
     """
     Build the inline keyboard for the group/channel picker.
@@ -214,19 +218,19 @@ def _chat_list_keyboard(
     if nav:
         rows.append(nav)
 
-    rows.append([InlineKeyboardButton("✏️ Enter ID manually", callback_data=CB_MANUAL_CHAT_ID)])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)])
+    rows.append([InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)])
+    rows.append([InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
 
 
-def _no_groups_keyboard(bot_username: str) -> InlineKeyboardMarkup:
+def _no_groups_keyboard(bot_username: str, language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "➕ Add Bot to a Group",
             url=f"https://t.me/{bot_username}?startgroup=start",
         )],
-        [InlineKeyboardButton("✏️ Enter ID manually", callback_data=CB_MANUAL_CHAT_ID)],
-        [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)],
+        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
     ])
 
 
@@ -460,6 +464,7 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     chat_cleanup.track(context.application.bot_data, query.message.chat_id, query.message.message_id)
 
     user_id      = query.from_user.id  # type: ignore[union-attr]
+    language = await resolve_user_language(context, user_id)
 
     # A private-chat /start deep-link may carry the group that initiated setup.
     # Consume it once, then re-check permissions at the point scheduling begins.
@@ -482,14 +487,9 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             w["chat_title"] = selected_title
             await query.answer("Group selected.")
             await query.edit_message_text(
-                f"✅ *Selected Group:* {escape_markdown(selected_title, version=1)} "
-                f"(`{launch_chat_id}`)\n\n"
-                "▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n"
-                "📝 *Step 2/8 — Post Content*\n\n"
-                "Send the content you want to schedule:\n"
-                "• Plain text\n"
-                "• Photo, video, document, audio, or animation\n"
-                "• Media with a caption",
+                f"✅ {tr(language, 'private_setup_body', group=escape_markdown(selected_title, version=1))}\n\n"
+                f"{tr(language, 'schedule_content_title')}\n\n"
+                f"{tr(language, 'schedule_content_prompt')}",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=_content_step_keyboard(),
             )
@@ -501,23 +501,18 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if groups:
         await query.answer()
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Chat* › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📅 *Step 1/8 — Target Chat*\n\n"
-            f"🗂 Choose the group or channel to post to:\n"
+            f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
             f"_(Showing {min(_CHAT_PAGE_SIZE, len(groups))} of {len(groups)} known chats)_",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_chat_list_keyboard(groups, 0, bot_username),
+            reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
         )
     else:
         await query.answer()
         await query.edit_message_text(
-            "▰▱▱▱▱▱▱▱ 1/8\n*Chat* › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📅 *Step 1/8 — Target Chat*\n\n"
-            "⚠️ *No groups or channels found.*\n\n"
-            "The bot hasn't been added to any group or channel yet, "
-            "or you haven't added the bot yourself.\n\n"
-            "Add the bot to your group first, then come back to schedule a post.\n\n"
-            "_Or enter the Chat ID manually if you already have it._",
+            f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
+            "⚠️ No groups or channels found. Add the bot to a group first, then return here to schedule a post.",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_no_groups_keyboard(bot_username),
+            reply_markup=_no_groups_keyboard(bot_username, language),
         )
     return WIZARD_CHAT_ID
 
@@ -538,6 +533,7 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     # Look up the title from DB record so we can show it in the summary
     user_id = query.from_user.id  # type: ignore[union-attr]
+    language = await resolve_user_language(context, user_id)
     groups = await list_groups_for_user(user_id)
     title_map = {g["chat_id"]: (g.get("title") or str(g["chat_id"])) for g in groups}
     title = title_map.get(chat_id, str(chat_id))
@@ -554,12 +550,9 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     await query.answer()
     await query.edit_message_text(
-        f"✅ Selected: *{title}* (`{chat_id}`)\n\n"
-        "▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📝 *Step 2/8 — Post Content*\n\n"
-        "Send the content you want to post:\n"
-        "• Plain text\n"
-        "• Photo, video, document, or audio\n"
-        "• Media with a caption",
+        f"✅ Selected: *{escape_markdown(title, version=1)}* ({chat_id})\n\n"
+        f"{tr(language, 'schedule_content_title')}\n\n"
+        f"{tr(language, 'schedule_content_prompt')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_content_step_keyboard(),
     )
