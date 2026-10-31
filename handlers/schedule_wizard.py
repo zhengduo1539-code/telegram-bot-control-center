@@ -43,7 +43,7 @@ from telegram.ext import (
 from database import (
     build_scheduled_post, insert_post,
     list_groups, list_groups_for_user, get_best_hours,
-    list_templates, get_template,
+    list_templates, get_template_for_user,
 )
 from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
@@ -595,7 +595,7 @@ def _content_step_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-_TMPL_WIZ_PAGE_SIZE = 5
+_TMPL_WIZ_PAGE_SIZE = 1
 
 
 def _wizard_tmpl_keyboard(templates: list[dict], page: int) -> InlineKeyboardMarkup:
@@ -659,6 +659,36 @@ async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return WIZARD_CHAT_ID
 
 
+def _wizard_template_page_text(templates: list[dict], page: int) -> str:
+    """Show the complete saved content for the currently selected template."""
+    if not templates:
+        return (
+            "📝 *No User Templates Found*\\n\\n"
+            "You have not saved a template yet. Send your post content manually "
+            "in this step, then save a post as a template from *My Posts* "
+            "when it is available."
+        )
+    tmpl = templates[page * _TMPL_WIZ_PAGE_SIZE]
+    content = tmpl.get("content") or {}
+    name = escape_markdown(str(tmpl.get("name", "Unnamed")), version=1)
+    media_type = content.get("media_type")
+    media_file_id = content.get("media_file_id")
+    text = content.get("text") or ""
+    lines = [
+        f"📝 *User Template* · {page + 1}/{len(templates)}",
+        f"\\n📄 *Name:* {name}",
+        f"📎 *Content type:* {escape_markdown(str(media_type or 'Text'), version=1)}",
+    ]
+    if media_file_id:
+        lines.append("🗂 *Media:* Saved Telegram media")
+    if text:
+        lines.append(f"\\n📝 *Full content:*\\n{escape_markdown(str(text), version=1)}")
+    else:
+        lines.append("\\n_(No caption or text saved.)_")
+    lines.append("\\n\\nChoose *Use this Template* to load it, or browse another template.")
+    return "\\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Step 1 — Chat ID (manual text entry fallback)
 # ---------------------------------------------------------------------------
@@ -705,45 +735,57 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 # ---------------------------------------------------------------------------
 
 async def cb_use_template(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User taps '📝 Use Template' — show the template list."""
+    """Show a full preview of each user-owned template before applying it."""
     query = update.callback_query
     if not query or not query.from_user:
         return WIZARD_CONTENT
     await query.answer()
-    user_id   = query.from_user.id
-    templates = await list_templates(user_id)
+    user_id = query.from_user.id
+    try:
+        templates = await list_templates(user_id)
+    except Exception:
+        logger.exception("Could not load user templates for schedule wizard")
+        await query.edit_message_text(
+            "⚠️ Could not load your templates right now. Please try again.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_TO_CONTENT)
+            ]]),
+        )
+        return WIZARD_CONTENT
     if not templates:
-        await query.answer(
-            "No templates saved yet. Schedule a post and save it as a template from My Posts.",
-            show_alert=True,
+        await query.edit_message_text(
+            _wizard_template_page_text([], 0),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("⬅️ Back to Content", callback_data=CB_BACK_TO_CONTENT)
+            ]]),
         )
         return WIZARD_CONTENT
     context.user_data["_wiz_tmpl_page"] = 0
     await query.edit_message_text(
-        "📝 *Choose a Template*\n\nSelect a saved template to use as your post content:",
+        _wizard_template_page_text(templates, 0),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_wizard_tmpl_keyboard(templates, 0),
     )
     return WIZARD_TMPL_PICK
 
-
 async def cb_tmpl_page_wiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Paginate the in-wizard template list."""
+    """Browse full template previews one at a time."""
     query = update.callback_query
     if not query or not query.from_user:
         return WIZARD_TMPL_PICK
-    page    = int((query.data or "0").replace(CB_TMPL_PAGE_PFX, "") or "0")
-    user_id = query.from_user.id
-    templates = await list_templates(user_id)
+    raw = (query.data or "").replace(CB_TMPL_PAGE_PFX, "", 1)
+    page = int(raw) if raw.isdigit() else 0
+    templates = await list_templates(query.from_user.id)
+    page = max(0, min(page, max(0, len(templates) - 1)))
     await query.answer()
     context.user_data["_wiz_tmpl_page"] = page
     await query.edit_message_text(
-        "📝 *Choose a Template*\n\nSelect a saved template to use as your post content:",
+        _wizard_template_page_text(templates, page),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_wizard_tmpl_keyboard(templates, page),
     )
     return WIZARD_TMPL_PICK
-
 
 async def cb_tmpl_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User picks a template — load its content into wizard context."""
