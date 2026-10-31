@@ -76,7 +76,7 @@ def test_empty_state_offers_create_first_post_action(monkeypatch):
         fake_db.get_user_posts = AsyncMock(return_value=[])
         monkeypatch.setitem(sys.modules, "database", fake_db)
         monkeypatch.setattr(base, "resolve_user_language", AsyncMock(return_value="en"))
-        query = SimpleNamespace(edit_message_text=AsyncMock())
+        query = SimpleNamespace(edit_message_text=AsyncMock(), inline_message_id=None, message=SimpleNamespace(chat_id=123, message_id=456))
         context = SimpleNamespace(user_data={})
         state = await base._render_my_posts(query, 123, 0, context)
         assert state == base.MY_POSTS
@@ -96,7 +96,7 @@ def test_dashboard_shows_summary_and_filter_empty_state(monkeypatch):
         fake_db.get_user_posts = AsyncMock(return_value=posts)
         monkeypatch.setitem(sys.modules, "database", fake_db)
         monkeypatch.setattr(base, "resolve_user_language", AsyncMock(return_value="en"))
-        query = SimpleNamespace(edit_message_text=AsyncMock())
+        query = SimpleNamespace(edit_message_text=AsyncMock(), inline_message_id=None, message=SimpleNamespace(chat_id=123, message_id=456))
         context = SimpleNamespace(user_data={"_mp_filter": "failed"})
         state = await base._render_my_posts(query, 123, 0, context)
         assert state == base.MY_POSTS
