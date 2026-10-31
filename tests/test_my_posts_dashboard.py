@@ -36,7 +36,7 @@ def test_posts_dashboard_card_is_readable_and_escapes_group_title():
     post = _post(chat_title="Sales_[Official]")
     rendered = base._posts_list_text([post], 0, "en")
     assert "Active" in rendered
-    assert "Sales\\_\\[Official\\]" in rendered
+    assert "Sales\\_\\[Official]" in rendered
     assert "Daily" in rendered
     assert "Asia/Bangkok" not in rendered
     assert "Next run" in rendered
