@@ -8,6 +8,8 @@ from telegram import InlineKeyboardMarkup
 
 from database import COL_MEDIA_POOLS, COL_POSTS
 from handlers import queue_manager as media_pool
+from localization import LANGUAGES
+from media_pool_localization import _KEYS, TRANSLATIONS, translate_media_pool
 
 
 def _button_labels(keyboard):
@@ -254,3 +256,68 @@ def test_media_pool_conversation_registers_group_and_management_states():
     assert media_pool.MP_SET_INTERVAL_VALUE in conversation.states
     assert media_pool.MP_MANAGE_CHAT in conversation.states
     assert media_pool.MP_MANAGE_ACTION in conversation.states
+
+
+def test_media_pool_catalog_covers_all_twenty_languages_with_matching_keys():
+    assert set(TRANSLATIONS) == set(LANGUAGES)
+    assert len(TRANSLATIONS) == 20
+    expected = set(_KEYS)
+    assert len(expected) == len(_KEYS)
+    for language, catalog in TRANSLATIONS.items():
+        assert set(catalog) == expected, language
+        assert all(isinstance(value, str) and value.strip() for value in catalog.values())
+
+
+def test_media_pool_translations_format_placeholders_and_fallback():
+    assert "Publisher Group" in translate_media_pool(
+        "my", "item_saved", group="Publisher Group", count=3
+    )
+    assert "Publisher Group" in translate_media_pool(
+        "zh", "manage_summary",
+        group="Publisher Group", total=10, remaining=4, published=6,
+    )
+    assert translate_media_pool("unknown-locale", "add_content") == TRANSLATIONS["en"]["add_content"]
+    assert translate_media_pool("en", "not_a_key") == "not_a_key"
+
+
+def test_media_pool_main_menu_and_quick_interval_are_localized():
+    menu = _button_labels(media_pool._mp_menu_keyboard("my"))
+    assert "➕ Content ထည့်ရန်" in menu
+    assert "⏱ ပို့မည့်အချိန် သတ်မှတ်ရန်" in menu
+    assert "📊 Pool အခြေအနေ" in menu
+    assert "🛠 Pool စီမံရန်" in menu
+
+    quick = _button_labels(media_pool._mp_quick_interval_keyboard("th"))
+    assert "15 นาที" in quick
+    assert "6 ชั่วโมง" in quick
+    assert "✏️ กำหนดเอง" in quick
+
+
+def test_media_pool_group_and_pool_management_keyboards_are_localized():
+    group_keyboard = media_pool._mp_group_picker_keyboard(
+        [{"chat_id": -1001234567890, "title": "Publisher Group", "chat_type": "supergroup"}],
+        page=0,
+        language="my",
+    )
+    group_labels = _button_labels(group_keyboard)
+    assert "✏️ Chat ID ကို ကိုယ်တိုင်ထည့်ရန်" in group_labels
+
+    manage_keyboard = media_pool._mp_manage_actions_keyboard("zh")
+    manage_labels = _button_labels(manage_keyboard)
+    assert "🔄 重置发布周期" in manage_labels
+    assert "🗑 清除此内容池" in manage_labels
+
+
+def test_media_pool_timezone_keyboard_uses_stable_timezone_identifiers_and_local_navigation():
+    keyboard = media_pool._mp_tz_keyboard(page=0, language="my")
+    labels = _button_labels(keyboard)
+    callbacks = [
+        button.callback_data
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data
+    ]
+    assert "UTC" in labels
+    assert any("Asia/" in label for label in labels)
+    assert media_pool.CB_BACK_MP_FR in callbacks
+    assert all(button.text != "◀️ Prev" for row in keyboard.inline_keyboard for button in row)
