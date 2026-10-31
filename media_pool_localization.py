@@ -978,6 +978,36 @@ for _language, _values in _ROWS.items():
     TRANSLATIONS[_language] = dict(zip(_KEYS, _values, strict=True))
 
 
+
+_EXTRA_ROWS: dict[str, dict[str, str]] = {
+    "en": {"invalid_timezone": "That timezone is not valid. Please choose one from the list."},
+    "my": {"invalid_timezone": "ရွေးချယ်ထားသော Timezone မမှန်ပါ။ စာရင်းထဲမှ တစ်ခုကို ရွေးပါ။"},
+    "zh": {"invalid_timezone": "时区无效。请从列表中选择一个时区。"},
+    "es": {"invalid_timezone": "La zona horaria no es válida. Elige una de la lista."},
+    "hi": {"invalid_timezone": "यह समय क्षेत्र मान्य नहीं है। कृपया सूची में से चुनें।"},
+    "ar": {"invalid_timezone": "المنطقة الزمنية غير صالحة. يرجى اختيار منطقة من القائمة."},
+    "pt": {"invalid_timezone": "Este fuso horário não é válido. Escolha um da lista."},
+    "fr": {"invalid_timezone": "Ce fuseau horaire n'est pas valide. Veuillez en choisir un dans la liste."},
+    "ru": {"invalid_timezone": "Этот часовой пояс недействителен. Выберите часовой пояс из списка."},
+    "bn": {"invalid_timezone": "এই সময় অঞ্চলটি সঠিক নয়। তালিকা থেকে একটি নির্বাচন করুন।"},
+    "id": {"invalid_timezone": "Zona waktu ini tidak valid. Silakan pilih dari daftar."},
+    "ja": {"invalid_timezone": "このタイムゾーンは無効です。リストから選択してください。"},
+    "ko": {"invalid_timezone": "올바르지 않은 시간대입니다. 목록에서 선택해 주세요."},
+    "th": {"invalid_timezone": "เขตเวลานี้ไม่ถูกต้อง โปรดเลือกจากรายการ"},
+    "vi": {"invalid_timezone": "Múi giờ này không hợp lệ. Vui lòng chọn một múi giờ trong danh sách."},
+    "tr": {"invalid_timezone": "Bu saat dilimi geçerli değil. Lütfen listeden birini seçin."},
+    "de": {"invalid_timezone": "Diese Zeitzone ist ungültig. Bitte wähle eine aus der Liste."},
+    "it": {"invalid_timezone": "Questo fuso orario non è valido. Scegline uno dall'elenco."},
+    "ur": {"invalid_timezone": "یہ ٹائم زون درست نہیں ہے۔ براہ کرم فہرست میں سے منتخب کریں۔"},
+    "sw": {"invalid_timezone": "Eneo hili la saa si sahihi. Tafadhali chagua moja kutoka kwenye orodha."},
+}
+
+if set(_EXTRA_ROWS) != set(LANGUAGES):
+    raise RuntimeError("Media Pool additional translations must define every supported language.")
+for _language, _extra_catalog in _EXTRA_ROWS.items():
+    TRANSLATIONS[_language].update(_extra_catalog)
+
+
 def translate_media_pool(language: str | None, key: str, **values: Any) -> str:
     """Translate Media Pool UI copy with safe English fallback."""
     locale = normalize_language(language)

@@ -1558,6 +1558,18 @@ def _mp_manage_confirm_keyboard(
     ])
 
 
+def _mp_nav_keyboard(
+    language: str,
+    back_data: str | None = None,
+) -> InlineKeyboardMarkup:
+    """Navigation keyboard localized to the user's selected language."""
+    row: list[InlineKeyboardButton] = []
+    if back_data:
+        row.append(InlineKeyboardButton(tr(language, "back"), callback_data=back_data))
+    row.append(InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL))
+    return InlineKeyboardMarkup([row])
+
+
 def _mp_no_groups_keyboard(language: str, bot_username: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
@@ -1693,7 +1705,7 @@ async def cb_mp_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYP
     await _edit(
         query,
         mp_tr(language, "manual_id_prompt"),
-        nav_keyboard(back_data=CB_BACK_MP_MENU),
+        _mp_nav_keyboard(language, back_data=CB_BACK_MP_MENU),
     )
     return MP_CHAT_ID
 
@@ -1722,7 +1734,7 @@ async def _mp_continue_after_chat_selection(
             await _mp_reply_or_edit(
                 update,
                 mp_tr(language, "pool_check_error"),
-                nav_keyboard(back_data=CB_BACK_MP_MENU),
+                _mp_nav_keyboard(language, back_data=CB_BACK_MP_MENU),
             )
             return MP_CHAT_ID
 
@@ -1915,7 +1927,7 @@ async def cb_mp_custom_interval(update: Update, context: ContextTypes.DEFAULT_TY
     await _edit(
         query,
         mp_tr(language, "custom_prompt"),
-        nav_keyboard(back_data=CB_BACK_MP_MENU),
+        _mp_nav_keyboard(language, back_data=CB_BACK_MP_MENU),
     )
     return MP_SET_INTERVAL_VALUE
 
@@ -2004,7 +2016,7 @@ async def cb_mp_first_custom(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _edit(
         query,
         mp_tr(language, "time_prompt"),
-        nav_keyboard(back_data=CB_BACK_MP_FR),
+        _mp_nav_keyboard(language, back_data=CB_BACK_MP_FR),
     )
     return MP_SET_FIRST_RUN
 
@@ -2050,7 +2062,7 @@ async def cb_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         pytz.timezone(tz_key)
     except pytz.exceptions.UnknownTimeZoneError:
-        await query.answer(mp_tr(language, "timezone"), show_alert=True)
+        await query.answer(mp_tr(language, "invalid_timezone"), show_alert=True)
         return MP_SET_TIMEZONE
     pm = _pm(context)
     pm["timezone"] = tz_key
@@ -2111,7 +2123,7 @@ async def cb_mp_ad_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await _edit(
         query,
         mp_tr(language, "delete_delay"),
-        nav_keyboard(back_data=CB_BACK_MP_TZ),
+        _mp_nav_keyboard(language, back_data=CB_BACK_MP_TZ),
     )
     return MP_AUTO_DELETE
 
@@ -2804,7 +2816,7 @@ def build_queue_manager() -> ConversationHandler:
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", cmd_mp_cancel),
+            CommandHandler("cancel", cmd_cancel),
             CallbackQueryHandler(cb_cancel_local, pattern=f"^{CB_CANCEL}$"),
         ],
         allow_reentry=True,
@@ -2907,7 +2919,7 @@ def build_media_pool() -> ConversationHandler:
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", cmd_cancel),
+            CommandHandler("cancel", cmd_mp_cancel),
             CallbackQueryHandler(cb_cancel_local, pattern=f"^{CB_CANCEL}$"),
         ],
         allow_reentry=True,
