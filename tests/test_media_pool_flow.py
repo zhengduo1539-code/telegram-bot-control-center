@@ -525,3 +525,14 @@ def test_media_pool_empty_template_message_guides_manual_content():
     assert "No User Templates Found" in preview
     assert "send your text, photo" in preview
     assert "Media Pool" in preview
+
+
+def test_media_pool_conversation_registers_user_template_preview_state():
+    conversation = media_pool.build_media_pool()
+    assert media_pool.MP_TEMPLATE_PICK in conversation.states
+    callbacks = {
+        handler.callback.__name__
+        for handler in conversation.states[media_pool.MP_TEMPLATE_PICK]
+        if isinstance(handler, media_pool.CallbackQueryHandler)
+    }
+    assert {"cb_mp_template_page", "cb_mp_template_use", "cb_mp_template_back"} <= callbacks
