@@ -96,6 +96,7 @@ def test_successful_item_add_keeps_user_in_multi_item_add_flow(monkeypatch):
             reply_text=AsyncMock(),
         )
         context = SimpleNamespace(user_data={
+            "language": "en",
             "mpwiz": {
                 "mode": "add",
                 "mp_chat_id": -1001234567890,
@@ -125,11 +126,12 @@ def test_successful_item_add_keeps_user_in_multi_item_add_flow(monkeypatch):
 def test_quick_interval_selection_saves_value_and_advances_to_first_run():
     async def scenario():
         query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
             data=f"{media_pool.CB_MP_QUICK_PREFIX}6h",
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
         )
-        context = SimpleNamespace(user_data={"mpwiz": {"mp_chat_id": -1001234567890}})
+        context = SimpleNamespace(user_data={"language": "en", "mpwiz": {"mp_chat_id": -1001234567890}})
         update = SimpleNamespace(callback_query=query)
 
         state = await media_pool.cb_mp_quick_interval(update, context)
@@ -162,6 +164,7 @@ def test_reset_only_affects_the_selected_pool(monkeypatch):
             edit_message_text=AsyncMock(),
         )
         context = SimpleNamespace(user_data={
+            "language": "en",
             "mpwiz": {
                 "mp_chat_id": -1001234567890,
                 "mp_chat_title": "Publisher Group",
@@ -174,7 +177,7 @@ def test_reset_only_affects_the_selected_pool(monkeypatch):
 
         assert state == media_pool.MP_MANAGE_ACTION
         reset.assert_awaited_once_with(42, -1001234567890)
-        summary.assert_awaited_once_with(42, -1001234567890)
+        summary.assert_awaited_once_with(42, -1001234567890, "en")
 
     asyncio.run(scenario())
 
@@ -220,6 +223,7 @@ def test_clear_only_deletes_selected_pool_and_pauses_its_schedule(monkeypatch):
             edit_message_text=AsyncMock(),
         )
         context = SimpleNamespace(user_data={
+            "language": "en",
             "mpwiz": {"mp_chat_id": -1001234567890}
         })
         monkeypatch.setattr(
