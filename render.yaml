@@ -7,3 +7,14 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: SCHEDULE_BOT_DATABASE
+        value: schedule_bot
+      - key: ADMIN_IDS
+        sync: false
+      - key: SCHEDULER_INTERVAL_SECS
+        value: "60"

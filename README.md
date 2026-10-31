@@ -1,86 +1,77 @@
-# Animated Emoji Analyzer & Rebuilder Bot
+# Schedule Bot
 
-A dedicated Telegram bot for analyzing Telegram custom animated emojis and sticker packs. It accepts custom emoji IDs embedded in messages, animated stickers, TGS/WEBM uploads, and official Telegram links in these forms:
-- https://t.me/addemoji/PACK_SHORT_NAME
-- https://t.me/addstickers/PACK_SHORT_NAME
+A Telegram scheduling bot for group and channel publishers. It supports one-time posts, recurring schedules, timezone-aware daily queues, reusable templates and message lifecycle actions.
 
-## Features
+## Main features
 
-- **Pack-link browser:** resolve a Telegram sticker/emoji pack through the Bot API and browse its items with paginated inline buttons. An **Export all files (.ZIP)** action downloads every source asset and returns one ZIP with unchanged original files plus a `manifest.json` inventory.
-- **ZIP template import:** upload a ZIP containing TGS/WEBM/WEBP assets (including archives with `manifest.json`) to browse them as a reusable template library. The bot stores the Telegram file reference and member metadata, not the extracted animation binaries.
-- **Custom emoji ID lookup:** read custom_emoji_id message entities or accept an ID via `/id <numeric_id>` / a plain numeric ID, then resolve it with getCustomEmojiStickers.
-- **Source-preserving reuse:** send the original sticker back or export the original file without rendering it again.
-- **TGS inspection:** analyze Lottie dimensions, FPS, duration, layer counts, shape types, detected fill/stroke/gradient colors, keyframes and effects where those values are present in the source.
-- **Reusable animation templates:** send a custom animated emoji and the bot records the source Custom Emoji ID, Telegram file reference and analysis metadata. Tap **Create with this animation** to save it as a personal template; use `/templates` to choose it again later.
-- **Text/Unicode recreation:** if a TGS has one editable Lottie text layer, the bot replaces its text while preserving the source timeline and styling. If the source is shape-only (common for Telegram emojis), it creates vector glyphs and adapts the template's dominant color and animated transform profile. That is a reconstruction, not a pixel-identical copy of the original glyphs/effects. Unicode characters require a locally installed outline font.
-- **WEBM inspection:** sample video frames for dominant colors and use decoder metadata for dimensions, FPS and duration. WEBM is a raster video; its original vector layers and keyframes cannot be recovered from pixels.
-- **Constrained TGS editing:** recolor supported fill/stroke/gradient properties, change timeline speed, or replace text in a single editable Lottie text layer while preserving its timing/style properties. Rebuilt files are validated against 512×512 dimensions, 60 FPS, a maximum three-second duration, expanded JSON limits and Telegram's 64 KiB TGS compressed-size limit. Vector-outline lettering is not falsely treated as editable text.
-- **MongoDB metadata only:** store user activity, pack browsing sessions, file IDs and analysis reports. Raw binaries are processed in memory and are not saved to MongoDB.
-- **Webhook-first on Render:** uses the Render public URL and a Telegram webhook secret, avoiding duplicate long-polling getUpdates processes during deploys. Local development uses polling if no public URL is configured.
-- **No payment tiers or AI API required.**
+- **Schedule New Post:** text, photos, videos, documents, audio, animations and voice messages.
+- **Recurring schedules:** repeat every N minutes, hours or days, or on selected weekdays.
+- **Daily Queue:** configure posting times such as 09:00, 14:00 and 20:00, then add content. The bot publishes one pending item per configured slot.
+- **Timezone support:** choose an IANA timezone; execution timestamps are persisted in UTC.
+- **Inline URL buttons:** add optional links below posts.
+- **Templates:** save and reuse common content.
+- **Message lifecycle:** auto-pin/unpin, auto-delete and self-destruct.
+- **Owner Panel:** service statistics, user/group lists, broadcast and data cleanup.
 
-## Architecture
+## How users get started
 
-- app/bot/service.py: Telegram commands, link and entity handling, paging, download/export and constrained edit workflows.
-- app/telegram/links.py: strict parsing for official Telegram pack links only.
-- app/analysis/animation.py: bounded TGS parsing, safe color/timing edits, WEBM frame sampling and metadata summaries.
-- app/storage/mongo.py: asynchronous PyMongo repository, indexes and expiring metadata.
-- app/config.py: environment configuration and limits.
-- app/main.py: FastAPI lifecycle, health endpoints and webhook validation.
-- main.py: Render-compatible ASGI entry point.
+1. Add the bot to a group or channel.
+2. Give it permission to send messages. For channels, make it an administrator with **Post Messages** permission.
+3. Open a private chat with the bot and send /start.
+4. Choose **Schedule New Post**, **Manage Queue**, or **Media Pool**.
+5. Follow the guided steps, review the summary and confirm.
 
-## Environment setup
+Only a group administrator or channel owner can create schedules for a target chat. The bot re-checks target permissions before saving.
 
-Set these in the deployment environment (for Render: Dashboard → Service → Environment):
+## Project structure
 
-1. BOT_TOKEN: token from BotFather.
-2. MONGODB_URI: MongoDB Atlas or another reachable MongoDB connection string.
-3. MONGODB_DATABASE: optional database name; defaults to emoji_rebuilder.
-4. WEBHOOK_SECRET: optional. If empty, a random secret is generated at startup.
-5. PUBLIC_BASE_URL: optional; Render's RENDER_EXTERNAL_URL is used automatically.
+- main.py: Telegram application startup, ASGI lifecycle and health-server integration.
+- config.py: validated environment configuration.
+- database.py: MongoDB persistence, indexes, atomic queue claims and retention.
+- scheduler.py: recurring post execution, daily queue delivery and message lifecycle.
+- schedule_utils.py: pure timezone-aware daily-slot calculations.
+- handlers/: guided user flows, owner tools, templates and permission checks.
+- keep_alive.py: Render liveness/readiness endpoints.
+- tests/: automated unit tests.
 
-Keep database credentials and bot tokens out of GitHub. Ensure the MongoDB deployment's network access rules allow connections from the Render service. Avoid broad public network access unless your environment requires it and is appropriately protected.
+## Environment variables
+
+Configure these in Render → Service → Environment:
+
+| Variable | Required | Description |
+|---|---|---|
+| BOT_TOKEN | Yes | Telegram token from @BotFather |
+| MONGODB_URI | Yes | MongoDB connection string |
+| SCHEDULE_BOT_DATABASE | No | Defaults to schedule_bot |
+| ADMIN_IDS | Recommended | Comma-separated numeric owner Telegram IDs |
+| SCHEDULER_INTERVAL_SECS | No | 15–300 seconds; default 60 |
+| PORT | Render supplied | Local default 8080 |
+
+Never commit credentials. Use .env.example only as a template.
 
 ## Render deployment
 
-- Build command: pip install -r requirements.txt
-- Start command: uvicorn main:app --host 0.0.0.0 --port $PORT
-- Health-check path: /healthz
+The included render.yaml uses build command pip install -r requirements.txt, start command uvicorn main:app --host 0.0.0.0 --port $PORT, liveness /healthz and readiness /health.
 
-/healthz is a liveness probe. /health is a readiness probe: it returns HTTP 503 until both Telegram and MongoDB are configured and connected. If MONGODB_URI is missing, the web process remains live for setup, but the Telegram bot remains disabled.
+Run one service instance only. This bot uses an in-process polling scheduler; multiple service instances would run multiple scheduler loops. MongoDB atomic queue claims provide a second layer of protection against duplicate queue claims.
 
-On Render, the app prefers a webhook. When running locally without PUBLIC_BASE_URL or RENDER_EXTERNAL_URL, it uses long polling.
+## Local development
 
-## Usage
-
-- /start — overview.
-- /help — supported inputs and editing.
-- /status — service readiness.
-- /recent — recent analysis references.
-- /id <numeric_id> — analyze a numeric Telegram custom emoji ID.
-- /templates — list saved personal animation templates.
-- Send a custom animated emoji in a message, an animated sticker, or a .TGS/.WEBM/.WEBP file.
-- Paste a Telegram addemoji or addstickers pack link.
-- Choose a pack item, then use Send original, Export file, Recolor TGS, or Adjust speed.
-
-Editing actions are available only for supported TGS Lottie files. **Replace text** works when the source has one editable Lottie text layer. **Create with this animation** can also reconstruct shape-only sources as vector text using a detected color and an animated shape-layer transform profile. If the lettering has already been converted to vector shape outlines (common in sticker assets), the bot reports that limitation rather than destroying or guessing at the original glyph animation. That reconstruction is not pixel-identical: the original per-letter outlines, gradients, layer-specific effects and complex decoration are not generically recoverable as editable text. TGS exports are validated against Telegram's canvas, FPS, duration and compressed-size constraints. Use `TEMPLATE_FONT_PATH` to provide an installed outline font for extra Unicode coverage. Exported TGS files are not automatically inserted into a third-party pack; the user publishes them through Telegram's supported sticker/emoji workflow. WEBM files can be reused byte-for-byte, but raster frames do not provide editable source vectors.
-
-## Data and retention
-
-- User profile metadata is limited to Telegram user ID, username and timestamps; inactive user records expire after 180 days.
-- Pack browsing sessions expire after 12 hours.
-- Analysis metadata/file references expire after 30 days.
-- Binary input files are not stored in MongoDB.
-- Individual files are limited to 20 MiB for processing; pack ZIP exports have a 45 MiB combined source-size cap to stay under Telegram document-delivery limits.
-- Only official t.me / telegram.me pack links are accepted. The bot never fetches arbitrary URLs supplied by users.
-
-## Development and verification
-
-Install dependencies with:
-    python -m pip install -r requirements-dev.txt
-
-Compile and run tests with:
-    python -m compileall -q main.py app
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements-dev.txt
+    cp .env.example .env
+    # Fill BOT_TOKEN, MONGODB_URI and ADMIN_IDS in .env
+    python -m compileall -q main.py handlers
     python -m pytest -q
+    python main.py
 
-Unit tests use synthetic Lottie documents and do not require a Telegram token or live MongoDB credentials. A deployment with real credentials still needs an end-to-end chat test for pack lookup, file download and any target Telegram pack upload workflow.
+## Retention and operational behavior
+
+- Completed and permanently failed scheduled posts expire after 30 days.
+- Paused schedules are retained until the user resumes or deletes them.
+- Completed lifecycle tasks expire automatically after their retention period.
+- When the bot is removed from a group, the group's scheduled posts, queues, media pools, activity and lifecycle tasks are cleaned up.
+- Daily Queue publishes one pending item per slot. Missed slots are not burst-sent; the next item waits for the next available slot.
+- Delivery can be delayed by up to one scheduler polling interval plus Telegram/network latency.
+- Render free instances may sleep; an HTTP health ping is not a guarantee that polling will never be interrupted.
