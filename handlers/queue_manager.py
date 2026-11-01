@@ -589,7 +589,7 @@ def _qm_confirm_keyboard(
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(tr(language, "confirm"), callback_data=confirm_data),
+            InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=confirm_data),
             InlineKeyboardButton(tr(language, "back"), callback_data=back_data),
         ],
         [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
