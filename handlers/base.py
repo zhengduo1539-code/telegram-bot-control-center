@@ -20,6 +20,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    ReplyKeyboardRemove,
     Update,
 )
 from telegram.constants import ParseMode
@@ -40,6 +41,7 @@ from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from welcome_localization import welcome_text
+from reply_keyboard import publish_reply_keyboard, split_inline_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -117,24 +119,18 @@ def _bot_username(bot: Bot) -> str:
 
 
 def start_keyboard(bot: Bot) -> InlineKeyboardMarkup:
+    """Only Add to My Group and Share Bot remain inline."""
     username = _bot_username(bot)
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("❓ Help", callback_data=CB_HELP),
-        ],
-        [
-            InlineKeyboardButton(
-                "➕ Add me to Group/Channel",
-                url=f"https://t.me/{username}?startgroup=true",
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                "📢 Share Bot",
-                url=f"https://t.me/share/url?url=https://t.me/{username}&text=Check out this Advanced Scheduler Bot!",
-            ),
-        ],
-    ])
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "➕ Add to My Group",
+            url=f"https://t.me/{username}?startgroup=true",
+        ),
+        InlineKeyboardButton(
+            "📤 Share Bot",
+            url=f"https://t.me/share/url?url=https://t.me/{username}&text=Check out this Advanced Scheduler Bot!",
+        ),
+    ]])
 
 
 def main_menu_keyboard(
@@ -497,10 +493,10 @@ async def _render_my_posts(query: Any, user_id: int, page: int, context: Context
     try:
         # PTB 22.8 exposes do_api_request for Bot API methods added after the
         # library release. Edit in place to preserve the dashboard message.
-        api_kwargs: dict[str, Any] = {
-            "rich_message": rich_message,
-            "reply_markup": keyboard,
-        }
+        inline_markup, reply_keyboard, keyboard_routes = split_inline_keyboard(keyboard)
+        api_kwargs: dict[str, Any] = {"rich_message": rich_message}
+        if inline_markup is not None:
+            api_kwargs["reply_markup"] = inline_markup
         inline_message_id = getattr(query, "inline_message_id", None)
         message = getattr(query, "message", None)
         if inline_message_id:
@@ -512,6 +508,15 @@ async def _render_my_posts(query: Any, user_id: int, page: int, context: Context
             raise ValueError("Cannot edit My Posts: callback message is unavailable.")
 
         await context.bot.do_api_request("editMessageText", api_kwargs=api_kwargs)
+        if reply_keyboard is not None and message is not None:
+            await publish_reply_keyboard(
+                context.bot,
+                getattr(context, "bot_data", {}),
+                message.chat_id,
+                reply_keyboard,
+                keyboard_routes,
+                message,
+            )
     except Exception as exc:
         logger.warning("Native My Posts Rich Message unavailable; using text fallback: %s", exc)
         rendered = _posts_list_text(filtered_posts, page, language)
@@ -679,6 +684,12 @@ async def cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "❌ *Cancelled.*\n\nUse /start to begin again.",
         parse_mode=ParseMode.MARKDOWN,
     )
+    if chat_id is not None:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Use /start to open the menu again.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
     return ConversationHandler.END
 
 
@@ -694,6 +705,7 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         final = await update.message.reply_text(
             "❌ *Cancelled.* Use /start to begin again.",
             parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardRemove(),
         )
         await chat_cleanup.cleanup(context, chat_id, keep_message_id=final.message_id)
     return ConversationHandler.END
