@@ -905,12 +905,12 @@ def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if count == 0:
         rows.append([
-            InlineKeyboardButton("➕ Add Button",  callback_data=CB_IB_ADD),
-            InlineKeyboardButton("⏭ Skip",         callback_data=CB_IB_SKIP),
+            InlineKeyboardButton("➕ Add Button",  style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton("⏭ Skip",         style="primary", callback_data=CB_IB_SKIP),
         ])
     else:
         rows.append([
-            InlineKeyboardButton("➕ Add Another",  callback_data=CB_IB_ADD),
+            InlineKeyboardButton("➕ Add Another",  style="primary", callback_data=CB_IB_ADD),
             InlineKeyboardButton("✅ Done",          style="success", callback_data=CB_IB_DONE),
         ])
     rows.append([InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)])
