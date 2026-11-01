@@ -42,7 +42,6 @@ COL_MEDIA_POOLS = "media_pools"
 COL_USERS = "bot_users"
 COL_GROUPS = "bot_groups"
 COL_ACTIVITY  = "chat_activity"
-COL_TEMPLATES = "templates"
 
 # ---------------------------------------------------------------------------
 # Valid enum values (used in validation helpers)
@@ -972,64 +971,6 @@ async def get_best_hours(chat_id: int, top_n: int = 3) -> list[dict]:
     return [{"hour": doc["hour"], "count": doc["count"]} async for doc in cursor]
 
 
-# ---------------------------------------------------------------------------
-# Post Templates
-# ---------------------------------------------------------------------------
-
-async def save_template(user_id: int, name: str, content: dict[str, Any]) -> str:
-    """Save a named post-content template. Returns the new template's string ID."""
-    db  = await get_db()
-    now = datetime.now(tz=timezone.utc)
-    doc = {
-        "user_id":    user_id,
-        "name":       name[:50],
-        "content":    content,
-        "created_at": now,
-    }
-    result = await db[COL_TEMPLATES].insert_one(doc)
-    return str(result.inserted_id)
-
-
-async def list_templates(user_id: int) -> list[dict[str, Any]]:
-    """Return all templates for this user, newest-first (max 50)."""
-    db = await get_db()
-    cursor = db[COL_TEMPLATES].find(
-        {"user_id": user_id},
-        {"name": 1, "content": 1, "created_at": 1},
-    ).sort("created_at", -1)
-    return await cursor.to_list(length=50)
-
-
-async def get_template(template_id: str) -> dict[str, Any] | None:
-    """Fetch a single template document by its string ObjectId."""
-    from bson import ObjectId
-    db = await get_db()
-    return await db[COL_TEMPLATES].find_one({"_id": ObjectId(template_id)})
-
-
-async def get_template_for_user(template_id: str, user_id: int) -> dict[str, Any] | None:
-    """Fetch a template only when it belongs to the requesting user."""
-    from bson import ObjectId, errors as bson_errors
-
-    try:
-        object_id = ObjectId(template_id)
-    except (bson_errors.InvalidId, TypeError):
-        return None
-    db = await get_db()
-    return await db[COL_TEMPLATES].find_one(
-        {"_id": object_id, "user_id": user_id}
-    )
-
-
-async def delete_template(template_id: str, user_id: int | None = None) -> bool:
-    """Delete a template, optionally restricting deletion to its owner."""
-    from bson import ObjectId
-    query: dict[str, Any] = {"_id": ObjectId(template_id)}
-    if user_id is not None:
-        query["user_id"] = user_id
-    db = await get_db()
-    result = await db[COL_TEMPLATES].delete_one(query)
-    return result.deleted_count > 0
 
 
 async def clear_all_bot_data() -> dict[str, int]:
