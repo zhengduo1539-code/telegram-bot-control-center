@@ -1,7 +1,17 @@
 """Regression tests for the all-private-actions Reply Keyboard bridge."""
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
-from reply_keyboard import split_inline_keyboard
+import pytest
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, User
+from telegram.ext import ApplicationHandlerStop
+
+from reply_keyboard import (
+    handle_reply_keyboard_message,
+    register_reply_keyboard_routes,
+    split_inline_keyboard,
+)
 
 
 def _labels(markup):
@@ -75,3 +85,94 @@ def test_empty_inline_keyboard_returns_no_markup():
     assert inline is None
     assert reply is None
     assert routes == {}
+
+
+
+def test_private_reply_keyboard_choice_dispatches_original_callback_route():
+    async def scenario():
+        chat_id = 123456
+        user = User(id=chat_id, first_name="Test", is_bot=False)
+        chat = SimpleNamespace(id=chat_id)
+        tapped_message = SimpleNamespace(
+            text="📅 Schedule New Post",
+            message_id=700,
+            reply_text=AsyncMock(),
+        )
+        target_message = SimpleNamespace(
+            chat_id=chat_id,
+            message_id=600,
+            chat=chat,
+        )
+        bot_data = {}
+        register_reply_keyboard_routes(
+            bot_data,
+            chat_id,
+            {"📅 Schedule New Post": {"type": "callback", "data": "action:schedule_new"}},
+            target_message,
+        )
+        application = SimpleNamespace(
+            bot_data=bot_data,
+            process_update=AsyncMock(),
+        )
+        context = SimpleNamespace(bot_data=bot_data, application=application)
+        update = SimpleNamespace(
+            update_id=701,
+            message=tapped_message,
+            effective_chat=chat,
+            effective_user=user,
+        )
+
+        with pytest.raises(ApplicationHandlerStop):
+            await handle_reply_keyboard_message(update, context)
+
+        application.process_update.assert_awaited_once()
+        synthetic = application.process_update.await_args.args[0]
+        assert synthetic.callback_query.data == "action:schedule_new"
+        assert synthetic.callback_query.from_user.id == chat_id
+        assert synthetic.callback_query.message.message_id == 600
+        assert bot_data["chat_cleanup"][chat_id] == [700]
+
+    asyncio.run(scenario())
+
+
+def test_group_start_reply_keyboard_url_choice_returns_deep_link():
+    async def scenario():
+        chat_id = -1001234567890
+        chat = SimpleNamespace(id=chat_id)
+        message = SimpleNamespace(
+            text="📩 Open Bot in Private Chat",
+            message_id=702,
+            reply_text=AsyncMock(),
+        )
+        bot_data = {}
+        register_reply_keyboard_routes(
+            bot_data,
+            chat_id,
+            {
+                "📩 Open Bot in Private Chat": {
+                    "type": "url",
+                    "url": "https://t.me/Scheduler?start=setup_-1001234567890",
+                }
+            },
+            SimpleNamespace(chat_id=chat_id, message_id=600),
+        )
+        context = SimpleNamespace(
+            bot_data=bot_data,
+            application=SimpleNamespace(bot_data=bot_data),
+        )
+        update = SimpleNamespace(
+            update_id=703,
+            message=message,
+            effective_chat=chat,
+            effective_user=SimpleNamespace(id=321),
+        )
+
+        with pytest.raises(ApplicationHandlerStop):
+            await handle_reply_keyboard_message(update, context)
+
+        message.reply_text.assert_awaited_once_with(
+            "🔗 Open this link:\nhttps://t.me/Scheduler?start=setup_-1001234567890"
+        )
+        assert bot_data["chat_cleanup"][chat_id] == [702]
+
+    asyncio.run(scenario())
