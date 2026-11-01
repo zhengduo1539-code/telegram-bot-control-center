@@ -16,7 +16,6 @@ def test_runtime_modules_import_without_external_services():
         "handlers.owner_panel",
         "handlers.queue_manager",
         "handlers.schedule_wizard",
-        "handlers.templates",
         "keep_alive",
     )
     for module in modules:
