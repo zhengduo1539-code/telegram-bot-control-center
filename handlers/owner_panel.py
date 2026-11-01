@@ -70,20 +70,29 @@ def _is_owner(user_id: int | None) -> bool:
 
 
 def _owner_menu_keyboard() -> InlineKeyboardMarkup:
+    """Present owner tools in clear operational groups without changing callbacks."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📊 Status",    callback_data=CB_OWNER_STATUS),
+            InlineKeyboardButton(
+                "📊 System Overview",
+                style="primary",
+                callback_data=CB_OWNER_STATUS,
+            ),
         ],
         [
-            InlineKeyboardButton("👤 User List",  callback_data=CB_OWNER_USERS),
-            InlineKeyboardButton("👥 Group List", callback_data=CB_OWNER_GROUPS),
+            InlineKeyboardButton("👤 User Directory", callback_data=CB_OWNER_USERS),
+            InlineKeyboardButton("👥 Group Directory", callback_data=CB_OWNER_GROUPS),
         ],
         [
             InlineKeyboardButton("📣 Broadcast All", callback_data=CB_OWNER_BCAST_ALL),
-            InlineKeyboardButton("🎯 Broadcast One", callback_data=CB_OWNER_BCAST_ONE),
+            InlineKeyboardButton("🎯 Message One", callback_data=CB_OWNER_BCAST_ONE),
         ],
         [
-            InlineKeyboardButton("🧹 Clear Data", style="danger", callback_data=CB_OWNER_CLEARDATA),
+            InlineKeyboardButton(
+                "🧹 Clear Bot Data",
+                style="danger",
+                callback_data=CB_OWNER_CLEARDATA,
+            ),
         ],
         [
             InlineKeyboardButton("🏠 Main Menu", callback_data="nav:main_menu"),
