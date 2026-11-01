@@ -19,6 +19,8 @@ def test_welcome_messages_cover_all_twenty_supported_locales():
         assert translate(language, "help_title") in message
         assert translate(language, "language") in message
         assert "Welcome to Schedule Bot" not in message if language != "en" else True
+        assert "📝" not in message
+        assert "📝" not in translate(language, "help_text")
 
 
 @pytest.mark.parametrize("language", tuple(LANGUAGES))
