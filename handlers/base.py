@@ -431,14 +431,14 @@ def _posts_keyboard(
         status = post.get("status", "pending")
         controls: list[InlineKeyboardButton] = []
         if status == "pending":
-            controls.append(InlineKeyboardButton(f"{tr(language, 'pause')} #{idx}", callback_data=f"{CB_MPP_PAUSE}{pid}"))
+            controls.append(InlineKeyboardButton(f"{tr(language, 'pause')} #{idx}", style="primary", callback_data=f"{CB_MPP_PAUSE}{pid}"))
         elif status == "paused":
-            controls.append(InlineKeyboardButton(f"{tr(language, 'resume')} #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
+            controls.append(InlineKeyboardButton(f"{tr(language, 'resume')} #{idx}", style="success", callback_data=f"{CB_MPP_RESUME}{pid}"))
         controls.append(InlineKeyboardButton(f"{tr(language, 'delete')} #{idx}", style="danger", callback_data=f"{CB_MPP_DEL}{pid}"))
         buttons.append(controls)
         buttons.append([
             InlineKeyboardButton(f"{tr(language, 'clone')} #{idx}", callback_data=f"{CB_MPP_CLONE}{pid}"),
-            InlineKeyboardButton(f"{tr(language, 'save_template')} #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
+            InlineKeyboardButton(f"{tr(language, 'save_template')} #{idx}", style="success", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
         ])
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
