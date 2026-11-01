@@ -64,10 +64,8 @@ CB_MPP_DEL       = "mpp:del:"       # + post_id  (ask confirm)
 CB_MPP_DEL_YES   = "mpp:delyes:"   # + post_id  (execute)
 CB_MPP_CLONE     = "mpp:clone:"    # + post_id  (ask confirm)
 CB_MPP_CLONE_YES = "mpp:cloneyes:" # + post_id  (execute)
-CB_MPP_SAVE_TMPL = "mpp:savetmpl:" # + post_id  (save as template)
 
 CB_MY_STATS  = "action:my_stats"   # post statistics
-CB_TEMPLATES = "action:templates"  # templates menu
 
 # ---------------------------------------------------------------------------
 # Conversation states (used by the base ConversationHandler)
@@ -76,7 +74,6 @@ MAIN_MENU               = 0
 MY_POSTS                = 1
 MY_POSTS_CONFIRM_DELETE = 2
 MY_POSTS_CONFIRM_CLONE  = 3
-MY_POSTS_SAVE_TEMPLATE  = 4
 
 POSTS_PER_PAGE = 5
 
@@ -160,14 +157,13 @@ def main_menu_keyboard(
         ],
         [
             InlineKeyboardButton(tr(language, "media_pool"), callback_data=CB_MEDIA_POOL),
-            InlineKeyboardButton(tr(language, "templates"), callback_data=CB_TEMPLATES),
-        ],
-        [
             InlineKeyboardButton(tr(language, "my_stats"), callback_data=CB_MY_STATS),
-            InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
         ],
         [
+            InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
             InlineKeyboardButton(tr(language, "help_title"), callback_data=CB_HELP),
+        ],
+        [
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ]
@@ -362,7 +358,7 @@ def _posts_rich_message(
             },
             {
                 "type": "footer",
-                "text": "Use the buttons below each post to pause, resume, duplicate, save as a template, or delete it.",
+                "text": "Use the buttons below each post to pause, resume, duplicate, or delete it.",
             },
         ]
     }
@@ -434,7 +430,6 @@ def _posts_keyboard(
         buttons.append(controls)
         buttons.append([
             InlineKeyboardButton(f"{tr(language, 'clone')} #{idx}", callback_data=f"{CB_MPP_CLONE}{pid}"),
-            InlineKeyboardButton(f"{tr(language, 'save_template')} #{idx}", style="success", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
         ])
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
@@ -972,77 +967,6 @@ async def cb_mpp_clone_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 # ---------------------------------------------------------------------------
-# Handlers — Save as Template
-# ---------------------------------------------------------------------------
-
-async def cb_mpp_save_tmpl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Prompt user for a template name after tapping 💾 Template."""
-    from database import get_post
-    query = update.callback_query
-    if not query or not query.from_user:
-        return MY_POSTS
-    post_id = (query.data or "").replace(CB_MPP_SAVE_TMPL, "")
-    try:
-        post = await get_post(post_id)
-    except Exception as exc:
-        await query.answer(f"Error: {exc}", show_alert=True)
-        return MY_POSTS
-    if not post:
-        await query.answer("Post not found.", show_alert=True)
-        return MY_POSTS
-    await query.answer()
-    context.user_data["_save_tmpl_post_id"] = post_id
-    content = post.get("content") or {}
-    preview = content.get("text") or f"[{content.get('media_type', 'media')}]"
-    await query.edit_message_text(
-        f"💾 *Save as Template*\n\n"
-        f"Content preview: _{str(preview)[:80]}_\n\n"
-        "📝 Type a short name for this template (e.g. *Weekly Promo*):",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back", callback_data=CB_MY_POSTS)],
-        ]),
-    )
-    return MY_POSTS_SAVE_TEMPLATE
-
-
-async def recv_template_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receive the template name from the user and save the template."""
-    from database import get_post, save_template
-    if not update.message or not update.effective_user:
-        return MY_POSTS_SAVE_TEMPLATE
-    name    = (update.message.text or "").strip()[:50]
-    if not name:
-        await update.message.reply_text("⚠️ Please enter a valid name.")
-        return MY_POSTS_SAVE_TEMPLATE
-    post_id = context.user_data.get("_save_tmpl_post_id")
-    user_id = update.effective_user.id
-    try:
-        post = await get_post(post_id)
-        if not post:
-            raise ValueError("Post not found")
-        content = post.get("content") or {}
-        tmpl_id = await save_template(user_id, name, content)
-    except Exception as exc:
-        logger.exception("save_template failed: %s", exc)
-        await update.message.reply_text(
-            f"❌ Error saving template: `{str(exc).replace(chr(96), chr(39))}`",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return MY_POSTS_SAVE_TEMPLATE
-    context.user_data.pop("_save_tmpl_post_id", None)
-    await update.message.reply_text(
-        f"✅ *Template saved!*\n\n"
-        f"📝 Name: *{name}*\n"
-        f"🆔 ID: `{tmpl_id}`\n\n"
-        "Access from *📝 Templates* in the Main Menu.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]),
-    )
-    return MY_POSTS
-
-
-# ---------------------------------------------------------------------------
 # ConversationHandler factory
 # ---------------------------------------------------------------------------
 
@@ -1078,7 +1002,6 @@ def build_base_conversation() -> ConversationHandler:
                 CallbackQueryHandler(cb_mpp_resume,     pattern=rf"^{CB_MPP_RESUME}{oid}$"),
                 CallbackQueryHandler(cb_mpp_del,        pattern=rf"^{CB_MPP_DEL}{oid}$"),
                 CallbackQueryHandler(cb_mpp_clone,      pattern=rf"^{CB_MPP_CLONE}{oid}$"),
-                CallbackQueryHandler(cb_mpp_save_tmpl,  pattern=rf"^{CB_MPP_SAVE_TMPL}{oid}$"),
                 CallbackQueryHandler(cb_my_stats,       pattern=f"^{CB_MY_STATS}$"),
                 CallbackQueryHandler(cb_main_menu,      pattern=f"^{CB_MAIN_MENU}$"),
                 CallbackQueryHandler(cb_cancel,         pattern=f"^{CB_CANCEL}$"),
@@ -1094,12 +1017,6 @@ def build_base_conversation() -> ConversationHandler:
                 CallbackQueryHandler(cb_my_posts,      pattern=f"^{CB_MY_POSTS}$"),
                 CallbackQueryHandler(cb_main_menu,     pattern=f"^{CB_MAIN_MENU}$"),
                 CallbackQueryHandler(cb_cancel,        pattern=f"^{CB_CANCEL}$"),
-            ],
-            MY_POSTS_SAVE_TEMPLATE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_template_name),
-                CallbackQueryHandler(cb_my_posts,  pattern=f"^{CB_MY_POSTS}$"),
-                CallbackQueryHandler(cb_main_menu, pattern=f"^{CB_MAIN_MENU}$"),
-                CallbackQueryHandler(cb_cancel,    pattern=f"^{CB_CANCEL}$"),
             ],
         },
         fallbacks=[
