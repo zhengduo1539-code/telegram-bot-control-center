@@ -62,7 +62,7 @@ def _tmpl_list_keyboard(templates: list[dict], page: int, language: str = "en") 
         name = tmpl.get("name", "Unnamed")[:40]
         rows.append([
             InlineKeyboardButton(f"📄 {name}", callback_data=f"tmpl:view:{tid}"),
-            InlineKeyboardButton(tr(language, "delete"), callback_data=f"{CB_TMPL_DEL}{tid}"),
+            InlineKeyboardButton(tr(language, "delete"), style="danger", callback_data=f"{CB_TMPL_DEL}{tid}"),
         ])
 
     nav_row: list[InlineKeyboardButton] = []
@@ -191,7 +191,7 @@ async def cb_tmpl_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("⬅️ Back", callback_data=CB_TEMPLATES),
-            InlineKeyboardButton("🗑 Delete", callback_data=f"{CB_TMPL_DEL}{tid}"),
+            InlineKeyboardButton("🗑 Delete", style="danger", callback_data=f"{CB_TMPL_DEL}{tid}"),
         ]]),
     )
     return TMPL_MENU
@@ -212,7 +212,7 @@ async def cb_tmpl_del(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Yes, delete", callback_data=f"{CB_TMPL_DEL_YES}{tid}"),
+                InlineKeyboardButton("✅ Yes, delete", style="danger", callback_data=f"{CB_TMPL_DEL_YES}{tid}"),
                 InlineKeyboardButton("⬅️ Back",        callback_data=CB_TEMPLATES),
             ],
         ]),
