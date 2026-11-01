@@ -1021,11 +1021,14 @@ async def get_template_for_user(template_id: str, user_id: int) -> dict[str, Any
     )
 
 
-async def delete_template(template_id: str) -> bool:
-    """Delete a template. Returns True if a document was deleted."""
+async def delete_template(template_id: str, user_id: int | None = None) -> bool:
+    """Delete a template, optionally restricting deletion to its owner."""
     from bson import ObjectId
-    db     = await get_db()
-    result = await db[COL_TEMPLATES].delete_one({"_id": ObjectId(template_id)})
+    query: dict[str, Any] = {"_id": ObjectId(template_id)}
+    if user_id is not None:
+        query["user_id"] = user_id
+    db = await get_db()
+    result = await db[COL_TEMPLATES].delete_one(query)
     return result.deleted_count > 0
 
 
