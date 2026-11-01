@@ -2,7 +2,7 @@ name: Schedule Bot checks
 
 on:
   push:
-    branches: [main, feature/schedule-bot-rebuild, feature/multilingual-ui-20-languages, fix/remove-language-selection-bubble]
+    branches: [main, feature/schedule-bot-rebuild, feature/multilingual-ui-20-languages, fix/remove-language-selection-bubble, feature/professional-telegram-ux]
   pull_request:
     branches: [main]
 
