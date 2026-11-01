@@ -15,6 +15,8 @@ def test_welcome_messages_cover_all_twenty_supported_locales():
     for language in LANGUAGES:
         message = welcome_text(language)
         assert message.strip()
+        assert "template" not in message.lower()
+        assert "📝" not in message
         assert translate(language, "schedule_new") in message
         assert translate(language, "help_title") in message
         assert translate(language, "language") in message
