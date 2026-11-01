@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from asgiref.wsgi import WsgiToAsgi
-from telegram import Bot, Update
+from telegram import Bot, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -46,6 +46,15 @@ from handlers.schedule_wizard import build_schedule_wizard
 from keep_alive import app as health_app
 from keep_alive import set_readiness, start_keep_alive
 from scheduler import setup_scheduler
+from reply_keyboard import (
+    clear_reply_keyboard_routes,
+    handle_reply_keyboard_message,
+    is_private_chat,
+    publish_reply_keyboard,
+    register_reply_keyboard_routes,
+    remove_previous_keyboard_anchor,
+    split_inline_keyboard,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,13 +175,92 @@ async def _on_bot_membership_change(
 
 
 class _TrackedBot(Bot):
-    """Track outgoing messages so completed wizard conversations can clean them up."""
+    """Track outgoing messages and bridge private UI buttons to Reply Keyboards."""
 
-    async def send_message(self, chat_id=None, *args, **kwargs):
-        message = await super().send_message(chat_id, *args, **kwargs)
+    def _track_outgoing(self, chat_id, message) -> None:
         if chat_id is not None and message is not None and _bot_data_ref is not None:
             chat_cleanup.track(_bot_data_ref, chat_id, message.message_id)
+
+    async def send_message(self, chat_id=None, *args, **kwargs):
+        target_chat_id = chat_id if chat_id is not None else kwargs.get("chat_id")
+        markup = kwargs.get("reply_markup")
+
+        if is_private_chat(target_chat_id) and isinstance(markup, InlineKeyboardMarkup):
+            inline_markup, reply_markup, routes = split_inline_keyboard(markup)
+            if reply_markup is not None:
+                await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
+                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
+                kwargs["reply_markup"] = inline_markup or reply_markup
+                message = await super().send_message(chat_id, *args, **kwargs)
+                self._track_outgoing(target_chat_id, message)
+                if inline_markup is not None:
+                    await publish_reply_keyboard(
+                        self, _bot_data_ref, target_chat_id,
+                        reply_markup, routes, message,
+                    )
+                else:
+                    register_reply_keyboard_routes(
+                        _bot_data_ref, target_chat_id, routes, message
+                    )
+                return message
+
+        if is_private_chat(target_chat_id) and isinstance(
+            markup, (ReplyKeyboardMarkup, ReplyKeyboardRemove)
+        ):
+            await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
+            clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
+
+        message = await super().send_message(chat_id, *args, **kwargs)
+        self._track_outgoing(target_chat_id, message)
         return message
+
+    async def edit_message_text(self, *args, **kwargs):
+        target_chat_id = kwargs.get("chat_id")
+        if target_chat_id is None and len(args) > 1:
+            target_chat_id = args[1]
+        markup = kwargs.get("reply_markup")
+
+        if is_private_chat(target_chat_id) and isinstance(markup, InlineKeyboardMarkup):
+            inline_markup, reply_markup, routes = split_inline_keyboard(markup)
+            if reply_markup is not None:
+                kwargs["reply_markup"] = inline_markup
+                result = await super().edit_message_text(*args, **kwargs)
+                old_entry = (
+                    _bot_data_ref.get("_reply_keyboard_route_registry", {}).get(str(target_chat_id), {})
+                    if _bot_data_ref is not None else {}
+                )
+                target_message = result if hasattr(result, "chat_id") else old_entry.get("target_message")
+                if target_message is not None:
+                    await publish_reply_keyboard(
+                        self, _bot_data_ref, target_chat_id,
+                        reply_markup, routes, target_message,
+                    )
+                return result
+        return await super().edit_message_text(*args, **kwargs)
+
+    async def edit_message_reply_markup(self, *args, **kwargs):
+        target_chat_id = kwargs.get("chat_id")
+        if target_chat_id is None and args:
+            target_chat_id = args[0]
+        markup = kwargs.get("reply_markup")
+
+        if is_private_chat(target_chat_id) and isinstance(markup, InlineKeyboardMarkup):
+            inline_markup, reply_markup, routes = split_inline_keyboard(markup)
+            if reply_markup is not None:
+                kwargs["reply_markup"] = inline_markup
+                result = await super().edit_message_reply_markup(*args, **kwargs)
+                old_entry = (
+                    _bot_data_ref.get("_reply_keyboard_route_registry", {}).get(str(target_chat_id), {})
+                    if _bot_data_ref is not None else {}
+                )
+                target_message = result if hasattr(result, "chat_id") else old_entry.get("target_message")
+                if target_message is not None:
+                    await publish_reply_keyboard(
+                        self, _bot_data_ref, target_chat_id,
+                        reply_markup, routes, target_message,
+                    )
+                return result
+        return await super().edit_message_reply_markup(*args, **kwargs)
 
 
 async def post_shutdown(application: Application) -> None:
@@ -207,6 +295,10 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("lang", cmd_lang))
     application.add_handler(CallbackQueryHandler(cmd_lang, pattern=f"^{CB_LANGUAGE}$"))
     application.add_handler(MessageHandler(language_selection_filter(), handle_language_choice))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard_message),
+        group=-2,
+    )
     application.add_handler(MessageHandler(filters.ALL, _track_incoming), group=-1)
     application.add_handler(CallbackQueryHandler(_track_incoming), group=-1)
     application.add_handler(

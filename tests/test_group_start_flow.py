@@ -12,6 +12,7 @@ from handlers.base import (
     parse_group_start_payload,
 )
 from handlers.schedule_wizard import WIZARD_CONTENT, WIZARD_INTRO, cb_wizard_continue, enter_wizard
+from reply_keyboard import split_inline_keyboard
 
 
 def test_group_start_payload_round_trips_negative_chat_id():
@@ -35,11 +36,13 @@ def test_group_start_payload_rejects_invalid_or_non_group_values():
 def test_group_start_shows_private_chat_button_not_feature_menu():
     async def scenario():
         chat_id = -1001234567890
-        message = SimpleNamespace(reply_text=AsyncMock())
+        message = SimpleNamespace(
+            reply_text=AsyncMock(return_value=SimpleNamespace(message_id=901))
+        )
         bot = SimpleNamespace(
             get_me=AsyncMock(return_value=SimpleNamespace(username="ScheduleBot"))
         )
-        context = SimpleNamespace(bot=bot, args=[], user_data={})
+        context = SimpleNamespace(bot=bot, args=[], user_data={}, bot_data={})
         update = SimpleNamespace(
             message=message,
             effective_chat=SimpleNamespace(
@@ -54,13 +57,15 @@ def test_group_start_shows_private_chat_button_not_feature_menu():
         bot.get_me.assert_awaited_once()
         kwargs = message.reply_text.await_args.kwargs
         keyboard = kwargs["reply_markup"]
-        assert keyboard.inline_keyboard[0][0].text == "📩 Open Bot in Private Chat"
-        assert keyboard.inline_keyboard[0][0].url == (
-            "https://t.me/ScheduleBot?start=setup_-1001234567890"
-        )
+        assert keyboard.keyboard[0][0].text == "📩 Open Bot in Private Chat"
+        route = context.bot_data["_reply_keyboard_route_registry"][str(chat_id)]["routes"]
+        assert route["📩 Open Bot in Private Chat"] == {
+            "type": "url",
+            "url": "https://t.me/ScheduleBot?start=setup_-1001234567890",
+        }
         assert "Publisher Group" in message.reply_text.await_args.args[0]
         assert "private chat" in message.reply_text.await_args.args[0].lower()
-        assert "action:schedule_new" not in str(keyboard.inline_keyboard)
+        assert not hasattr(keyboard, "inline_keyboard")
 
     asyncio.run(scenario())
 
@@ -87,14 +92,21 @@ def test_private_start_shows_welcome_guide_and_clear_primary_action():
         assert "Welcome to Schedule Bot" in body
         assert "Quick start" in body
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
-        rows = keyboard.inline_keyboard
-        assert rows[0][0].callback_data == "action:schedule_new"
-        assert rows[0][0].style == "success"
+        inline, reply, routes = split_inline_keyboard(keyboard)
+        inline_buttons = [button for row in inline.inline_keyboard for button in row]
+        assert len(inline_buttons) == 2
+        assert {button.url.split("?")[0] for button in inline_buttons} == {
+            "https://t.me/ScheduleBot",
+            "https://t.me/share/url",
+        }
+        reply_labels = {
+            button.text for row in reply.keyboard for button in row
+        }
+        assert any("Schedule New Post" in label for label in reply_labels)
+        assert any("My Posts" in label for label in reply_labels)
         callbacks = {
-            button.callback_data
-            for row in rows
-            for button in row
-            if button.callback_data
+            route.get("data") for route in routes.values()
+            if route.get("type") == "callback"
         }
         assert "nav:help" in callbacks
         assert "action:manage_queue" in callbacks
@@ -133,14 +145,21 @@ def test_private_start_validates_and_remembers_deep_linked_group():
         assert "Private Setup" in text
         assert "Publisher Group" in text
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
+        inline, reply, routes = split_inline_keyboard(keyboard)
+        assert [button.text for row in inline.inline_keyboard for button in row] == [
+            "➕ Add to My Group",
+            "📤 Share Bot",
+        ]
         callback_data = {
-            button.callback_data
-            for row in keyboard.inline_keyboard
-            for button in row
-            if button.callback_data
+            route.get("data") for route in routes.values()
+            if route.get("type") == "callback"
+        }
+        reply_labels = {
+            button.text for row in reply.keyboard for button in row
         }
         assert "action:schedule_new" in callback_data
         assert "action:manage_queue" in callback_data
+        assert any("Schedule New Post" in label for label in reply_labels)
 
     asyncio.run(scenario())
 

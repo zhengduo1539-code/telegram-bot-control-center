@@ -108,12 +108,23 @@ def test_dashboard_shows_summary_and_filter_empty_state(monkeypatch):
 
         context.user_data["_mp_filter"] = "all"
         query.edit_message_text.reset_mock()
-        context.bot = SimpleNamespace(do_api_request=AsyncMock(return_value={}))
+        context.bot_data = {}
+        context.bot = SimpleNamespace(
+            do_api_request=AsyncMock(return_value={}),
+            send_message=AsyncMock(return_value=SimpleNamespace(message_id=789)),
+            delete_message=AsyncMock(),
+        )
         await base._render_my_posts(query, 123, 0, context)
         context.bot.do_api_request.assert_awaited_once()
         method = context.bot.do_api_request.await_args.args[0]
         payload = context.bot.do_api_request.await_args.kwargs["api_kwargs"]
         assert method == "editMessageText"
+        assert "reply_markup" not in payload
+        context.bot.send_message.assert_awaited_once()
+        routes = context.bot_data["_reply_keyboard_route_registry"]["123"]["routes"]
+        route_data = {route.get("data") for route in routes.values()}
+        assert f"{base.CB_MPP_PAUSE}{'a' * 24}" in route_data
+        assert f"{base.CB_MPP_DEL}{'a' * 24}" in route_data
         assert payload["rich_message"]["blocks"][0]["text"] == "📋 My Posts"
         table = next(block for block in payload["rich_message"]["blocks"] if block["type"] == "table")
         assert table["is_bordered"] is True
