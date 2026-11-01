@@ -83,7 +83,7 @@ def _owner_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🎯 Broadcast One", callback_data=CB_OWNER_BCAST_ONE),
         ],
         [
-            InlineKeyboardButton("🧹 Clear Data", callback_data=CB_OWNER_CLEARDATA),
+            InlineKeyboardButton("🧹 Clear Data", style="danger", callback_data=CB_OWNER_CLEARDATA),
         ],
         [
             InlineKeyboardButton("🏠 Main Menu", callback_data="nav:main_menu"),
@@ -474,7 +474,7 @@ async def cb_owner_cleardata_confirm(update: Update, context: ContextTypes.DEFAU
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Yes, wipe it all", callback_data=CB_OWNER_CLEAR_YES),
+                InlineKeyboardButton("✅ Yes, wipe it all", style="danger", callback_data=CB_OWNER_CLEAR_YES),
                 InlineKeyboardButton("⬅️ Back", callback_data=CB_OWNER_BACK),
             ],
         ]),

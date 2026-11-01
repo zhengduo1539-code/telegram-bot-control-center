@@ -234,7 +234,7 @@ def _chat_list_keyboard(
         rows.append(nav)
 
     rows.append([InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)])
-    rows.append([InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)])
+    rows.append([InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -245,7 +245,7 @@ def _no_groups_keyboard(bot_username: str, language: str = "en") -> InlineKeyboa
             url=f"https://t.me/{bot_username}?startgroup=start",
         )],
         [InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)],
-        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
@@ -255,7 +255,7 @@ def _first_run_keyboard(back_data: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("💡 Suggest Best Time", callback_data=CB_SMART_SUGGEST)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=back_data),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -267,7 +267,7 @@ def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(tr(language, "recurrence_once"), callback_data=CB_REC_ONCE)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -281,7 +281,7 @@ def _interval_unit_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_INTERVAL_V),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -308,8 +308,8 @@ def _dow_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
     rows.append(days_row2)
     rows.append([
         InlineKeyboardButton("⬅️ Back",    callback_data=CB_BACK_RECURRENCE),
-        InlineKeyboardButton("➡️ Next",    callback_data=CB_DOW_NEXT),
-        InlineKeyboardButton("❌ Cancel",  callback_data=CB_CANCEL),
+        InlineKeyboardButton("➡️ Next",    style="primary", callback_data=CB_DOW_NEXT),
+        InlineKeyboardButton("❌ Cancel",  style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -331,7 +331,7 @@ def _timezone_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMar
         rows.append(nav)
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_TZ),
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -346,8 +346,8 @@ def _time_window_keyboard(enabled: bool) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⬅️ Back",    callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton("➡️ Next",    callback_data=CB_LC_NEXT),
-            InlineKeyboardButton("❌ Cancel",  callback_data=CB_CANCEL),
+            InlineKeyboardButton("➡️ Next",    style="primary", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton("❌ Cancel",  style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -361,8 +361,8 @@ def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)", callback_data=CB_LC_AP)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_TW),
-            InlineKeyboardButton("➡️ Next",   callback_data=CB_LC_NEXT),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton("➡️ Next",   style="primary", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -382,8 +382,8 @@ def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool) -> InlineKeyboard
         [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)",  callback_data=CB_LC_AP)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton("➡️ Next",   callback_data=CB_LC_NEXT),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton("➡️ Next",   style="primary", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -472,7 +472,7 @@ async def _edit(query: Any, text: str, keyboard: InlineKeyboardMarkup) -> None:
 
 def _wizard_intro_keyboard(language: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         InlineKeyboardButton(sw_tr(language, "continue"), callback_data=CB_WIZARD_CONTINUE),
     ]])
 
@@ -604,7 +604,7 @@ def _content_step_keyboard() -> InlineKeyboardMarkup:
     """Keyboard shown at the WIZARD_CONTENT step."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Use Template", callback_data=CB_USE_TEMPLATE)],
-        [InlineKeyboardButton("❌ Cancel",        callback_data=CB_CANCEL)],
+        [InlineKeyboardButton("❌ Cancel",        style="danger", callback_data=CB_CANCEL)],
     ])
 
 
@@ -630,7 +630,7 @@ def _wizard_tmpl_keyboard(templates: list[dict], page: int) -> InlineKeyboardMar
         rows.append(nav)
     rows.append([
         InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_TO_CONTENT),
-        InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -905,15 +905,15 @@ def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if count == 0:
         rows.append([
-            InlineKeyboardButton("➕ Add Button",  callback_data=CB_IB_ADD),
-            InlineKeyboardButton("⏭ Skip",         callback_data=CB_IB_SKIP),
+            InlineKeyboardButton("➕ Add Button",  style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton("⏭ Skip",         style="primary", callback_data=CB_IB_SKIP),
         ])
     else:
         rows.append([
-            InlineKeyboardButton("➕ Add Another",  callback_data=CB_IB_ADD),
-            InlineKeyboardButton("✅ Done",          callback_data=CB_IB_DONE),
+            InlineKeyboardButton("➕ Add Another",  style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton("✅ Done",          style="success", callback_data=CB_IB_DONE),
         ])
-    rows.append([InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)])
+    rows.append([InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -1355,7 +1355,7 @@ def _max_runs_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_FIRST_RUN),
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
 

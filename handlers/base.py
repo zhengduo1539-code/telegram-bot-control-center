@@ -159,7 +159,7 @@ def main_menu_keyboard(
         ],
         [
             InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ]
     if bot is not None:
@@ -189,7 +189,7 @@ def nav_keyboard(back_data: str | None = None) -> InlineKeyboardMarkup:
     row: list[InlineKeyboardButton] = []
     if back_data:
         row.append(InlineKeyboardButton("⬅️ Back", callback_data=back_data))
-    row.append(InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL))
+    row.append(InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL))
     return InlineKeyboardMarkup([row])
 
 
@@ -199,11 +199,11 @@ def confirm_keyboard(confirm_data: str, back_data: str) -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Confirm", callback_data=confirm_data),
+            InlineKeyboardButton("✅ Confirm", style="success", callback_data=confirm_data),
             InlineKeyboardButton("⬅️ Back",   callback_data=back_data),
         ],
         [
-            InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -431,14 +431,14 @@ def _posts_keyboard(
         status = post.get("status", "pending")
         controls: list[InlineKeyboardButton] = []
         if status == "pending":
-            controls.append(InlineKeyboardButton(f"{tr(language, 'pause')} #{idx}", callback_data=f"{CB_MPP_PAUSE}{pid}"))
+            controls.append(InlineKeyboardButton(f"{tr(language, 'pause')} #{idx}", style="primary", callback_data=f"{CB_MPP_PAUSE}{pid}"))
         elif status == "paused":
-            controls.append(InlineKeyboardButton(f"{tr(language, 'resume')} #{idx}", callback_data=f"{CB_MPP_RESUME}{pid}"))
-        controls.append(InlineKeyboardButton(f"{tr(language, 'delete')} #{idx}", callback_data=f"{CB_MPP_DEL}{pid}"))
+            controls.append(InlineKeyboardButton(f"{tr(language, 'resume')} #{idx}", style="success", callback_data=f"{CB_MPP_RESUME}{pid}"))
+        controls.append(InlineKeyboardButton(f"{tr(language, 'delete')} #{idx}", style="danger", callback_data=f"{CB_MPP_DEL}{pid}"))
         buttons.append(controls)
         buttons.append([
             InlineKeyboardButton(f"{tr(language, 'clone')} #{idx}", callback_data=f"{CB_MPP_CLONE}{pid}"),
-            InlineKeyboardButton(f"{tr(language, 'save_template')} #{idx}", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
+            InlineKeyboardButton(f"{tr(language, 'save_template')} #{idx}", style="success", callback_data=f"{CB_MPP_SAVE_TMPL}{pid}"),
         ])
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
@@ -798,7 +798,7 @@ async def cb_mpp_del(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Yes, delete", callback_data=f"{CB_MPP_DEL_YES}{post_id}"),
+                InlineKeyboardButton("✅ Yes, delete", style="danger", callback_data=f"{CB_MPP_DEL_YES}{post_id}"),
                 InlineKeyboardButton("⬅️ Back",        callback_data=CB_MY_POSTS),
             ],
         ]),
@@ -913,7 +913,7 @@ async def cb_mpp_clone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Clone",  callback_data=f"{CB_MPP_CLONE_YES}{post_id}"),
+                InlineKeyboardButton("✅ Clone",  style="success", callback_data=f"{CB_MPP_CLONE_YES}{post_id}"),
                 InlineKeyboardButton("⬅️ Back",  callback_data=CB_MY_POSTS),
             ],
         ]),
