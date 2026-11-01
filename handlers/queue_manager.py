@@ -321,7 +321,7 @@ def _qm_content_keyboard(language: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 User Template", callback_data=CB_QM_USE_TEMPLATE)],
         [InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_QM_AC_CHAT),
-         InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+         InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 def _parse_hhmm(text: str) -> str | None:
@@ -425,7 +425,7 @@ def _mp_interval_unit_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_IU),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -451,7 +451,7 @@ def _qm_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup
         rows.append(nav)
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_QM_SLOT_TZ),
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 def _qm_ac_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
@@ -475,7 +475,7 @@ def _qm_ac_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMar
         rows.append(nav)
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_QM_AC_DATE),
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 def _mp_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
@@ -498,7 +498,7 @@ def _mp_tz_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup
         rows.append(nav)
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_FR),
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -540,7 +540,7 @@ def _qm_group_picker_keyboard(
     )])
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=back_cb),
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 def _qm_no_groups_keyboard(
@@ -559,7 +559,7 @@ def _qm_no_groups_keyboard(
         )],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=back_cb),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 def _qm_intro_keyboard(language: str = "en") -> InlineKeyboardMarkup:
@@ -578,7 +578,7 @@ def _qm_nav_keyboard(language: str, back_data: str | None = None) -> InlineKeybo
     row: list[InlineKeyboardButton] = []
     if back_data:
         row.append(InlineKeyboardButton(tr(language, "back"), callback_data=back_data))
-    row.append(InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL))
+    row.append(InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL))
     return InlineKeyboardMarkup([row])
 
 
@@ -592,7 +592,7 @@ def _qm_confirm_keyboard(
             InlineKeyboardButton(tr(language, "confirm"), callback_data=confirm_data),
             InlineKeyboardButton(tr(language, "back"), callback_data=back_data),
         ],
-        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
@@ -604,7 +604,7 @@ def _qm_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(tr(language, "queue_clear"), callback_data=CB_QM_CLEAR)],
         [
             InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 async def enter_queue_manager(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1730,7 +1730,7 @@ async def cb_qm_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                     tr(language, "back"), callback_data=CB_BACK_QM_MENU
                 ),
             ],
-            [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
         ]),
     )
     return QM_MENU
@@ -1799,7 +1799,7 @@ def _mp_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -1809,7 +1809,7 @@ def _mp_add_item_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📝 User Template", callback_data=CB_MP_USE_TEMPLATE)],
         [InlineKeyboardButton(mp_tr(language, "schedule_from_add"), callback_data=CB_MP_ADD_SCHEDULE)],
         [InlineKeyboardButton(mp_tr(language, "finish_add"), callback_data=CB_MP_ADD_DONE)],
-        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
@@ -1833,7 +1833,7 @@ def _mp_quick_interval_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -1844,7 +1844,7 @@ def _mp_first_run_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(mp_tr(language, "choose_time"), callback_data=CB_MP_FIRST_CUSTOM)],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_IV),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -1882,7 +1882,7 @@ def _mp_group_picker_keyboard(
     ])
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -1919,7 +1919,7 @@ def _mp_manage_picker_keyboard(
         rows.append(nav)
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
-        InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -1930,7 +1930,7 @@ def _mp_manage_actions_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(mp_tr(language, "clear_pool"), callback_data=CB_MP_CLEAR)],
         [
             InlineKeyboardButton(mp_tr(language, "all_pools"), callback_data=CB_BACK_MP_MANAGE),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -1944,7 +1944,7 @@ def _mp_manage_confirm_keyboard(
             InlineKeyboardButton(tr(language, "confirm"), callback_data=confirm_callback),
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_DETAILS),
         ],
-        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
@@ -1956,7 +1956,7 @@ def _mp_nav_keyboard(
     row: list[InlineKeyboardButton] = []
     if back_data:
         row.append(InlineKeyboardButton(tr(language, "back"), callback_data=back_data))
-    row.append(InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL))
+    row.append(InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL))
     return InlineKeyboardMarkup([row])
 
 
@@ -1972,7 +1972,7 @@ def _mp_no_groups_keyboard(language: str, bot_username: str) -> InlineKeyboardMa
         )],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -2152,7 +2152,7 @@ async def _mp_continue_after_chat_selection(
                     )],
                     [InlineKeyboardButton(
                         tr(language, "cancel"),
-                        callback_data=CB_CANCEL,
+                        style="danger", callback_data=CB_CANCEL,
                     )],
                 ]),
             )
@@ -2563,7 +2563,7 @@ async def cb_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 InlineKeyboardButton(mp_tr(language, "keep_posts"), callback_data=CB_MP_AD_NO),
             ],
             [InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ)],
-            [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
         ]),
     )
     return MP_AUTO_DELETE
@@ -2601,7 +2601,7 @@ def _mp_schedule_confirm_keyboard(language: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(tr(language, "confirm"), callback_data=CB_MP_CONFIRM),
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ),
         ],
-        [InlineKeyboardButton(tr(language, "cancel"), callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
