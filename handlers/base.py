@@ -863,53 +863,87 @@ async def cb_mpp_del_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ---------------------------------------------------------------------------
 
 async def cb_my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show per-channel post statistics for the current user."""
+    """Show a concise per-chat publishing summary for the current user."""
     from database import get_post_stats
+
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
+
     await query.answer()
     user_id = query.from_user.id
+    language = await resolve_user_language(context, user_id)
 
     try:
         rows = await get_post_stats(user_id)
-    except Exception as exc:
-        logger.exception("get_post_stats failed: %s", exc)
+    except Exception:
+        logger.exception("get_post_stats failed for user_id=%s", user_id)
         await query.edit_message_text(
-            f"❌ Error loading statistics: `{str(exc).replace(chr(96), chr(39))}`",
+            "⚠️ *Statistics are temporarily unavailable.*\\n\\nPlease try again in a moment.",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)]]),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS)],
+                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
+            ]),
         )
         return MY_POSTS
 
     if not rows:
         await query.edit_message_text(
-            "📊 *My Statistics*\n\nNo posts found. Schedule something first!",
+            "📊 *Post Statistics*\\n\\n"
+            "No scheduled posts have been recorded yet. Create your first post to see publishing activity here.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📋 My Posts", callback_data=CB_MY_POSTS)],
-                [InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)],
+                [InlineKeyboardButton(tr(language, "schedule_new"), style="success", callback_data=CB_SCHEDULE_NEW)],
+                [InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS)],
+                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
             ]),
         )
         return MY_POSTS
 
-    lines = ["📊 *Post Statistics*\n"]
+    totals = {"pending": 0, "posted": 0, "paused": 0, "failed": 0}
+    lines = ["📊 *Post Statistics*", "_Publishing activity by group or channel_", ""]
     for row in rows:
-        chat_id  = row["_id"]
-        total    = row["total"]
-        sm       = {s["status"]: s["count"] for s in row.get("stats", [])}
-        lines.append(
-            f"🗂 `{chat_id}` — *{total}* total\n"
-            f"  ⏳`{sm.get('pending', 0)}`  ✅`{sm.get('posted', 0)}`"
-            f"  ⏸`{sm.get('paused', 0)}`  ❌`{sm.get('failed', 0)}`"
-        )
+        chat_id = row["_id"]
+        total = int(row.get("total", 0) or 0)
+        counts = {
+            item.get("status"): int(item.get("count", 0) or 0)
+            for item in row.get("stats", [])
+        }
+        for status in totals:
+            totals[status] += counts.get(status, 0)
+
+        lines.extend([
+            f"🗂 *Chat* `{chat_id}`",
+            f"Total: *{total}*",
+            (
+                f"⏳ Active: {counts.get('pending', 0)}  ·  "
+                f"⏸ Paused: {counts.get('paused', 0)}"
+            ),
+            (
+                f"✅ Published: {counts.get('posted', 0)}  ·  "
+                f"❌ Failed: {counts.get('failed', 0)}"
+            ),
+            "",
+        ])
+
+    lines.extend([
+        "━━━━━━━━━━━━━━━━━━",
+        "*Overall activity*",
+        (
+            f"⏳ {totals['pending']} active  ·  ⏸ {totals['paused']} paused"
+        ),
+        (
+            f"✅ {totals['posted']} published  ·  ❌ {totals['failed']} failed"
+        ),
+    ])
 
     await query.edit_message_text(
-        "\n".join(lines),
+        "\\n".join(lines),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 My Posts",  callback_data=CB_MY_POSTS)],
-            [InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)],
+            [InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS)],
+            [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
         ]),
     )
     return MY_POSTS
