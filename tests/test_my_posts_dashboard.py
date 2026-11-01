@@ -53,7 +53,7 @@ def test_posts_keyboard_exposes_filters_and_preserves_existing_actions():
     assert f"{base.CB_MPP_PAUSE}{post['_id']}" in callbacks
     assert f"{base.CB_MPP_DEL}{post['_id']}" in callbacks
     assert f"{base.CB_MPP_CLONE}{post['_id']}" in callbacks
-    assert f"{base.CB_MPP_SAVE_TMPL}{post['_id']}" in callbacks
+    assert not any("template" in button.text.lower() for button in buttons)
 
 
 
