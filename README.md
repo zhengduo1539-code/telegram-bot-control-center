@@ -1,6 +1,6 @@
 # Schedule Bot
 
-A Telegram scheduling bot for group and channel publishers. It supports one-time posts, recurring schedules, timezone-aware daily queues, reusable templates and message lifecycle actions.
+A Telegram scheduling bot for group and channel publishers. It supports one-time posts, recurring schedules, timezone-aware daily queues and message lifecycle actions.
 
 ## Main features
 
@@ -9,7 +9,6 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 - **Daily Queue:** configure posting times such as 09:00, 14:00 and 20:00, then add content. The bot publishes one pending item per configured slot.
 - **Timezone support:** choose an IANA timezone; execution timestamps are persisted in UTC.
 - **Inline URL buttons:** add optional links below posts.
-- **Templates:** save and reuse common content.
 - **Message lifecycle:** auto-pin/unpin, auto-delete and self-destruct.
 - **Owner Panel:** service statistics, user/group lists, broadcast and data cleanup.
 
@@ -31,7 +30,7 @@ English, Myanmar (မြန်မာ), Simplified Chinese, Spanish, Hindi, Arabi
 
 The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard; after the user selects a language, the bot removes that temporary keyboard and shows the localized inline main menu.
 
-Localized screens include the main menu, group-to-private onboarding, Help Guide, initial Schedule New Post steps, recurrence/timezone/first-run setup, Queue Manager overview, My Posts and Templates. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
+Localized screens include the main menu, group-to-private onboarding, Help Guide, initial Schedule New Post steps, recurrence/timezone/first-run setup, Queue Manager overview and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
 
 ## Project structure
 
@@ -40,7 +39,7 @@ Localized screens include the main menu, group-to-private onboarding, Help Guide
 - database.py: MongoDB persistence, indexes, atomic queue claims and retention.
 - scheduler.py: recurring post execution, daily queue delivery and message lifecycle.
 - schedule_utils.py: pure timezone-aware daily-slot calculations.
-- handlers/: guided user flows, owner tools, templates and permission checks.
+- handlers/: guided user flows, owner tools and permission checks.
 - keep_alive.py: Render liveness/readiness endpoints.
 - tests/: automated unit tests.
 
