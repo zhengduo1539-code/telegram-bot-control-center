@@ -122,7 +122,7 @@ async def cb_owner_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
     await query.answer()
     await query.edit_message_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
@@ -140,7 +140,7 @@ async def cb_owner_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await query.answer()
     context.user_data.pop("_owner_bcast_target", None)
     await query.edit_message_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
@@ -369,7 +369,7 @@ async def msg_owner_bcast_all_send(update: Update, context: ContextTypes.DEFAULT
         parse_mode=ParseMode.MARKDOWN,
     )
     await update.message.reply_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
@@ -439,7 +439,7 @@ async def msg_owner_bcast_one_send(update: Update, context: ContextTypes.DEFAULT
     context.user_data.pop("_owner_bcast_target", None)
     await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
     await update.message.reply_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
