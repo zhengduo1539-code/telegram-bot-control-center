@@ -693,6 +693,7 @@ async def add_to_media_pool(
 ) -> None:
     """Add a single item to the media pool for a chat."""
     item.setdefault("posted", False)
+    item.setdefault("item_id", uuid.uuid4().hex)
     db = await get_db()
     now = datetime.now(tz=timezone.utc)
     await db[COL_MEDIA_POOLS].update_one(
@@ -735,17 +736,20 @@ async def mark_pool_item_posted(
     chat_id: int,
     item_media_file_id: str | None,
     item_text: str | None,
+    item_id: str | None = None,
 ) -> None:
-    """Mark a specific pool item as posted (matched by file_id or text)."""
+    """Mark the exact pool item as posted; retain matching fallback for legacy items."""
     db = await get_db()
     now = datetime.now(tz=timezone.utc)
-    match_field = "items.media_file_id" if item_media_file_id else "items.text"
-    match_value = item_media_file_id if item_media_file_id else item_text
+    if item_id:
+        item_filter = {"items.item_id": item_id}
+    else:
+        match_field = "items.media_file_id" if item_media_file_id else "items.text"
+        match_value = item_media_file_id if item_media_file_id else item_text
+        item_filter = {match_field: match_value}
     await db[COL_MEDIA_POOLS].update_one(
-        {"user_id": user_id, "chat_id": chat_id, match_field: match_value},
-        {
-            "$set": {"items.$.posted": True, "updated_at": now},
-        },
+        {"user_id": user_id, "chat_id": chat_id, **item_filter},
+        {"$set": {"items.$.posted": True, "updated_at": now}},
     )
 
 
