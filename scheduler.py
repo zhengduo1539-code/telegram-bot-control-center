@@ -390,7 +390,7 @@ async def _execute_pool_post(bot: Bot, post: dict[str, Any]) -> None:
         return
 
     # Mark item as posted
-    await mark_pool_item_posted(user_id, chat_id, item.get("media_file_id"), item.get("text"))
+    await mark_pool_item_posted(user_id, chat_id, item.get("media_file_id"), item.get("text"), item.get("item_id"))
 
     # Handle lifecycle
     await _handle_lifecycle(bot, post, sent_msg)
