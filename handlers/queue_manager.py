@@ -597,15 +597,14 @@ def _qm_confirm_keyboard(
 
 
 def _qm_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    """Group queue actions by setup, review, and destructive maintenance."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(tr(language, "queue_set_slots"), callback_data=CB_QM_SET_SLOTS)],
-        [InlineKeyboardButton(tr(language, "queue_add_content"), callback_data=CB_QM_ADD_CONTENT)],
+        [InlineKeyboardButton(tr(language, "queue_set_slots"), style="success", callback_data=CB_QM_SET_SLOTS)],
+        [InlineKeyboardButton(tr(language, "queue_add_content"), style="primary", callback_data=CB_QM_ADD_CONTENT)],
         [InlineKeyboardButton(tr(language, "queue_view"), callback_data=CB_QM_VIEW)],
         [InlineKeyboardButton(tr(language, "queue_clear"), style="danger", callback_data=CB_QM_CLEAR)],
-        [
-            InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
-        ],
+        [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 async def enter_queue_manager(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show the Queue Manager introduction before exposing its actions."""
