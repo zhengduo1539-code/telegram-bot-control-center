@@ -182,6 +182,7 @@ def test_main_menu_and_my_posts_controls_use_the_selected_locale():
     ]
     assert "📅 Post အသစ် Schedule" in menu_labels
     assert "🌐 ဘာသာစကား" in menu_labels
+    assert not any("Template" in label or "テンプレート" in label for label in menu_labels)
 
     posts = [{
         "_id": "0123456789abcdef01234567",
@@ -198,21 +199,6 @@ def test_main_menu_and_my_posts_controls_use_the_selected_locale():
     ]
     assert "⏸ ခေတ္တရပ် #1" in labels
     assert "🗑 ဖျက်ရန် #1" in labels
-    assert "💾 Template သိမ်းရန် #1" in labels
+    assert not any("Template" in label or "テンプレート" in label for label in labels)
 
 
-def test_templates_list_controls_use_the_selected_locale():
-    from handlers.templates import _tmpl_list_keyboard
-
-    keyboard = _tmpl_list_keyboard(
-        [{"_id": "0123456789abcdef01234567", "name": "Welcome"}],
-        page=0,
-        language="my",
-    )
-    labels = [
-        button.text
-        for row in keyboard.inline_keyboard
-        for button in row
-    ]
-    assert "🗑 ဖျက်ရန်" in labels
-    assert "🏠 ပင်မမီနူး — လုပ်ဆောင်ချက်ရွေးချယ်ပါ" in labels
