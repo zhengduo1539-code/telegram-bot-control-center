@@ -601,7 +601,7 @@ def _qm_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(tr(language, "queue_set_slots"), callback_data=CB_QM_SET_SLOTS)],
         [InlineKeyboardButton(tr(language, "queue_add_content"), callback_data=CB_QM_ADD_CONTENT)],
         [InlineKeyboardButton(tr(language, "queue_view"), callback_data=CB_QM_VIEW)],
-        [InlineKeyboardButton(tr(language, "queue_clear"), callback_data=CB_QM_CLEAR)],
+        [InlineKeyboardButton(tr(language, "queue_clear"), style="danger", callback_data=CB_QM_CLEAR)],
         [
             InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
@@ -1724,7 +1724,7 @@ async def cb_qm_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             [
                 InlineKeyboardButton(
                     qm_tr(language, "button_clear_all"),
-                    callback_data=CB_QM_CLEAR_YES,
+                    style="danger", callback_data=CB_QM_CLEAR_YES,
                 ),
                 InlineKeyboardButton(
                     tr(language, "back"), callback_data=CB_BACK_QM_MENU
@@ -1808,7 +1808,7 @@ def _mp_add_item_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 User Template", callback_data=CB_MP_USE_TEMPLATE)],
         [InlineKeyboardButton(mp_tr(language, "schedule_from_add"), callback_data=CB_MP_ADD_SCHEDULE)],
-        [InlineKeyboardButton(mp_tr(language, "finish_add"), callback_data=CB_MP_ADD_DONE)],
+        [InlineKeyboardButton(mp_tr(language, "finish_add"), style="success", callback_data=CB_MP_ADD_DONE)],
         [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
@@ -1927,7 +1927,7 @@ def _mp_manage_picker_keyboard(
 def _mp_manage_actions_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(mp_tr(language, "reset_cycle"), callback_data=CB_MP_RESET)],
-        [InlineKeyboardButton(mp_tr(language, "clear_pool"), callback_data=CB_MP_CLEAR)],
+        [InlineKeyboardButton(mp_tr(language, "clear_pool"), style="danger", callback_data=CB_MP_CLEAR)],
         [
             InlineKeyboardButton(mp_tr(language, "all_pools"), callback_data=CB_BACK_MP_MANAGE),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
@@ -1941,7 +1941,7 @@ def _mp_manage_confirm_keyboard(
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(tr(language, "confirm"), callback_data=confirm_callback),
+            InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=confirm_callback),
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_DETAILS),
         ],
         [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
@@ -2144,7 +2144,7 @@ async def _mp_continue_after_chat_selection(
                 InlineKeyboardMarkup([
                     [InlineKeyboardButton(
                         mp_tr(language, "add_content"),
-                        callback_data=CB_MP_ADD_SELECTED,
+                        style="success", callback_data=CB_MP_ADD_SELECTED,
                     )],
                     [InlineKeyboardButton(
                         tr(language, "back"),
@@ -2559,7 +2559,7 @@ async def cb_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         mp_tr(language, "auto_delete"),
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(mp_tr(language, "yes"), callback_data=CB_MP_AD_YES),
+                InlineKeyboardButton(mp_tr(language, "yes"), style="success", callback_data=CB_MP_AD_YES),
                 InlineKeyboardButton(mp_tr(language, "keep_posts"), callback_data=CB_MP_AD_NO),
             ],
             [InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ)],
@@ -2598,7 +2598,7 @@ def _mp_summary_text(pm: dict, language: str = "en") -> str:
 def _mp_schedule_confirm_keyboard(language: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(tr(language, "confirm"), callback_data=CB_MP_CONFIRM),
+            InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=CB_MP_CONFIRM),
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MP_TZ),
         ],
         [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
