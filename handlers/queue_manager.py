@@ -1789,17 +1789,16 @@ def _mp_intro_keyboard(language: str = "en") -> InlineKeyboardMarkup:
 
 
 def _mp_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    """Keep the main add-content action prominent and navigation predictable."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(mp_tr(language, "add_content"), callback_data=CB_MP_ADD_ITEM)],
-        [InlineKeyboardButton(mp_tr(language, "set_schedule"), callback_data=CB_MP_SET_INTERVAL)],
+        [InlineKeyboardButton(mp_tr(language, "add_content"), style="success", callback_data=CB_MP_ADD_ITEM)],
+        [InlineKeyboardButton(mp_tr(language, "set_schedule"), style="primary", callback_data=CB_MP_SET_INTERVAL)],
         [
             InlineKeyboardButton(mp_tr(language, "pool_overview"), callback_data=CB_MP_VIEW),
             InlineKeyboardButton(mp_tr(language, "manage_pool"), callback_data=CB_MP_MANAGE),
         ],
-        [
-            InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
-        ],
+        [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
