@@ -1,9 +1,9 @@
 """Bridge all private-chat feature buttons to native Reply Keyboards.
 
 The welcome screen keeps only Add to My Group and Share Bot as inline URL
-buttons. Telegram permits one keyboard type per message, so function buttons
-are shown using a small follow-up message. Reply-keyboard selections are
-translated back into the existing callback handlers.
+buttons. Telegram permits one keyboard type per message, so the Reply Keyboard
+is attached to a minimal, non-visible anchor message. Selections are queued as
+synthetic callback updates and handled by the existing conversation handlers.
 """
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ async def remove_previous_keyboard_anchor(bot: Any, bot_data: dict[str, Any] | N
     try:
         await bot.delete_message(chat_id=chat_id, message_id=anchor_id)
     except Exception as exc:
-        logger.debug("Could not remove previous Reply Keyboard cue: %s", exc)
+        logger.debug("Could not remove previous Reply Keyboard anchor: %s", exc)
 
 
 async def publish_reply_keyboard(
@@ -149,12 +149,17 @@ async def publish_reply_keyboard(
     routes: dict[str, dict[str, str]],
     target_message: Any,
 ) -> Any:
-    """Display a Reply Keyboard while keeping the actionable prompt intact."""
+    """Display a Reply Keyboard without adding a visible cue message.
+
+    Telegram allows only one keyboard type per message. A zero-width
+    placeholder lets the keyboard stay separate from an existing Inline
+    Keyboard message without adding an arrow or another visible text line.
+    """
     await remove_previous_keyboard_anchor(bot, bot_data, chat_id)
     clear_reply_keyboard_routes(bot_data, chat_id)
     anchor = await bot.send_message(
         chat_id=chat_id,
-        text="⬇️",
+        text="\u2063",
         reply_markup=markup,
         disable_notification=True,
     )
@@ -229,7 +234,12 @@ async def handle_reply_keyboard_message(
     )
     synthetic_update = Update(update_id=update.update_id, callback_query=query)
     try:
-        await context.application.process_update(synthetic_update)
+        # Do not call process_update() from inside another update handler.
+        # PTB processes updates sequentially by default; recursively entering
+        # its update processor can block on the same concurrency semaphore.
+        # Queue the synthetic callback so the normal dispatcher handles it
+        # after this Reply Keyboard message handler has returned.
+        await context.application.update_queue.put(synthetic_update)
     except Exception:
         logger.exception(
             "Reply Keyboard action dispatch failed for chat_id=%s data=%s",
