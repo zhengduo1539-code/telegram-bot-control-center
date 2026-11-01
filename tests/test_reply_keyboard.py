@@ -243,10 +243,19 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
         assert synthetic_update.callback_query.from_user.id == chat_id
         assert synthetic_update.callback_query.message.message_id == 600
 
-        # Process after the original message handler has returned. This
-        # exercises PTB's normal sequential dispatcher rather than recursively
-        # entering Application.process_update from inside an active update.
-        await application.process_update(synthetic_update)
+        # The update queue is consumed by PTB's normal update fetcher after
+        # this handler returns. Verify the queued update matches and invokes
+        # the exact CallbackQueryHandler registered for the existing route,
+        # without initializing a Bot or making network requests in this unit test.
+        callback_handler = application.handlers[0][0]
+        check_result = callback_handler.check_update(synthetic_update)
+        assert check_result is not None
+        dispatch_context = application.context_types.context.from_update(
+            synthetic_update, application
+        )
+        await callback_handler.handle_update(
+            synthetic_update, application, check_result, dispatch_context
+        )
         assert handled == [("action:schedule_new", chat_id, 600)]
 
     asyncio.run(scenario())
