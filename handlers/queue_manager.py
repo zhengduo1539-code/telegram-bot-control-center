@@ -1340,6 +1340,9 @@ async def recv_qm_content(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await msg.reply_text(qm_tr(language, "unsupported_content"))
         return QM_ADD_CONTENT
 
+    source_entities = msg.entities if msg.text is not None else msg.caption_entities
+    wizard["content_entities"] = [entity.to_dict() for entity in (source_entities or [])]
+
     queue = await get_queue(msg.from_user.id, int(wizard["add_chat_id"]))
     if not queue or not queue.get("slots"):
         await msg.reply_text(
@@ -1665,6 +1668,7 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "text": wizard.get("content_text"),
             "media_file_id": wizard.get("media_file_id"),
             "media_type": wizard.get("media_type"),
+            "entities": wizard.get("content_entities") or [],
         }
         if wizard.get("add_auto_delete_hours") is not None:
             payload["auto_delete_after_hours"] = wizard["add_auto_delete_hours"]
@@ -2282,6 +2286,7 @@ async def cb_mp_template_use(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "media_file_id": content.get("media_file_id"),
         "media_type": content.get("media_type"),
         "text": content.get("text"),
+        "entities": content.get("entities") or [],
     }
     if not item["media_file_id"] and not item["text"]:
         await query.answer("This template has no reusable content. Send content manually.", show_alert=True)
@@ -2331,6 +2336,9 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     else:
         await msg.reply_text(mp_tr(language, "unsupported"))
         return MP_ADD_ITEM
+
+    source_entities = msg.entities if msg.text is not None else msg.caption_entities
+    item["entities"] = [entity.to_dict() for entity in (source_entities or [])]
 
     user_id = msg.from_user.id
     chat_id = int(pm["mp_chat_id"])
