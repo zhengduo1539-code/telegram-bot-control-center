@@ -1341,7 +1341,11 @@ async def recv_qm_content(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await msg.reply_text(qm_tr(language, "unsupported_content"))
         return QM_ADD_CONTENT
 
-    source_entities = msg.entities if msg.text is not None else msg.caption_entities
+    source_entities = (
+        getattr(msg, "entities", None)
+        if msg.text is not None
+        else getattr(msg, "caption_entities", None)
+    )
     wizard["content_entities"] = [entity.to_dict() for entity in (source_entities or [])]
 
     queue = await get_queue(msg.from_user.id, int(wizard["add_chat_id"]))
@@ -2338,7 +2342,11 @@ async def recv_mp_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await msg.reply_text(mp_tr(language, "unsupported"))
         return MP_ADD_ITEM
 
-    source_entities = msg.entities if msg.text is not None else msg.caption_entities
+    source_entities = (
+        getattr(msg, "entities", None)
+        if msg.text is not None
+        else getattr(msg, "caption_entities", None)
+    )
     item["entities"] = [entity.to_dict() for entity in (source_entities or [])]
 
     user_id = msg.from_user.id
