@@ -1275,6 +1275,7 @@ async def cb_qm_template_use(update: Update, context: ContextTypes.DEFAULT_TYPE)
     wizard["media_file_id"] = content.get("media_file_id")
     wizard["media_type"] = content.get("media_type")
     wizard["content_text"] = content.get("text")
+    wizard["content_entities"] = content.get("entities") or []
     queue = await get_queue(query.from_user.id, int(wizard.get("add_chat_id", 0)))
     if not queue or not queue.get("slots"):
         await query.answer("Daily slots are no longer configured for this group.", show_alert=True)
