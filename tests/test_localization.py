@@ -202,3 +202,10 @@ def test_main_menu_and_my_posts_controls_use_the_selected_locale():
     assert not any("Template" in label or "テンプレート" in label for label in labels)
 
 
+
+
+def test_help_guide_has_no_templates_feature_in_any_locale():
+    for language in LANGUAGES:
+        help_text = translate(language, "help_text")
+        assert "template" not in help_text.lower(), language
+        assert "📝" not in help_text, language
