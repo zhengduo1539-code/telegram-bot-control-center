@@ -39,6 +39,7 @@ from handlers.owner_panel import CB_OWNER_PANEL
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.language import resolve_user_language
 from localization import translate as tr
+from welcome_localization import welcome_text
 
 logger = logging.getLogger(__name__)
 
@@ -219,44 +220,6 @@ def confirm_keyboard(confirm_data: str, back_data: str) -> InlineKeyboardMarkup:
 # ---------------------------------------------------------------------------
 # Welcome / help text
 # ---------------------------------------------------------------------------
-
-WELCOME_TEXT = (
-    "👋 *Welcome to Schedule Bot*\n"
-    "Your all-in-one Telegram publishing assistant.\n\n"
-    "━━━━━━━━━━━━━━━━━━\n"
-    "✨ *What you can do*\n"
-    "📅 Schedule one-time or recurring posts\n"
-    "🗂 Queue content for daily time slots\n"
-    "🎲 Publish randomly from a Media Pool\n"
-    "📝 Save and reuse post templates\n"
-    "⚙️ Set timezones, posting windows and post actions\n"
-    "━━━━━━━━━━━━━━━━━━\n\n"
-    "🚀 *Quick start*\n"
-    "1. Add the bot to your group or channel.\n"
-    "2. Grant permission to send messages (and admin posting rights in channels).\n"
-    "3. Choose *Schedule New Post* and follow the guided setup.\n"
-    "4. Review the summary and confirm to save.\n\n"
-    "Use *❓ Help* for the feature guide or *🌐 Language* to change your language."
-)
-
-WELCOME_TEXT_MY = (
-    "👋 *Schedule Bot မှ ကြိုဆိုပါတယ်*\n"
-    "Telegram Group နှင့် Channel များအတွက် Post အချိန်ဇယားစီမံပေးသည့် Bot ဖြစ်ပါတယ်။\n\n"
-    "━━━━━━━━━━━━━━━━━━\n"
-    "✨ *အသုံးပြုနိုင်သော Features*\n"
-    "📅 တစ်ကြိမ်တည်း သို့မဟုတ် ထပ်ခါတလဲလဲ Post ပို့ရန်\n"
-    "🗂 နေ့စဉ်အချိန်အလိုက် Queue ဖြင့် ပို့ရန်\n"
-    "🎲 Media Pool မှ ကျပန်းရွေးချယ်ပို့ရန်\n"
-    "📝 Template များ သိမ်းဆည်းပြီး ပြန်သုံးရန်\n"
-    "⚙️ Timezone၊ Posting Window နှင့် Post Actions သတ်မှတ်ရန်\n"
-    "━━━━━━━━━━━━━━━━━━\n\n"
-    "🚀 *စတင်အသုံးပြုရန်*\n"
-    "1. Bot ကို သင့် Group သို့မဟုတ် Channel ထဲသို့ ထည့်ပါ။\n"
-    "2. Message ပို့ခွင့်ပေးပါ။ Channel ဖြစ်ပါက Admin နှင့် Post Messages ခွင့်ပြုပါ။\n"
-    "3. *Schedule New Post* ကိုနှိပ်ပြီး အဆင့်လိုက်လုပ်ဆောင်ပါ။\n"
-    "4. နောက်ဆုံး Summary ကို စစ်ဆေးပြီး Confirm နှိပ်ပါ။\n\n"
-    "အသုံးပြုနည်းအတွက် *❓ Help*၊ ဘာသာစကားပြောင်းရန် *🌐 Language* ကိုရွေးပါ။"
-)
 
 HELP_TEXT = (
     "📖 *Feature Guide*\n\n"
@@ -651,8 +614,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"{tr(language, 'private_setup_action')}"
         )
     else:
-        welcome_text = WELCOME_TEXT_MY if language == "my" else WELCOME_TEXT
-        menu_text = f"{welcome_text}\n\n{tr(language, 'menu_title')}"
+        localized_welcome = welcome_text(language)
+        menu_text = f"{localized_welcome}\n\n{tr(language, 'menu_title')}"
         if launch_notice:
             menu_text = f"{launch_notice}\n\n{menu_text}"
 
