@@ -233,6 +233,7 @@ def build_scheduled_post(
     auto_pin_enabled: bool = False,
     auto_pin_unpin_after_hours: float | None = None,
     inline_keyboard: list[list[dict]] | None = None,
+    content_entities: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Build a validated scheduled-post document ready to insert into MongoDB.
@@ -273,6 +274,8 @@ def build_scheduled_post(
         content["media_file_id"] = content_media_file_id
     if content_media_type:
         content["media_type"] = content_media_type
+    if content_entities:
+        content["entities"] = content_entities
     if inline_keyboard:
         content["inline_keyboard"] = inline_keyboard
 
