@@ -61,8 +61,16 @@ def _tmpl_list_keyboard(templates: list[dict], page: int, language: str = "en") 
         tid  = str(tmpl["_id"])
         name = tmpl.get("name", "Unnamed")[:40]
         rows.append([
-            InlineKeyboardButton(f"📄 {name}", callback_data=f"tmpl:view:{tid}"),
-            InlineKeyboardButton(tr(language, "delete"), style="danger", callback_data=f"{CB_TMPL_DEL}{tid}"),
+            InlineKeyboardButton(
+                f"📄 {name}",
+                style="primary",
+                callback_data=f"tmpl:view:{tid}",
+            ),
+            InlineKeyboardButton(
+                tr(language, "delete"),
+                style="danger",
+                callback_data=f"{CB_TMPL_DEL}{tid}",
+            ),
         ])
 
     nav_row: list[InlineKeyboardButton] = []
