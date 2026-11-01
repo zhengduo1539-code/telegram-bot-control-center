@@ -816,6 +816,7 @@ async def cb_tmpl_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w["media_file_id"] = content.get("media_file_id")
     w["media_type"]    = content.get("media_type")
     w["content_text"]  = content.get("text")
+    w["content_entities"] = content.get("entities") or []
     name = tmpl.get("name", "template")
     await query.edit_message_text(
         f"✅ Template *{name}* loaded.\n\n"
@@ -884,6 +885,13 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     else:
         await msg.reply_text("⚠️ Unsupported content type. Please send text, a photo, video, document, or audio.")
         return WIZARD_CONTENT
+
+    source_entities = (
+        getattr(msg, "entities", None)
+        if msg.text is not None
+        else getattr(msg, "caption_entities", None)
+    )
+    w["content_entities"] = [entity.to_dict() for entity in (source_entities or [])]
 
     await msg.reply_text(
         "✅ Content saved.\n\n"
@@ -1752,6 +1760,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             content_text=w.get("content_text"),
             content_media_file_id=w.get("media_file_id"),
             content_media_type=w.get("media_type"),
+            content_entities=w.get("content_entities") or None,
             timezone_str=w.get("timezone", "UTC"),
             recurrence_type=w.get("recurrence_type", "once"),
             interval_value=w.get("interval_value"),

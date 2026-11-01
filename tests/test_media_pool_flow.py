@@ -207,6 +207,8 @@ def test_successful_item_add_keeps_user_in_multi_item_add_flow(monkeypatch):
             voice=None,
             text="A sample post",
             caption=None,
+            entities=[SimpleNamespace(to_dict=lambda: {"type": "bold", "offset": 0, "length": 8})],
+            caption_entities=[],
             from_user=SimpleNamespace(id=42),
             reply_text=AsyncMock(),
         )

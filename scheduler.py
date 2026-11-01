@@ -17,7 +17,7 @@ from typing import Any
 
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from telegram import Bot, Message
+from telegram import Bot, Message, MessageEntity
 from telegram.error import (
     BadRequest,
     ChatMigrated,
@@ -193,6 +193,8 @@ async def _send_post(bot: Bot, post: dict[str, Any]) -> Message | None:
     text: str | None   = content.get("text")
     file_id: str | None = content.get("media_file_id")
     media_type: str | None = content.get("media_type")
+    raw_entities = content.get("entities") or []
+    entities = [MessageEntity.de_json(entity, bot) for entity in raw_entities]
 
     # Build reply_markup from stored inline_keyboard rows, if any
     raw_kb = content.get("inline_keyboard") or []
@@ -203,20 +205,20 @@ async def _send_post(bot: Bot, post: dict[str, Any]) -> Message | None:
 
     try:
         if media_type == "photo":
-            return await bot.send_photo(chat_id, file_id, caption=text, reply_markup=reply_markup)
+            return await bot.send_photo(chat_id, file_id, caption=text, caption_entities=entities or None, reply_markup=reply_markup)
         if media_type == "video":
-            return await bot.send_video(chat_id, file_id, caption=text, reply_markup=reply_markup)
+            return await bot.send_video(chat_id, file_id, caption=text, caption_entities=entities or None, reply_markup=reply_markup)
         if media_type == "document":
-            return await bot.send_document(chat_id, file_id, caption=text, reply_markup=reply_markup)
+            return await bot.send_document(chat_id, file_id, caption=text, caption_entities=entities or None, reply_markup=reply_markup)
         if media_type == "audio":
-            return await bot.send_audio(chat_id, file_id, caption=text, reply_markup=reply_markup)
+            return await bot.send_audio(chat_id, file_id, caption=text, caption_entities=entities or None, reply_markup=reply_markup)
         if media_type == "animation":
-            return await bot.send_animation(chat_id, file_id, caption=text, reply_markup=reply_markup)
+            return await bot.send_animation(chat_id, file_id, caption=text, caption_entities=entities or None, reply_markup=reply_markup)
         if media_type == "voice":
-            return await bot.send_voice(chat_id, file_id, caption=text, reply_markup=reply_markup)
+            return await bot.send_voice(chat_id, file_id, caption=text, caption_entities=entities or None, reply_markup=reply_markup)
         # Default: plain text
         if text:
-            return await bot.send_message(chat_id, text, reply_markup=reply_markup)
+            return await bot.send_message(chat_id, text, entities=entities or None, reply_markup=reply_markup)
         logger.warning("Post %s has neither media nor text — skipping.", post.get("_id"))
         return None
 
@@ -367,6 +369,7 @@ async def _execute_pool_post(bot: Bot, post: dict[str, Any]) -> None:
         "text":          item.get("text"),
         "media_file_id": item.get("media_file_id"),
         "media_type":    item.get("media_type"),
+        "entities":      item.get("entities"),
     }
 
     try:
@@ -387,7 +390,7 @@ async def _execute_pool_post(bot: Bot, post: dict[str, Any]) -> None:
         return
 
     # Mark item as posted
-    await mark_pool_item_posted(user_id, chat_id, item.get("media_file_id"), item.get("text"))
+    await mark_pool_item_posted(user_id, chat_id, item.get("media_file_id"), item.get("text"), item.get("item_id"))
 
     # Handle lifecycle
     await _handle_lifecycle(bot, post, sent_msg)
@@ -432,6 +435,7 @@ async def _execute_queue_slot(bot: Bot, queue: dict[str, Any], now: datetime) ->
             "text": item.get("text"),
             "media_file_id": item.get("media_file_id"),
             "media_type": item.get("media_type"),
+            "entities": item.get("entities"),
         },
     }
     try:

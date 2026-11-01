@@ -280,6 +280,7 @@ def test_content_is_reviewed_as_one_fifo_item_before_it_is_added(monkeypatch):
                 "text": "My first queued post",
                 "media_file_id": None,
                 "media_type": None,
+                "entities": [],
             },
         )
         assert "qwiz" not in context.user_data
