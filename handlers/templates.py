@@ -63,7 +63,6 @@ def _tmpl_list_keyboard(templates: list[dict], page: int, language: str = "en") 
         rows.append([
             InlineKeyboardButton(
                 f"📄 {name}",
-                style="primary",
                 callback_data=f"tmpl:view:{tid}",
             ),
             InlineKeyboardButton(
