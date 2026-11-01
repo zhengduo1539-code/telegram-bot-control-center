@@ -122,8 +122,9 @@ def test_dashboard_shows_summary_and_filter_empty_state(monkeypatch):
         assert "reply_markup" not in payload
         context.bot.send_message.assert_awaited_once()
         routes = context.bot_data["_reply_keyboard_route_registry"]["123"]["routes"]
-        assert "Pause #1" in routes
-        assert "Delete #1" in routes
+        route_data = {route.get("data") for route in routes.values()}
+        assert f"{base.CB_MPP_PAUSE}{'a' * 24}" in route_data
+        assert f"{base.CB_MPP_DEL}{'a' * 24}" in route_data
         assert payload["rich_message"]["blocks"][0]["text"] == "📋 My Posts"
         table = next(block for block in payload["rich_message"]["blocks"] if block["type"] == "table")
         assert table["is_bordered"] is True

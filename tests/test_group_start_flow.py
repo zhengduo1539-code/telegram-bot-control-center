@@ -36,11 +36,13 @@ def test_group_start_payload_rejects_invalid_or_non_group_values():
 def test_group_start_shows_private_chat_button_not_feature_menu():
     async def scenario():
         chat_id = -1001234567890
-        message = SimpleNamespace(reply_text=AsyncMock())
+        message = SimpleNamespace(
+            reply_text=AsyncMock(return_value=SimpleNamespace(message_id=901))
+        )
         bot = SimpleNamespace(
             get_me=AsyncMock(return_value=SimpleNamespace(username="ScheduleBot"))
         )
-        context = SimpleNamespace(bot=bot, args=[], user_data={})
+        context = SimpleNamespace(bot=bot, args=[], user_data={}, bot_data={})
         update = SimpleNamespace(
             message=message,
             effective_chat=SimpleNamespace(
@@ -55,10 +57,12 @@ def test_group_start_shows_private_chat_button_not_feature_menu():
         bot.get_me.assert_awaited_once()
         kwargs = message.reply_text.await_args.kwargs
         keyboard = kwargs["reply_markup"]
-        assert keyboard.inline_keyboard[0][0].text == "📩 Open Bot in Private Chat"
-        assert keyboard.inline_keyboard[0][0].url == (
-            "https://t.me/ScheduleBot?start=setup_-1001234567890"
-        )
+        assert keyboard.keyboard[0][0].text == "📩 Open Bot in Private Chat"
+        route = context.bot_data["_reply_keyboard_route_registry"][str(chat_id)]["routes"]
+        assert route["📩 Open Bot in Private Chat"] == {
+            "type": "url",
+            "url": "https://t.me/ScheduleBot?start=setup_-1001234567890",
+        }
         assert "Publisher Group" in message.reply_text.await_args.args[0]
         assert "private chat" in message.reply_text.await_args.args[0].lower()
         assert "action:schedule_new" not in str(keyboard.inline_keyboard)

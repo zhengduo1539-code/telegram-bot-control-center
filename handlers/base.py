@@ -18,8 +18,10 @@ import pytz
 from telegram import (
     Bot,
     InlineKeyboardButton,
+    KeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
     Update,
 )
@@ -41,7 +43,7 @@ from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from welcome_localization import welcome_text
-from reply_keyboard import publish_reply_keyboard, split_inline_keyboard
+from reply_keyboard import publish_reply_keyboard, register_reply_keyboard_routes, split_inline_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -567,16 +569,26 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             return ConversationHandler.END
 
         group_title = escape_markdown(chat.title or "this group", version=1)
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(tr(language, "open_private"), url=private_url)]
-        ])
-        await message.reply_text(
+        open_private_label = tr(language, "open_private")
+        keyboard = ReplyKeyboardMarkup(
+            [[KeyboardButton(open_private_label)]],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            is_persistent=True,
+        )
+        group_message = await message.reply_text(
             f"{tr(language, 'group_start_title')}\n\n"
             f"{tr(language, 'group_start_body', group=group_title)}\n\n"
             f"🔒 {tr(language, 'private_setup_action')}\n"
             f"{tr(language, 'group_admin_note')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
+        )
+        register_reply_keyboard_routes(
+            getattr(context, "bot_data", None),
+            chat.id,
+            {open_private_label: {"type": "url", "url": private_url}},
+            group_message,
         )
         return ConversationHandler.END
 

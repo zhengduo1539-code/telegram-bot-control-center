@@ -56,7 +56,7 @@ _CATALOG_ROWS: dict[str, tuple[str, ...]] = {
     "en": (
         "🏠 Main Menu — choose an action", "📅 Schedule New Post", "📋 My Posts",
         "🗂 Manage Queue", "🎲 Media Pool", "📊 My Stats",
-        "🌐 Language", "❌ Cancel", "➕ Add to my Group", "📢 Share Bot",
+        "🌐 Language", "❌ Cancel", "➕ Add to My Group", "📤 Share Bot",
         "🛠 Owner Panel", "🌐 Choose your language",
         "Select one of the 20 languages below. Your choice will be saved to your account.",
         "✅ Language saved successfully.", "👋 Schedule this group with the bot",

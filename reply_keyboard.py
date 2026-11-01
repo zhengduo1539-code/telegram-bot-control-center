@@ -13,6 +13,8 @@ from typing import Any
 from telegram import CallbackQuery, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
+from handlers import chat_cleanup
+
 logger = logging.getLogger(__name__)
 ROUTE_REGISTRY_KEY = "_reply_keyboard_route_registry"
 
@@ -191,14 +193,17 @@ async def handle_reply_keyboard_message(
     user = update.effective_user
     if message is None or chat is None or user is None or not message.text:
         return
-    if not is_private_chat(chat.id):
-        return
-
     entry = get_reply_keyboard_entry(context.bot_data, chat.id)
     route = entry.get("routes", {}).get(message.text) if entry else None
     if not route:
         # Normal wizard text/media input continues to the existing handlers.
         return
+    # Group /start exposes only the deep link as a Reply Keyboard URL choice.
+    if not is_private_chat(chat.id) and route["type"] != "url":
+        return
+
+    # Stop propagation below, so record the tapped button message explicitly.
+    chat_cleanup.track(context.application.bot_data, chat.id, message.message_id)
 
     if route["type"] == "url":
         await message.reply_text(f"🔗 Open this link:\n{route['url']}")
