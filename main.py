@@ -43,7 +43,6 @@ from handlers.language import cmd_lang, handle_language_choice, language_selecti
 from handlers.owner_panel import build_owner_panel
 from handlers.queue_manager import build_media_pool, build_queue_manager
 from handlers.schedule_wizard import build_schedule_wizard
-from handlers.templates import build_templates_conversation
 from keep_alive import app as health_app
 from keep_alive import set_readiness, start_keep_alive
 from scheduler import setup_scheduler
@@ -221,7 +220,6 @@ def build_application() -> Application:
     application.add_handler(build_queue_manager())
     application.add_handler(build_media_pool())
     application.add_handler(build_owner_panel())
-    application.add_handler(build_templates_conversation())
     application.add_handler(build_base_conversation())
     return application
 

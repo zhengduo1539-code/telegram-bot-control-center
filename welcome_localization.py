@@ -16,7 +16,6 @@ Your all-in-one Telegram publishing assistant.
 📅 Schedule one-time or recurring posts
 🗂 Queue content for daily time slots
 🎲 Publish randomly from a Media Pool
-📝 Save and reuse post templates
 ⚙️ Set timezones, posting windows and post actions
 ━━━━━━━━━━━━━━━━━━
 
@@ -36,7 +35,6 @@ Telegram Group နှင့် Channel များအတွက် Post မျ�
 📅 တစ်ကြိမ်တည်း သို့မဟုတ် ထပ်ခါတလဲလဲ Post ပို့ရန်
 🗂 နေ့စဉ်အချိန်အလိုက် Queue ဖြင့် ပို့ရန်
 🎲 Media Pool မှ ကျပန်းရွေးချယ်ပို့ရန်
-📝 Template များ သိမ်းဆည်းပြီး ပြန်သုံးရန်
 ⚙️ Timezone၊ Posting Window နှင့် Post Actions သတ်မှတ်ရန်
 ━━━━━━━━━━━━━━━━━━
 
@@ -56,7 +54,6 @@ Telegram Group နှင့် Channel များအတွက် Post မျ�
 📅 安排单次或重复发布
 🗂 将内容加入每日时间队列
 🎲 从媒体库中随机发布内容
-📝 保存并重复使用帖子模板
 ⚙️ 设置时区、发布时段和发布操作
 ━━━━━━━━━━━━━━━━━━
 
@@ -76,7 +73,6 @@ Tu asistente para programar publicaciones en grupos y canales de Telegram.
 📅 Programar publicaciones únicas o recurrentes
 🗂 Organizar contenido en horarios diarios
 🎲 Publicar contenido aleatorio de una biblioteca multimedia
-📝 Guardar y reutilizar plantillas de publicaciones
 ⚙️ Configurar zonas horarias, franjas de publicación y acciones
 ━━━━━━━━━━━━━━━━━━
 
@@ -96,7 +92,6 @@ Telegram ग्रुप और चैनलों में पोस्ट श
 📅 एक बार या बार-बार पोस्ट शेड्यूल करें
 🗂 रोज़ाना समय के अनुसार पोस्ट की कतार बनाएँ
 🎲 मीडिया पूल से सामग्री को बेतरतीब प्रकाशित करें
-📝 पोस्ट टेम्पलेट सहेजें और दोबारा उपयोग करें
 ⚙️ टाइमज़ोन, पोस्टिंग समय और पोस्ट क्रियाएँ तय करें
 ━━━━━━━━━━━━━━━━━━
 
@@ -116,7 +111,6 @@ Telegram ग्रुप और चैनलों में पोस्ट श
 📅 جدولة منشورات لمرة واحدة أو بشكل متكرر
 🗂 ترتيب المحتوى في أوقات يومية محددة
 🎲 نشر محتوى عشوائي من مكتبة الوسائط
-📝 حفظ قوالب المنشورات وإعادة استخدامها
 ⚙️ ضبط المنطقة الزمنية وفترات النشر وإجراءات المنشورات
 ━━━━━━━━━━━━━━━━━━
 
@@ -136,7 +130,6 @@ Seu assistente para programar publicações em grupos e canais do Telegram.
 📅 Agendar publicações únicas ou recorrentes
 🗂 Organizar conteúdo em horários diários
 🎲 Publicar itens aleatórios de uma biblioteca de mídia
-📝 Salvar e reutilizar modelos de publicações
 ⚙️ Configurar fusos horários, períodos de publicação e ações
 ━━━━━━━━━━━━━━━━━━
 
@@ -156,7 +149,6 @@ Votre assistant pour programmer des publications dans les groupes et chaînes Te
 📅 Programmer des publications ponctuelles ou récurrentes
 🗂 Organiser le contenu selon des créneaux quotidiens
 🎲 Publier des éléments au hasard depuis une bibliothèque multimédia
-📝 Enregistrer et réutiliser des modèles de publications
 ⚙️ Régler le fuseau horaire, les plages de publication et les actions
 ━━━━━━━━━━━━━━━━━━
 
@@ -176,7 +168,6 @@ Consultez *{help}* pour le guide ou *{language}* pour changer de langue.""",
 📅 Планировать разовые и повторяющиеся публикации
 🗂 Добавлять контент в ежедневную очередь по времени
 🎲 Случайным образом публиковать материалы из медиатеки
-📝 Сохранять шаблоны публикаций и использовать их повторно
 ⚙️ Настраивать часовой пояс, интервалы публикаций и действия
 ━━━━━━━━━━━━━━━━━━
 
@@ -196,7 +187,6 @@ Telegram গ্রুপ ও চ্যানেলে পোস্টের স�
 📅 একবার বা নিয়মিত পোস্টের সময় নির্ধারণ
 🗂 প্রতিদিনের নির্দিষ্ট সময় অনুযায়ী কনটেন্ট কিউতে রাখা
 🎲 মিডিয়া পুল থেকে এলোমেলোভাবে কনটেন্ট প্রকাশ
-📝 পোস্টের টেমপ্লেট সংরক্ষণ ও পুনরায় ব্যবহার
 ⚙️ টাইমজোন, পোস্ট করার সময়সীমা ও পোস্টের কার্যক্রম নির্ধারণ
 ━━━━━━━━━━━━━━━━━━
 
@@ -216,7 +206,6 @@ Asisten untuk menjadwalkan posting di grup dan channel Telegram Anda.
 📅 Menjadwalkan posting sekali atau berulang
 🗂 Mengatur konten dalam antrean berdasarkan waktu harian
 🎲 Menerbitkan konten secara acak dari Media Pool
-📝 Menyimpan dan menggunakan kembali template posting
 ⚙️ Mengatur zona waktu, rentang publikasi, dan tindakan posting
 ━━━━━━━━━━━━━━━━━━
 
@@ -236,7 +225,6 @@ Telegramのグループやチャンネルへの投稿を予約・管理するア
 📅 単発または繰り返しの投稿を予約
 🗂 毎日の時間枠に合わせて投稿をキューに登録
 🎲 メディアプールからコンテンツをランダムに投稿
-📝 投稿テンプレートを保存して再利用
 ⚙️ タイムゾーン、投稿時間帯、投稿アクションを設定
 ━━━━━━━━━━━━━━━━━━
 
@@ -256,7 +244,6 @@ Telegram 그룹과 채널의 게시물을 예약하고 관리하는 도우미입
 📅 한 번 또는 반복 게시물 예약
 🗂 매일 지정한 시간에 맞춰 콘텐츠 대기열 관리
 🎲 미디어 풀에서 콘텐츠를 무작위로 게시
-📝 게시물 템플릿 저장 및 재사용
 ⚙️ 시간대, 게시 시간 범위 및 게시 작업 설정
 ━━━━━━━━━━━━━━━━━━
 
@@ -276,7 +263,6 @@ Telegram 그룹과 채널의 게시물을 예약하고 관리하는 도우미입
 📅 ตั้งเวลาโพสต์ครั้งเดียวหรือโพสต์ซ้ำ
 🗂 จัดคิวเนื้อหาตามช่วงเวลาประจำวัน
 🎲 สุ่มเผยแพร่เนื้อหาจาก Media Pool
-📝 บันทึกและนำเทมเพลตโพสต์กลับมาใช้
 ⚙️ ตั้งค่าเขตเวลา ช่วงเวลาโพสต์ และการดำเนินการกับโพสต์
 ━━━━━━━━━━━━━━━━━━
 
@@ -296,7 +282,6 @@ Trợ lý lên lịch và quản lý bài đăng cho nhóm và kênh Telegram c�
 📅 Lên lịch bài đăng một lần hoặc định kỳ
 🗂 Xếp nội dung vào hàng đợi theo khung giờ hằng ngày
 🎲 Đăng ngẫu nhiên nội dung từ Kho phương tiện
-📝 Lưu và sử dụng lại mẫu bài đăng
 ⚙️ Thiết lập múi giờ, khung giờ đăng và thao tác với bài đăng
 ━━━━━━━━━━━━━━━━━━
 
@@ -316,7 +301,6 @@ Telegram gruplarınız ve kanallarınız için gönderi planlama asistanınız.
 📅 Tek seferlik veya tekrarlanan gönderiler planlayın
 🗂 İçerikleri günlük saatlere göre kuyruğa alın
 🎲 Medya Havuzu'ndan rastgele içerik yayınlayın
-📝 Gönderi şablonlarını kaydedip yeniden kullanın
 ⚙️ Saat dilimini, paylaşım aralıklarını ve gönderi işlemlerini ayarlayın
 ━━━━━━━━━━━━━━━━━━
 
@@ -336,7 +320,6 @@ Ihr Assistent zum Planen und Verwalten von Beiträgen in Telegram-Gruppen und -K
 📅 Einmalige oder wiederkehrende Beiträge planen
 🗂 Inhalte in tägliche Zeitfenster einreihen
 🎲 Inhalte zufällig aus einem Medienpool veröffentlichen
-📝 Beitragsvorlagen speichern und wiederverwenden
 ⚙️ Zeitzone, Veröffentlichungszeiten und Beitragsaktionen festlegen
 ━━━━━━━━━━━━━━━━━━
 
@@ -356,7 +339,6 @@ Il tuo assistente per programmare e gestire i post nei gruppi e canali Telegram.
 📅 Programmare post singoli o ricorrenti
 🗂 Inserire contenuti in una coda con orari giornalieri
 🎲 Pubblicare contenuti casuali da una raccolta multimediale
-📝 Salvare e riutilizzare modelli di post
 ⚙️ Impostare fuso orario, fasce di pubblicazione e azioni sui post
 ━━━━━━━━━━━━━━━━━━
 
@@ -376,7 +358,6 @@ Usa *{help}* per la guida alle funzioni o *{language}* per cambiare lingua.""",
 📅 ایک بار یا بار بار پوسٹس شیڈول کریں
 🗂 روزانہ کے مقررہ اوقات کے مطابق مواد قطار میں رکھیں
 🎲 میڈیا پول سے بے ترتیب مواد شائع کریں
-📝 پوسٹ ٹیمپلیٹس محفوظ کریں اور دوبارہ استعمال کریں
 ⚙️ ٹائم زون، پوسٹنگ کے اوقات اور پوسٹ کے اقدامات ترتیب دیں
 ━━━━━━━━━━━━━━━━━━
 
@@ -396,7 +377,6 @@ Msaidizi wako wa kupanga na kusimamia machapisho katika vikundi na chaneli za Te
 📅 Panga machapisho ya mara moja au yanayojirudia
 🗂 Weka maudhui kwenye foleni kulingana na muda wa kila siku
 🎲 Chapisha maudhui bila mpangilio kutoka kwenye Maktaba ya Midia
-📝 Hifadhi na utumie tena violezo vya machapisho
 ⚙️ Weka saa za eneo, vipindi vya uchapishaji na vitendo vya machapisho
 ━━━━━━━━━━━━━━━━━━
 

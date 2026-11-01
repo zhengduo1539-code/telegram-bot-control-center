@@ -17,6 +17,7 @@ def test_schedule_wizard_onboarding_catalog_covers_all_supported_languages():
     for language, catalog in _MESSAGES.items():
         assert set(catalog) == {"intro", "continue"}, language
         assert all(isinstance(value, str) and value.strip() for value in catalog.values())
+        assert "template" not in catalog["intro"].lower(), language
     assert "confirm" in translate_schedule_wizard("en", "intro").lower()
     assert translate_schedule_wizard("unknown", "continue") == _MESSAGES["en"]["continue"]
 
@@ -96,31 +97,20 @@ def test_schedule_conversation_registers_intro_state():
     )
 
 
-def test_schedule_template_preview_shows_full_saved_content():
-    template = {
-        "_id": "0123456789abcdef01234567",
-        "name": "Weekly Notice",
-        "content": {"media_type": "video", "media_file_id": "file-id", "text": "The complete saved caption"},
-    }
-    preview = wizard._wizard_template_page_text([template], 0)
-    assert "Weekly Notice" in preview
-    assert "video" in preview
-    assert "The complete saved caption" in preview
-    assert wizard._TMPL_WIZ_PAGE_SIZE == 1
 
+def test_schedule_content_step_is_manual_only():
+    labels = [button.text for button in _buttons(wizard._content_step_keyboard())]
+    assert labels == ["❌ Cancel"]
+    assert not hasattr(wizard, "WIZARD_TMPL_PICK")
 
-def test_schedule_empty_template_preview_explains_manual_entry():
-    preview = wizard._wizard_template_page_text([], 0)
-    assert "No User Templates Found" in preview
-    assert "Send your post content manually" in preview
-
-
-def test_schedule_template_pick_uses_owner_scoped_template_loader():
     conversation = wizard.build_schedule_wizard()
-    callbacks = {
-        handler.callback.__name__
-        for handler in conversation.states[wizard.WIZARD_TMPL_PICK]
-        if isinstance(handler, wizard.CallbackQueryHandler)
-    }
-    assert "cb_tmpl_pick" in callbacks
-    assert "cb_tmpl_page_wiz" in callbacks
+    handlers = conversation.states[wizard.WIZARD_CONTENT]
+    assert any(
+        isinstance(handler, wizard.MessageHandler)
+        and handler.callback.__name__ == "recv_content"
+        for handler in handlers
+    )
+    assert not any(
+        "template" in getattr(handler.callback, "__name__", "").lower()
+        for handler in handlers
+    )
