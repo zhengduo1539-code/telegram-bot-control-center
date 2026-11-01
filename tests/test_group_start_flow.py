@@ -65,6 +65,44 @@ def test_group_start_shows_private_chat_button_not_feature_menu():
     asyncio.run(scenario())
 
 
+
+def test_private_start_shows_welcome_guide_and_clear_primary_action():
+    async def scenario():
+        message = SimpleNamespace(reply_text=AsyncMock())
+        context = SimpleNamespace(
+            bot=SimpleNamespace(username="ScheduleBot"),
+            args=[],
+            user_data={},
+        )
+        update = SimpleNamespace(
+            message=message,
+            effective_chat=SimpleNamespace(type="private", id=123456789, title=None),
+            effective_user=SimpleNamespace(id=123456789),
+        )
+
+        state = await cmd_start(update, context)
+
+        assert state == MAIN_MENU
+        body = message.reply_text.await_args.args[0]
+        assert "Welcome to Schedule Bot" in body
+        assert "Quick start" in body
+        keyboard = message.reply_text.await_args.kwargs["reply_markup"]
+        rows = keyboard.inline_keyboard
+        assert rows[0][0].callback_data == "action:schedule_new"
+        assert rows[0][0].style == "success"
+        callbacks = {
+            button.callback_data
+            for row in rows
+            for button in row
+            if button.callback_data
+        }
+        assert "nav:help" in callbacks
+        assert "action:manage_queue" in callbacks
+        assert "action:media_pool" in callbacks
+
+    asyncio.run(scenario())
+
+
 def test_private_start_validates_and_remembers_deep_linked_group():
     async def scenario():
         chat_id = -1001234567890

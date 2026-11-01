@@ -58,6 +58,7 @@ from handlers.language import resolve_user_language
 from localization import translate as tr
 from media_pool_localization import translate_media_pool as mp_tr
 from queue_manager_localization import translate_queue_manager as qm_tr
+from template_ui_localization import translate_template_ui as tui
 
 logger = logging.getLogger(__name__)
 
@@ -268,52 +269,58 @@ async def _edit(query: Any, text: str, keyboard: InlineKeyboardMarkup) -> None:
 
 
 
-def _user_template_preview(templates: list[dict], page: int, feature: str) -> str:
+def _user_template_preview(
+    templates: list[dict],
+    page: int,
+    feature: str,
+    language: str = "en",
+) -> str:
     if not templates:
-        destination = "the Queue" if feature == "queue" else "the Media Pool"
-        return (
-            "📝 *No User Templates Found*\n\n"
-            "You have not saved a template yet. Please send your text, photo, "
-            "video, GIF, document, or audio manually to add it to " + destination + ". "
-            "You can save a post as a template from *My Posts* for future use."
-        )
+        return tui(language, "empty_templates")
+    page = max(0, min(page, len(templates) - 1))
     tmpl = templates[page]
     content = tmpl.get("content") or {}
     name = escape_markdown(str(tmpl.get("name", "Unnamed")), version=1)
-    media_type = content.get("media_type") or "Text"
+    media_type = escape_markdown(str(content.get("media_type") or "Text"), version=1)
     media_file_id = content.get("media_file_id")
-    body = content.get("text") or ""
+    body = str(content.get("text") or "")
     lines = [
-        f"📝 *User Template* · {page + 1}/{len(templates)}",
-        f"\n📄 *Name:* {name}",
-        f"📎 *Content type:* {escape_markdown(str(media_type), version=1)}",
-        f"🗂 *Media:* {'Saved Telegram media' if media_file_id else 'None'}",
+        tui(language, "user_template_title", current=page + 1, total=len(templates)),
+        tui(language, "name_label", name=name),
+        tui(language, "content_type_label", media_type=media_type),
+        tui(language, "saved_media") if media_file_id else tui(language, "no_media"),
     ]
     lines.append(
-        f"\n📝 *Full content:*\n{escape_markdown(str(body), version=1)}"
-        if body else "\n_(No caption or text saved.)_"
+        tui(language, "full_content_label", text=escape_markdown(body, version=1))
+        if body else tui(language, "no_text")
     )
-    lines.append("\n\nUse this template to add its saved content, or browse another template.")
-    return "\n".join(lines)
+    lines.append(tui(language, "user_template_use_hint"))
+    return "\n\n".join(lines)
 
 
 def _user_template_keyboard(
-    templates: list[dict], page: int, page_prefix: str, use_prefix: str, back_callback: str
+    templates: list[dict],
+    page: int,
+    page_prefix: str,
+    use_prefix: str,
+    back_callback: str,
+    language: str = "en",
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if templates:
+        page = max(0, min(page, len(templates) - 1))
         tmpl = templates[page]
         rows.append([InlineKeyboardButton(
-            "✅ Use this Template", callback_data=f"{use_prefix}{tmpl['_id']}"
+            tui(language, "use_template"), callback_data=f"{use_prefix}{tmpl['_id']}"
         )])
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"{page_prefix}{page - 1}"))
+            nav.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{page_prefix}{page - 1}"))
         if page + 1 < len(templates):
-            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"{page_prefix}{page + 1}"))
+            nav.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{page_prefix}{page + 1}"))
         if nav:
             rows.append(nav)
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data=back_callback)])
+    rows.append([InlineKeyboardButton(tr(language, "back"), callback_data=back_callback)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -597,15 +604,14 @@ def _qm_confirm_keyboard(
 
 
 def _qm_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    """Group queue actions by setup, review, and destructive maintenance."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(tr(language, "queue_set_slots"), callback_data=CB_QM_SET_SLOTS)],
-        [InlineKeyboardButton(tr(language, "queue_add_content"), callback_data=CB_QM_ADD_CONTENT)],
+        [InlineKeyboardButton(tr(language, "queue_set_slots"), style="success", callback_data=CB_QM_SET_SLOTS)],
+        [InlineKeyboardButton(tr(language, "queue_add_content"), style="primary", callback_data=CB_QM_ADD_CONTENT)],
         [InlineKeyboardButton(tr(language, "queue_view"), callback_data=CB_QM_VIEW)],
         [InlineKeyboardButton(tr(language, "queue_clear"), style="danger", callback_data=CB_QM_CLEAR)],
-        [
-            InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
-        ],
+        [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 async def enter_queue_manager(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show the Queue Manager introduction before exposing its actions."""
@@ -669,7 +675,7 @@ async def cb_qm_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         logger.exception("Failed to load daily queues for user_id=%s", user_id)
         await _edit(
             query,
-            "⚠️ Unable to load your queues right now. Please try again.",
+            tui(language, "queue_load_error"),
             _qm_menu_keyboard(language),
         )
         return QM_MENU
@@ -1225,20 +1231,21 @@ async def cb_qm_use_template(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     if not query or not query.from_user:
         return QM_ADD_CONTENT
+    language = await resolve_user_language(context, query.from_user.id)
     await query.answer()
     templates = await list_templates(query.from_user.id)
     if not templates:
         await query.edit_message_text(
-            _user_template_preview([], 0, "queue"),
+            _user_template_preview([], 0, "queue", language),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_user_template_keyboard([], 0, CB_QM_TMPL_PAGE, CB_QM_TMPL_USE, CB_BACK_QM_AC_CONTENT),
+            reply_markup=_user_template_keyboard([], 0, CB_QM_TMPL_PAGE, CB_QM_TMPL_USE, CB_BACK_QM_AC_CONTENT, language),
         )
         return QM_TEMPLATE_PICK
     context.user_data["_qm_template_page"] = 0
     await query.edit_message_text(
-        _user_template_preview(templates, 0, "queue"),
+        _user_template_preview(templates, 0, "queue", language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_user_template_keyboard(templates, 0, CB_QM_TMPL_PAGE, CB_QM_TMPL_USE, CB_BACK_QM_AC_CONTENT),
+        reply_markup=_user_template_keyboard(templates, 0, CB_QM_TMPL_PAGE, CB_QM_TMPL_USE, CB_BACK_QM_AC_CONTENT, language),
     )
     return QM_TEMPLATE_PICK
 
@@ -1251,12 +1258,13 @@ async def cb_qm_template_page(update: Update, context: ContextTypes.DEFAULT_TYPE
     page = int(raw) if raw.isdigit() else 0
     templates = await list_templates(query.from_user.id)
     page = max(0, min(page, max(0, len(templates) - 1)))
+    language = await resolve_user_language(context, query.from_user.id)
     await query.answer()
     context.user_data["_qm_template_page"] = page
     await query.edit_message_text(
-        _user_template_preview(templates, page, "queue"),
+        _user_template_preview(templates, page, "queue", language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_user_template_keyboard(templates, page, CB_QM_TMPL_PAGE, CB_QM_TMPL_USE, CB_BACK_QM_AC_CONTENT),
+        reply_markup=_user_template_keyboard(templates, page, CB_QM_TMPL_PAGE, CB_QM_TMPL_USE, CB_BACK_QM_AC_CONTENT, language),
     )
     return QM_TEMPLATE_PICK
 
@@ -1265,11 +1273,13 @@ async def cb_qm_template_use(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     if not query or not query.from_user:
         return QM_TEMPLATE_PICK
+    language = await resolve_user_language(context, query.from_user.id)
     tid = (query.data or "").replace(CB_QM_TMPL_USE, "", 1)
     tmpl = await get_template_for_user(tid, query.from_user.id)
     if not tmpl:
-        await query.answer("Template not found. Please reopen User Template.", show_alert=True)
+        await query.answer(tui(language, "not_found"), show_alert=True)
         return QM_TEMPLATE_PICK
+
     wizard = _w(context)
     content = tmpl.get("content") or {}
     wizard["media_file_id"] = content.get("media_file_id")
@@ -1277,9 +1287,9 @@ async def cb_qm_template_use(update: Update, context: ContextTypes.DEFAULT_TYPE)
     wizard["content_text"] = content.get("text")
     queue = await get_queue(query.from_user.id, int(wizard.get("add_chat_id", 0)))
     if not queue or not queue.get("slots"):
-        await query.answer("Daily slots are no longer configured for this group.", show_alert=True)
+        await query.answer(tui(language, "queue_slots_missing"), show_alert=True)
         return QM_ADD_CHAT_ID
-    language = await resolve_user_language(context, query.from_user.id)
+
     timezone_key = queue.get("timezone", "UTC")
     timezone_label = next((label for key, label in TIMEZONES if key == timezone_key), timezone_key)
     preview = wizard.get("content_text") or ""
@@ -1432,7 +1442,7 @@ async def cb_qm_ac_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     try:
         pytz.timezone(tz_key)
     except pytz.exceptions.UnknownTimeZoneError:
-        await query.answer("Unknown timezone — choose from the list.", show_alert=True)
+        await query.answer(tui(await resolve_user_language(context, query.from_user.id), "timezone_invalid"), show_alert=True)
         return QM_ADD_TZ
 
     await query.answer()
@@ -1675,7 +1685,7 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except (ChatAccessError, ValueError) as exc:
         _clear(context)
         await query.edit_message_text(
-            f"⚠️ {exc}", reply_markup=_qm_menu_keyboard(language)
+            qm_tr(language, "item_save_error"), reply_markup=_qm_menu_keyboard(language)
         )
         return QM_MENU
     except Exception:
@@ -1748,7 +1758,7 @@ async def cb_qm_clear_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception:
         logger.exception("Failed to clear queues for user_id=%s", user_id)
         await query.edit_message_text(
-            "❌ Unable to clear the queues right now. Please try again.",
+            tui(language, "queue_clear_error"),
             reply_markup=_qm_menu_keyboard(language),
         )
         return QM_MENU
@@ -1790,17 +1800,16 @@ def _mp_intro_keyboard(language: str = "en") -> InlineKeyboardMarkup:
 
 
 def _mp_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    """Keep the main add-content action prominent and navigation predictable."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(mp_tr(language, "add_content"), callback_data=CB_MP_ADD_ITEM)],
-        [InlineKeyboardButton(mp_tr(language, "set_schedule"), callback_data=CB_MP_SET_INTERVAL)],
+        [InlineKeyboardButton(mp_tr(language, "add_content"), style="success", callback_data=CB_MP_ADD_ITEM)],
+        [InlineKeyboardButton(mp_tr(language, "set_schedule"), style="primary", callback_data=CB_MP_SET_INTERVAL)],
         [
             InlineKeyboardButton(mp_tr(language, "pool_overview"), callback_data=CB_MP_VIEW),
             InlineKeyboardButton(mp_tr(language, "manage_pool"), callback_data=CB_MP_MANAGE),
         ],
-        [
-            InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
-            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
-        ],
+        [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
@@ -2219,20 +2228,21 @@ async def cb_mp_use_template(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     if not query or not query.from_user:
         return MP_ADD_ITEM
+    language = await resolve_user_language(context, query.from_user.id)
     await query.answer()
     templates = await list_templates(query.from_user.id)
     if not templates:
         await query.edit_message_text(
-            _user_template_preview([], 0, "media"),
+            _user_template_preview([], 0, "media", language),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_user_template_keyboard([], 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK),
+            reply_markup=_user_template_keyboard([], 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK, language),
         )
         return MP_TEMPLATE_PICK
     context.user_data["_mp_template_page"] = 0
     await query.edit_message_text(
-        _user_template_preview(templates, 0, "media"),
+        _user_template_preview(templates, 0, "media", language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_user_template_keyboard(templates, 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK),
+        reply_markup=_user_template_keyboard(templates, 0, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK, language),
     )
     return MP_TEMPLATE_PICK
 
@@ -2245,12 +2255,13 @@ async def cb_mp_template_page(update: Update, context: ContextTypes.DEFAULT_TYPE
     page = int(raw) if raw.isdigit() else 0
     templates = await list_templates(query.from_user.id)
     page = max(0, min(page, max(0, len(templates) - 1)))
+    language = await resolve_user_language(context, query.from_user.id)
     await query.answer()
     context.user_data["_mp_template_page"] = page
     await query.edit_message_text(
-        _user_template_preview(templates, page, "media"),
+        _user_template_preview(templates, page, "media", language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_user_template_keyboard(templates, page, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK),
+        reply_markup=_user_template_keyboard(templates, page, CB_MP_TMPL_PAGE, CB_MP_TMPL_USE, CB_MP_TEMPLATE_BACK, language),
     )
     return MP_TEMPLATE_PICK
 
@@ -2266,16 +2277,19 @@ async def cb_mp_template_use(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     if not query or not query.from_user:
         return MP_TEMPLATE_PICK
+    language = await resolve_user_language(context, query.from_user.id)
     tid = (query.data or "").replace(CB_MP_TMPL_USE, "", 1)
     tmpl = await get_template_for_user(tid, query.from_user.id)
     if not tmpl:
-        await query.answer("Template not found. Please reopen User Template.", show_alert=True)
+        await query.answer(tui(language, "not_found"), show_alert=True)
         return MP_TEMPLATE_PICK
+
     pm = _pm(context)
     chat_id = pm.get("mp_chat_id")
     if not chat_id:
-        await query.answer(mp_tr(_mp_language(context), "pool_missing"), show_alert=True)
+        await query.answer(mp_tr(language, "pool_missing"), show_alert=True)
         return MP_MENU
+
     content = tmpl.get("content") or {}
     item = {
         "posted": False,
@@ -2284,23 +2298,27 @@ async def cb_mp_template_use(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "text": content.get("text"),
     }
     if not item["media_file_id"] and not item["text"]:
-        await query.answer("This template has no reusable content. Send content manually.", show_alert=True)
+        await query.answer(tui(language, "template_no_content"), show_alert=True)
         return MP_ADD_ITEM
+
     try:
         await ensure_chat_access(context.bot, int(chat_id), query.from_user.id)
         await add_to_media_pool(query.from_user.id, int(chat_id), item)
         db = await get_db()
-        pool = await db[COL_MEDIA_POOLS].find_one({"user_id": query.from_user.id, "chat_id": int(chat_id)})
+        pool = await db[COL_MEDIA_POOLS].find_one(
+            {"user_id": query.from_user.id, "chat_id": int(chat_id)}
+        )
         count = len(pool.get("items", [])) if pool else 1
     except Exception:
         logger.exception("Could not add user template to Media Pool")
-        await query.answer("Could not add this template. Please try again.", show_alert=True)
+        await query.answer(tui(language, "template_add_error"), show_alert=True)
         return MP_TEMPLATE_PICK
-    await query.answer("Template added to Media Pool.")
+
+    await query.answer(tui(language, "template_added"))
     title = pm.get("mp_chat_title", str(chat_id))
     await query.edit_message_text(
-        mp_tr(_mp_language(context), "item_saved", group=title, count=str(count)),
-        reply_markup=_mp_add_item_keyboard(_mp_language(context)),
+        mp_tr(language, "item_saved", group=title, count=str(count)),
+        reply_markup=_mp_add_item_keyboard(language),
     )
     return MP_ADD_ITEM
 
@@ -2865,6 +2883,7 @@ async def cb_mp_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not pools:
         await query.edit_message_text(
             mp_tr(language, "overview_empty"),
+            parse_mode=ParseMode.MARKDOWN,
             reply_markup=_mp_menu_keyboard(language),
         )
         return MP_MENU

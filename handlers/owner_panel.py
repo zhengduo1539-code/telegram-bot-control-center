@@ -70,20 +70,29 @@ def _is_owner(user_id: int | None) -> bool:
 
 
 def _owner_menu_keyboard() -> InlineKeyboardMarkup:
+    """Present owner tools in clear operational groups without changing callbacks."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📊 Status",    callback_data=CB_OWNER_STATUS),
+            InlineKeyboardButton(
+                "📊 System Overview",
+                style="primary",
+                callback_data=CB_OWNER_STATUS,
+            ),
         ],
         [
-            InlineKeyboardButton("👤 User List",  callback_data=CB_OWNER_USERS),
-            InlineKeyboardButton("👥 Group List", callback_data=CB_OWNER_GROUPS),
+            InlineKeyboardButton("👤 User Directory", callback_data=CB_OWNER_USERS),
+            InlineKeyboardButton("👥 Group Directory", callback_data=CB_OWNER_GROUPS),
         ],
         [
             InlineKeyboardButton("📣 Broadcast All", callback_data=CB_OWNER_BCAST_ALL),
-            InlineKeyboardButton("🎯 Broadcast One", callback_data=CB_OWNER_BCAST_ONE),
+            InlineKeyboardButton("🎯 Message One", callback_data=CB_OWNER_BCAST_ONE),
         ],
         [
-            InlineKeyboardButton("🧹 Clear Data", style="danger", callback_data=CB_OWNER_CLEARDATA),
+            InlineKeyboardButton(
+                "🧹 Clear Bot Data",
+                style="danger",
+                callback_data=CB_OWNER_CLEARDATA,
+            ),
         ],
         [
             InlineKeyboardButton("🏠 Main Menu", callback_data="nav:main_menu"),
@@ -113,7 +122,7 @@ async def cb_owner_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
     await query.answer()
     await query.edit_message_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
@@ -131,7 +140,7 @@ async def cb_owner_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await query.answer()
     context.user_data.pop("_owner_bcast_target", None)
     await query.edit_message_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
@@ -360,7 +369,7 @@ async def msg_owner_bcast_all_send(update: Update, context: ContextTypes.DEFAULT
         parse_mode=ParseMode.MARKDOWN,
     )
     await update.message.reply_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
@@ -430,7 +439,7 @@ async def msg_owner_bcast_one_send(update: Update, context: ContextTypes.DEFAULT
     context.user_data.pop("_owner_bcast_target", None)
     await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
     await update.message.reply_text(
-        "🛠 *Owner Panel*\n\nChoose a tool:",
+        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_owner_menu_keyboard(),
     )
