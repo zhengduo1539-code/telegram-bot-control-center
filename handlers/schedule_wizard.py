@@ -43,7 +43,6 @@ from telegram.ext import (
 from database import (
     build_scheduled_post, insert_post,
     list_groups, list_groups_for_user, get_best_hours,
-    list_templates, get_template_for_user,
 )
 from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
@@ -91,7 +90,6 @@ def _parse_auto_delete_duration(raw: str) -> float | None:
     WIZARD_INLINE_BTNS,
 ) = range(10, 28)
 
-WIZARD_TMPL_PICK = 28   # template picker during content step
 WIZARD_INTRO = 29       # guided introduction before the setup wizard
 
 # ---------------------------------------------------------------------------
@@ -114,12 +112,6 @@ CB_IB_SKIP       = "ib:skip"
 CB_IB_ADD        = "ib:add"
 CB_IB_DONE       = "ib:done"
 CB_BACK_INLINE_BTNS = "back:inline_btns"
-
-# Template integration (WIZARD_CONTENT ↔ WIZARD_TMPL_PICK)
-CB_USE_TEMPLATE    = "wizard:use_tmpl"
-CB_TMPL_PICK_PFX   = "wizard:tmpl:pick:"
-CB_TMPL_PAGE_PFX   = "wizard:tmpl:page:"
-CB_BACK_TO_CONTENT = "wizard:back_content"
 
 # Day-of-week toggle: "dow:0" … "dow:6"
 def _dow_cb(day: int) -> str:
@@ -612,36 +604,8 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 def _content_step_keyboard() -> InlineKeyboardMarkup:
     """Keyboard shown at the WIZARD_CONTENT step."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Use Template", callback_data=CB_USE_TEMPLATE)],
         [InlineKeyboardButton("❌ Cancel",        style="danger", callback_data=CB_CANCEL)],
     ])
-
-
-_TMPL_WIZ_PAGE_SIZE = 1
-
-
-def _wizard_tmpl_keyboard(templates: list[dict], page: int) -> InlineKeyboardMarkup:
-    """Keyboard for the in-wizard template picker (WIZARD_TMPL_PICK)."""
-    total = len(templates)
-    start = page * _TMPL_WIZ_PAGE_SIZE
-    end   = min(start + _TMPL_WIZ_PAGE_SIZE, total)
-    rows: list[list[InlineKeyboardButton]] = []
-    for tmpl in templates[start:end]:
-        tid  = str(tmpl["_id"])
-        name = tmpl.get("name", "Unnamed")[:38]
-        rows.append([InlineKeyboardButton(f"📄 {name}", callback_data=f"{CB_TMPL_PICK_PFX}{tid}")])
-    nav: list[InlineKeyboardButton] = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{CB_TMPL_PAGE_PFX}{page - 1}"))
-    if end < total:
-        nav.append(InlineKeyboardButton("Next ▶️", callback_data=f"{CB_TMPL_PAGE_PFX}{page + 1}"))
-    if nav:
-        rows.append(nav)
-    rows.append([
-        InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_TO_CONTENT),
-        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
-    ])
-    return InlineKeyboardMarkup(rows)
 
 
 async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -681,37 +645,6 @@ async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return WIZARD_CHAT_ID
 
 
-def _wizard_template_page_text(templates: list[dict], page: int) -> str:
-    """Show the complete saved content for the currently selected template."""
-    if not templates:
-        return (
-            "📝 *No User Templates Found*\n\n"
-            "You have not saved a template yet. Send your post content manually "
-            "in this step, then save a post as a template from *My Posts* "
-            "when it is available."
-        )
-    tmpl = templates[page * _TMPL_WIZ_PAGE_SIZE]
-    content = tmpl.get("content") or {}
-    name = escape_markdown(str(tmpl.get("name", "Unnamed")), version=1)
-    media_type = content.get("media_type")
-    media_file_id = content.get("media_file_id")
-    text = content.get("text") or ""
-    lines = [
-        f"📝 *User Template* · {page + 1}/{len(templates)}",
-        f"\n📄 *Name:* {name}",
-        f"📎 *Content type:* {escape_markdown(str(media_type or 'Text'), version=1)}",
-    ]
-    if media_file_id:
-        lines.append("🗂 *Media:* Saved Telegram media")
-    if text:
-        lines.append(f"\n📝 *Full content:*\n{escape_markdown(str(text), version=1)}")
-    else:
-        lines.append("\n_(No caption or text saved.)_")
-    lines.append("\n\nChoose *Use this Template* to load it, or browse another template.")
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
 # Step 1 — Chat ID (manual text entry fallback)
 # ---------------------------------------------------------------------------
 
@@ -753,111 +686,6 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Template picker handlers (WIZARD_CONTENT ↔ WIZARD_TMPL_PICK)
-# ---------------------------------------------------------------------------
-
-async def cb_use_template(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show a full preview of each user-owned template before applying it."""
-    query = update.callback_query
-    if not query or not query.from_user:
-        return WIZARD_CONTENT
-    await query.answer()
-    user_id = query.from_user.id
-    try:
-        templates = await list_templates(user_id)
-    except Exception:
-        logger.exception("Could not load user templates for schedule wizard")
-        await query.edit_message_text(
-            "⚠️ Could not load your templates right now. Please try again.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_TO_CONTENT)
-            ]]),
-        )
-        return WIZARD_CONTENT
-    if not templates:
-        await query.edit_message_text(
-            _wizard_template_page_text([], 0),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Back to Content", callback_data=CB_BACK_TO_CONTENT)
-            ]]),
-        )
-        return WIZARD_CONTENT
-    context.user_data["_wiz_tmpl_page"] = 0
-    await query.edit_message_text(
-        _wizard_template_page_text(templates, 0),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_wizard_tmpl_keyboard(templates, 0),
-    )
-    return WIZARD_TMPL_PICK
-
-async def cb_tmpl_page_wiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Browse full template previews one at a time."""
-    query = update.callback_query
-    if not query or not query.from_user:
-        return WIZARD_TMPL_PICK
-    raw = (query.data or "").replace(CB_TMPL_PAGE_PFX, "", 1)
-    page = int(raw) if raw.isdigit() else 0
-    templates = await list_templates(query.from_user.id)
-    page = max(0, min(page, max(0, len(templates) - 1)))
-    await query.answer()
-    context.user_data["_wiz_tmpl_page"] = page
-    await query.edit_message_text(
-        _wizard_template_page_text(templates, page),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_wizard_tmpl_keyboard(templates, page),
-    )
-    return WIZARD_TMPL_PICK
-
-async def cb_tmpl_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User picks a template — load its content into wizard context."""
-    query = update.callback_query
-    if not query:
-        return WIZARD_TMPL_PICK
-    tid  = (query.data or "").replace(CB_TMPL_PICK_PFX, "")
-    tmpl = await get_template_for_user(tid, query.from_user.id)
-    if not tmpl:
-        await query.answer("Template not found.", show_alert=True)
-        return WIZARD_TMPL_PICK
-    await query.answer()
-    content = tmpl.get("content") or {}
-    w = _w(context)
-    w["media_file_id"] = content.get("media_file_id")
-    w["media_type"]    = content.get("media_type")
-    w["content_text"]  = content.get("text")
-    name = tmpl.get("name", "template")
-    await query.edit_message_text(
-        f"✅ Template *{name}* loaded.\n\n"
-        "🔘 *Step 2.5 — Inline Buttons (optional)*\n\n"
-        "Add clickable buttons below your post?\n"
-        "_(e.g. \"Visit Website\", \"Join Channel\")_",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(0),
-    )
-    return WIZARD_INLINE_BTNS
-
-
-async def cb_back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Go back from template picker to the content step."""
-    query = update.callback_query
-    if not query:
-        return WIZARD_CONTENT
-    await query.answer()
-    w       = _w(context)
-    chat_id = w.get("chat_id", "?")
-    await query.edit_message_text(
-        f"▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📝 *Step 2/8 — Post Content*\n\n"
-        "Send the content you want to post:\n"
-        "• Plain text\n"
-        "• Photo, video, document, or audio\n"
-        "• Media with a caption\n\n"
-        "Or tap *📝 Use Template* to load saved content.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(),
-    )
-    return WIZARD_CONTENT
-
-
 async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg: Message = update.message
     w = _w(context)
@@ -1928,19 +1756,12 @@ def build_schedule_wizard() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_chat_id),
             ],
             WIZARD_CONTENT: [
-                CallbackQueryHandler(cb_use_template, pattern=f"^{CB_USE_TEMPLATE}$"),
-                CallbackQueryHandler(cb_back_to_content, pattern=f"^{CB_BACK_TO_CONTENT}$"),
                 MessageHandler(
                     (filters.TEXT | filters.PHOTO | filters.VIDEO |
                      filters.Document.ALL | filters.AUDIO | filters.ANIMATION |
                      filters.VOICE) & ~filters.COMMAND,
                     recv_content,
                 ),
-            ],
-            WIZARD_TMPL_PICK: [
-                CallbackQueryHandler(cb_tmpl_pick,      pattern=rf"^{CB_TMPL_PICK_PFX}[0-9a-f]{{24}}$"),
-                CallbackQueryHandler(cb_tmpl_page_wiz,  pattern=rf"^{CB_TMPL_PAGE_PFX}\d+$"),
-                CallbackQueryHandler(cb_back_to_content, pattern=f"^{CB_BACK_TO_CONTENT}$"),
             ],
             WIZARD_INLINE_BTNS: [
                 CallbackQueryHandler(cb_ib_skip, pattern=f"^{CB_IB_SKIP}$"),
