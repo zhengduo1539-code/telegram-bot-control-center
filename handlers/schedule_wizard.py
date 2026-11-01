@@ -471,9 +471,18 @@ async def _edit(query: Any, text: str, keyboard: InlineKeyboardMarkup) -> None:
 # ---------------------------------------------------------------------------
 
 def _wizard_intro_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Make the safe next step visually primary; keep the existing callback contract."""
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
-        InlineKeyboardButton(sw_tr(language, "continue"), callback_data=CB_WIZARD_CONTINUE),
+        InlineKeyboardButton(
+            sw_tr(language, "continue"),
+            style="success",
+            callback_data=CB_WIZARD_CONTINUE,
+        ),
+        InlineKeyboardButton(
+            tr(language, "cancel"),
+            style="danger",
+            callback_data=CB_CANCEL,
+        ),
     ]])
 
 
