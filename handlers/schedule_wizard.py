@@ -886,7 +886,11 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await msg.reply_text("⚠️ Unsupported content type. Please send text, a photo, video, document, or audio.")
         return WIZARD_CONTENT
 
-    source_entities = msg.entities if msg.text is not None else msg.caption_entities
+    source_entities = (
+        getattr(msg, "entities", None)
+        if msg.text is not None
+        else getattr(msg, "caption_entities", None)
+    )
     w["content_entities"] = [entity.to_dict() for entity in (source_entities or [])]
 
     await msg.reply_text(
