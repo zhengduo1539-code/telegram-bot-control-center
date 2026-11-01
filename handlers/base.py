@@ -144,21 +144,29 @@ def main_menu_keyboard(
     user_id: int | None = None,
     language: str = "en",
 ) -> InlineKeyboardMarkup:
+    # Keep the primary action prominent; group related tools into predictable rows.
     rows = [
         [
-            InlineKeyboardButton(tr(language, "schedule_new"), callback_data=CB_SCHEDULE_NEW),
+            InlineKeyboardButton(
+                tr(language, "schedule_new"),
+                style="success",
+                callback_data=CB_SCHEDULE_NEW,
+            ),
+        ],
+        [
             InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS),
-        ],
-        [
             InlineKeyboardButton(tr(language, "manage_queue"), callback_data=CB_MANAGE_QUEUE),
+        ],
+        [
             InlineKeyboardButton(tr(language, "media_pool"), callback_data=CB_MEDIA_POOL),
-        ],
-        [
             InlineKeyboardButton(tr(language, "templates"), callback_data=CB_TEMPLATES),
-            InlineKeyboardButton(tr(language, "my_stats"), callback_data=CB_MY_STATS),
         ],
         [
+            InlineKeyboardButton(tr(language, "my_stats"), callback_data=CB_MY_STATS),
             InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
+        ],
+        [
+            InlineKeyboardButton(tr(language, "help_title"), callback_data=CB_HELP),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ]
@@ -213,16 +221,41 @@ def confirm_keyboard(confirm_data: str, back_data: str) -> InlineKeyboardMarkup:
 # ---------------------------------------------------------------------------
 
 WELCOME_TEXT = (
-    "👋 *Welcome to Schedule Bot*\n\n"
-    "Plan your posts once. The bot publishes them to your group or channel at the time you choose.\n\n"
-    "Choose a tool below to get started. Each setup guides you one step at a time.\n\n"
-    "🔁 *Recurring posts* — repeat by interval or selected weekdays\n"
-    "🕐 *Time windows* — choose allowed posting hours, including overnight windows\n"
-    "🗂 *Daily Queue* — add posts and let the bot publish one at each daily slot\n"
-    "🎲 *Random shuffler* — post randomly from a media pool\n"
-    "📌 *Auto-pin / unpin* — pin on send, unpin after a duration\n"
-    "🗑 *Auto-delete / self-destruct* — remove posts after X hours or seconds\n\n"
-    "Start with *📅 Schedule New Post* for a single or recurring post, or *🗂 Manage Queue* for daily slots."
+    "👋 *Welcome to Schedule Bot*\n"
+    "Your all-in-one Telegram publishing assistant.\n\n"
+    "━━━━━━━━━━━━━━━━━━\n"
+    "✨ *What you can do*\n"
+    "📅 Schedule one-time or recurring posts\n"
+    "🗂 Queue content for daily time slots\n"
+    "🎲 Publish randomly from a Media Pool\n"
+    "📝 Save and reuse post templates\n"
+    "⚙️ Set timezones, posting windows and post actions\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+    "🚀 *Quick start*\n"
+    "1. Add the bot to your group or channel.\n"
+    "2. Grant permission to send messages (and admin posting rights in channels).\n"
+    "3. Choose *Schedule New Post* and follow the guided setup.\n"
+    "4. Review the summary and confirm to save.\n\n"
+    "Use *❓ Help* for the feature guide or *🌐 Language* to change your language."
+)
+
+WELCOME_TEXT_MY = (
+    "👋 *Schedule Bot မှ ကြိုဆိုပါတယ်*\n"
+    "Telegram Group နှင့် Channel များအတွက် Post အချိန်ဇယားစီမံပေးသည့် Bot ဖြစ်ပါတယ်။\n\n"
+    "━━━━━━━━━━━━━━━━━━\n"
+    "✨ *အသုံးပြုနိုင်သော Features*\n"
+    "📅 တစ်ကြိမ်တည်း သို့မဟုတ် ထပ်ခါတလဲလဲ Post ပို့ရန်\n"
+    "🗂 နေ့စဉ်အချိန်အလိုက် Queue ဖြင့် ပို့ရန်\n"
+    "🎲 Media Pool မှ ကျပန်းရွေးချယ်ပို့ရန်\n"
+    "📝 Template များ သိမ်းဆည်းပြီး ပြန်သုံးရန်\n"
+    "⚙️ Timezone၊ Posting Window နှင့် Post Actions သတ်မှတ်ရန်\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+    "🚀 *စတင်အသုံးပြုရန်*\n"
+    "1. Bot ကို သင့် Group သို့မဟုတ် Channel ထဲသို့ ထည့်ပါ။\n"
+    "2. Message ပို့ခွင့်ပေးပါ။ Channel ဖြစ်ပါက Admin နှင့် Post Messages ခွင့်ပြုပါ။\n"
+    "3. *Schedule New Post* ကိုနှိပ်ပြီး အဆင့်လိုက်လုပ်ဆောင်ပါ။\n"
+    "4. နောက်ဆုံး Summary ကို စစ်ဆေးပြီး Confirm နှိပ်ပါ။\n\n"
+    "အသုံးပြုနည်းအတွက် *❓ Help*၊ ဘာသာစကားပြောင်းရန် *🌐 Language* ကိုရွေးပါ။"
 )
 
 HELP_TEXT = (
@@ -618,7 +651,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"{tr(language, 'private_setup_action')}"
         )
     else:
-        menu_text = tr(language, "menu_title")
+        welcome_text = WELCOME_TEXT_MY if language == "my" else WELCOME_TEXT
+        menu_text = f"{welcome_text}\n\n{tr(language, 'menu_title')}"
         if launch_notice:
             menu_text = f"{launch_notice}\n\n{menu_text}"
 
