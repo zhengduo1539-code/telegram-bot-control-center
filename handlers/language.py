@@ -8,7 +8,8 @@ from telegram.constants import ChatType, ParseMode
 from telegram.ext import ContextTypes, filters
 
 from database import get_user_language, set_user_language
-from reply_keyboard import register_reply_keyboard_routes\nfrom localization import (
+from reply_keyboard import register_reply_keyboard_routes
+from localization import (
     DEFAULT_LANGUAGE,
     LANGUAGES,
     language_button_pattern,
