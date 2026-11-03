@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from asgiref.wsgi import WsgiToAsgi
-from telegram import Bot, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import Bot, BotCommand, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -107,6 +107,18 @@ async def post_init(application: Application) -> None:
     paused_legacy_pools = await pause_legacy_pool_posts()
     if paused_legacy_pools:
         logger.warning("Paused %d legacy Media Pool schedule(s); Media Pool is retired.", paused_legacy_pools)
+    # Publish a clean, user-facing Telegram Bot Commands Menu (the ☰ menu
+    # beside the message composer). Keep command tokens emoji-free; use one
+    # leading emoji in each concise description. Internal diagnostics and
+    # owner-only commands are intentionally not exposed to regular users.
+    await application.bot.set_my_commands([
+        BotCommand("start", "🏠 Open the main menu"),
+        BotCommand("lang", "🌐 Change language"),
+        BotCommand("id", "ℹ️ Show chat and user IDs"),
+        BotCommand("cancel", "❌ Cancel the current action"),
+    ])
+    logger.info("Telegram Bot Commands Menu configured.")
+
     logger.info("MongoDB connected.")
 
     loop = asyncio.get_running_loop()
