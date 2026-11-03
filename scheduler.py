@@ -30,6 +30,8 @@ from telegram.error import (
 
 from config import SCHEDULER_INTERVAL_SECS
 
+from schedule_utils import next_weekday_slot
+
 from database import (
     get_db,
     get_due_posts,
@@ -130,8 +132,10 @@ def _compute_next_run(post: dict[str, Any], fired_at: datetime) -> datetime | No
     tz_str: str = post.get("timezone", "UTC")
     try:
         zone: Any = pytz.timezone(tz_str)
+        resolved_tz_str = tz_str
     except pytz.exceptions.UnknownTimeZoneError:
         zone = timezone.utc
+        resolved_tz_str = "UTC"
 
     if rec_type == "interval":
         unit: str      = rec.get("interval_unit", "hours")
@@ -146,28 +150,17 @@ def _compute_next_run(post: dict[str, Any], fired_at: datetime) -> datetime | No
         days: list[int] = rec.get("days_of_week", [])
         if not days:
             return None
-        local_fired = fired_at.astimezone(zone)
-        # Preserve the HH:MM from the original next_run_at
+        # Preserve the configured local wall-clock time, even when MongoDB
+        # returns the stored UTC timestamp without tzinfo.
         original_run: datetime | None = rec.get("next_run_at")
         if isinstance(original_run, datetime):
-            # MongoDB/PyMongo commonly returns UTC datetimes as naive values.
-            # Stored schedule timestamps are UTC, so make that explicit before
-            # converting to the group's timezone (never use the host local zone).
             if original_run.tzinfo is None or original_run.utcoffset() is None:
                 original_run = original_run.replace(tzinfo=timezone.utc)
             local_orig = original_run.astimezone(zone)
-            h, mi = local_orig.hour, local_orig.minute
+            slot = local_orig.strftime("%H:%M")
         else:
-            h, mi = local_fired.hour, local_fired.minute
-
-        # Find the next occurrence among the selected weekdays
-        for offset in range(1, 8):
-            candidate = local_fired + timedelta(days=offset)
-            if candidate.weekday() in days:
-                next_local = candidate.replace(hour=h, minute=mi, second=0, microsecond=0)
-                if isinstance(zone, pytz.BaseTzInfo):
-                    return zone.normalize(zone.localize(next_local.replace(tzinfo=None))).astimezone(timezone.utc)
-                return next_local.replace(tzinfo=timezone.utc)
+            slot = fired_at.astimezone(zone).strftime("%H:%M")
+        return next_weekday_slot(days, resolved_tz_str, slot, fired_at)
 
     if rec_type == "pool":
         # Pool posts recur on a fixed interval; next_run uses the same interval logic
