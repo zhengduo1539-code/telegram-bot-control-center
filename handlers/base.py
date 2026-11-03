@@ -1,5 +1,5 @@
 """
-handlers/base.py — /start, /help, /cancel, My Posts, and universal navigation.
+handlers/base.py — /start, /cancel, My Posts, and universal navigation.
 
 Navigation pattern used throughout the bot:
   - Every wizard step includes ⬅️ Back and ❌ Cancel inline buttons.
@@ -49,7 +49,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Callback-data constants  (all ≤ 64 bytes — well within Telegram's 64-byte limit)
 # ---------------------------------------------------------------------------
-CB_HELP         = "nav:help"
 CB_CANCEL       = "nav:cancel"
 CB_MAIN_MENU    = "nav:main_menu"
 CB_SCHEDULE_NEW = "action:schedule_new"
@@ -66,7 +65,6 @@ CB_MPP_DEL_YES   = "mpp:delyes:"   # + post_id  (execute)
 CB_MPP_CLONE     = "mpp:clone:"    # + post_id  (ask confirm)
 CB_MPP_CLONE_YES = "mpp:cloneyes:" # + post_id  (execute)
 
-CB_MY_STATS  = "action:my_stats"   # post statistics
 
 # ---------------------------------------------------------------------------
 # Conversation states (used by the base ConversationHandler)
@@ -154,11 +152,9 @@ def main_menu_keyboard(
         ],
         [
             InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS),
-            InlineKeyboardButton(tr(language, "my_stats"), callback_data=CB_MY_STATS),
         ],
         [
             InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
-            InlineKeyboardButton(tr(language, "help_title"), callback_data=CB_HELP),
         ],
     ]
     if user_id is not None and user_id in ADMIN_IDS:
@@ -233,25 +229,6 @@ def confirm_keyboard(confirm_data: str, back_data: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
-
-
-# ---------------------------------------------------------------------------
-# Welcome / help text
-# ---------------------------------------------------------------------------
-
-HELP_TEXT = (
-    "📖 *Feature Guide*\n\n"
-    "*📅 Schedule New Post*\n"
-    "  Set up a one-off or recurring post with full lifecycle control.\n\n"
-    "*📋 My Posts*\n"
-    "  View, pause, resume, or delete your scheduled posts.\n\n"
-    "*🕐 Time Windows*\n"
-    "  Set a daily active window (e.g. 08:00–22:00). Posts outside it are skipped.\n\n"
-    "*📌 Lifecycle Options*\n"
-    "  Auto-delete after X hours, self-destruct after X seconds, auto-pin+unpin.\n\n"
-    "*🔁 Recurrence*\n"
-    "  Every X minutes/hours/days · Specific weekdays · Max runs counter."
-)
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +434,6 @@ def _posts_keyboard(
     if nav_row:
         buttons.append(nav_row)
     buttons.append([
-        InlineKeyboardButton(tr(language, "statistics"), callback_data=CB_MY_STATS),
         InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
     ])
     return InlineKeyboardMarkup(buttons)
@@ -653,21 +629,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     return MAIN_MENU
 
-async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show the help/feature guide."""
-    query = update.callback_query
-    if not query:
-        return MAIN_MENU
-    await query.answer()
-    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
-    await query.edit_message_text(
-        tr(language, "help_text"),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
-        ]),
-    )
-    return MAIN_MENU
 
 
 async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -864,95 +825,6 @@ async def cb_mpp_del_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return await _render_my_posts(query, user_id, page, context)
 
 
-# ---------------------------------------------------------------------------
-# Handlers — My Stats
-# ---------------------------------------------------------------------------
-
-async def cb_my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show a concise per-chat publishing summary for the current user."""
-    from database import get_post_stats
-
-    query = update.callback_query
-    if not query or not query.from_user:
-        return MY_POSTS
-
-    await query.answer()
-    user_id = query.from_user.id
-    language = await resolve_user_language(context, user_id)
-
-    try:
-        rows = await get_post_stats(user_id)
-    except Exception:
-        logger.exception("get_post_stats failed for user_id=%s", user_id)
-        await query.edit_message_text(
-            "⚠️ *Statistics are temporarily unavailable.*\\n\\nPlease try again in a moment.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS)],
-                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
-            ]),
-        )
-        return MY_POSTS
-
-    if not rows:
-        await query.edit_message_text(
-            "📊 *Post Statistics*\\n\\n"
-            "No scheduled posts have been recorded yet. Create your first post to see publishing activity here.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tr(language, "schedule_new"), style="success", callback_data=CB_SCHEDULE_NEW)],
-                [InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS)],
-                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
-            ]),
-        )
-        return MY_POSTS
-
-    totals = {"pending": 0, "posted": 0, "paused": 0, "failed": 0}
-    lines = ["📊 *Post Statistics*", "_Publishing activity by group or channel_", ""]
-    for row in rows:
-        chat_id = row["_id"]
-        total = int(row.get("total", 0) or 0)
-        counts = {
-            item.get("status"): int(item.get("count", 0) or 0)
-            for item in row.get("stats", [])
-        }
-        for status in totals:
-            totals[status] += counts.get(status, 0)
-
-        lines.extend([
-            f"🗂 *Chat* `{chat_id}`",
-            f"Total: *{total}*",
-            (
-                f"⏳ Active: {counts.get('pending', 0)}  ·  "
-                f"⏸ Paused: {counts.get('paused', 0)}"
-            ),
-            (
-                f"✅ Published: {counts.get('posted', 0)}  ·  "
-                f"❌ Failed: {counts.get('failed', 0)}"
-            ),
-            "",
-        ])
-
-    lines.extend([
-        "━━━━━━━━━━━━━━━━━━",
-        "*Overall activity*",
-        (
-            f"⏳ {totals['pending']} active  ·  ⏸ {totals['paused']} paused"
-        ),
-        (
-            f"✅ {totals['posted']} published  ·  ❌ {totals['failed']} failed"
-        ),
-    ])
-
-    await query.edit_message_text(
-        "\\n".join(lines),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS)],
-            [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
-        ]),
-    )
-    return MY_POSTS
 
 
 # ---------------------------------------------------------------------------
@@ -1033,13 +905,13 @@ async def cb_mpp_clone_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 def build_base_conversation() -> ConversationHandler:
     """
-    Root ConversationHandler — handles /start, navigation, help, cancel,
-    and the full My Posts management flow (list / pause / resume / delete).
+    Root ConversationHandler — handles /start, navigation, cancel, and the
+    full My Posts management flow (list / pause / resume / delete).
 
     The Schedule New Post action is registered in its dedicated, higher-priority
     ConversationHandler so its wizard intercepts the action before navigation.
     """
-    nav_pattern = f"^({CB_HELP}|{CB_CANCEL}|{CB_MAIN_MENU})$"
+    nav_pattern = f"^({CB_CANCEL}|{CB_MAIN_MENU})$"
 
     # Patterns that contain a 24-char MongoDB ObjectId suffix
     oid = r"[0-9a-f]{24}"
@@ -1048,11 +920,9 @@ def build_base_conversation() -> ConversationHandler:
         entry_points=[CommandHandler("start", cmd_start)],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(cb_help,      pattern=f"^{CB_HELP}$"),
                 CallbackQueryHandler(cb_main_menu, pattern=f"^{CB_MAIN_MENU}$"),
                 CallbackQueryHandler(cb_cancel,    pattern=f"^{CB_CANCEL}$"),
                 CallbackQueryHandler(cb_my_posts,  pattern=f"^{CB_MY_POSTS}$"),
-                CallbackQueryHandler(cb_my_stats,  pattern=f"^{CB_MY_STATS}$"),
             ],
             MY_POSTS: [
                 CallbackQueryHandler(cb_my_posts,       pattern=f"^{CB_MY_POSTS}$"),
@@ -1062,7 +932,6 @@ def build_base_conversation() -> ConversationHandler:
                 CallbackQueryHandler(cb_mpp_resume,     pattern=rf"^{CB_MPP_RESUME}{oid}$"),
                 CallbackQueryHandler(cb_mpp_del,        pattern=rf"^{CB_MPP_DEL}{oid}$"),
                 CallbackQueryHandler(cb_mpp_clone,      pattern=rf"^{CB_MPP_CLONE}{oid}$"),
-                CallbackQueryHandler(cb_my_stats,       pattern=f"^{CB_MY_STATS}$"),
                 CallbackQueryHandler(cb_main_menu,      pattern=f"^{CB_MAIN_MENU}$"),
                 CallbackQueryHandler(cb_cancel,         pattern=f"^{CB_CANCEL}$"),
             ],

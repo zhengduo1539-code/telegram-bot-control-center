@@ -396,33 +396,6 @@ async def delete_post(post_id: str) -> bool:
     return result.deleted_count > 0
 
 
-async def get_post_stats(user_id: int) -> list[dict[str, Any]]:
-    """
-    Per-channel post counts for a user, grouped by chat_id and status.
-    Each row: {"_id": chat_id, "total": N, "stats": [{"status": ..., "count": ...}, ...]}.
-    Sorted by total (descending).
-    """
-    db = await get_db()
-    pipeline = [
-        {"$match": {"user_id": user_id}},
-        {
-            "$group": {
-                "_id": {"chat_id": "$chat_id", "status": "$status"},
-                "count": {"$sum": 1},
-            }
-        },
-        {
-            "$group": {
-                "_id": "$_id.chat_id",
-                "stats": {"$push": {"status": "$_id.status", "count": "$count"}},
-                "total": {"$sum": "$count"},
-            }
-        },
-        {"$sort": {"total": -1}},
-    ]
-    cursor = db[COL_POSTS].aggregate(pipeline)
-    return await cursor.to_list(length=None)
-
 
 async def clone_post(post_id: str) -> str:
     """

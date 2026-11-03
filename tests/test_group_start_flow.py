@@ -113,7 +113,8 @@ def test_private_start_shows_welcome_guide_and_clear_primary_action():
             route.get("data") for route in routes.values()
             if route.get("type") == "callback"
         }
-        assert "nav:help" in callbacks
+        assert "nav:help" not in callbacks
+        assert "action:my_stats" not in callbacks
         assert "action:schedule_new" in callbacks
         assert "action:manage_queue" not in callbacks
         assert "action:media_pool" not in callbacks
