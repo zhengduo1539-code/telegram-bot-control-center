@@ -611,7 +611,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         group_message = await message.reply_text(
             f"{tr(language, 'group_start_title')}\n\n"
             f"{tr(language, 'group_start_body', group=group_title)}\n\n"
-            f"🔒 {tr(language, 'private_setup_action')}\n"
+            f"🔒 {tr(language, 'private_setup_action')}\n\n"
             f"{tr(language, 'group_admin_note')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
