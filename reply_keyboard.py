@@ -4,6 +4,8 @@ The welcome screen keeps only Add to My Group and Share Bot as inline URL
 buttons. Telegram permits one keyboard type per message, so the Reply Keyboard
 is attached to a minimal, non-visible anchor message. Selections are queued as
 synthetic callback updates and handled by the existing conversation handlers.
+Private-chat button-tap messages are deleted best-effort so navigation does not
+fill the conversation with repeated button labels.
 """
 from __future__ import annotations
 
@@ -189,6 +191,27 @@ class _ReplyKeyboardCallbackQuery(CallbackQuery):
         return True
 
 
+async def _delete_private_keyboard_tap(message: Any, context: Any, chat_id: Any) -> None:
+    """Remove a private-chat button tap while preserving fallback cleanup."""
+    message_id = getattr(message, "message_id", None)
+    if message_id is None:
+        return
+
+    chat_cleanup.track(context.application.bot_data, chat_id, message_id)
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception as exc:
+        # Deletion is best-effort; leave it tracked for a later wizard cleanup.
+        logger.debug(
+            "Could not remove Reply Keyboard tap %s in %s: %s",
+            message_id,
+            chat_id,
+            exc,
+        )
+    else:
+        chat_cleanup.untrack(context.application.bot_data, chat_id, message_id)
+
+
 async def handle_reply_keyboard_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -207,8 +230,11 @@ async def handle_reply_keyboard_message(
     if not is_private_chat(chat.id) and route["type"] != "url":
         return
 
-    # Stop propagation below, so record the tapped button message explicitly.
-    chat_cleanup.track(context.application.bot_data, chat.id, message.message_id)
+    # Keep group URL taps available for diagnostics. In private chats, a
+    # Reply Keyboard selection is just a normal user message; remove callback
+    # taps so the conversation stays focused on the active bot screen.
+    if not is_private_chat(chat.id):
+        chat_cleanup.track(context.application.bot_data, chat.id, message.message_id)
 
     if route["type"] == "url":
         await message.reply_text(f"🔗 Open this link:\n{route['url']}")
@@ -224,6 +250,9 @@ async def handle_reply_keyboard_message(
     if target_message is None:
         await message.reply_text("⚠️ This menu has expired. Please send /start.")
         raise ApplicationHandlerStop
+
+    if is_private_chat(chat.id):
+        await _delete_private_keyboard_tap(message, context, chat.id)
 
     query = _ReplyKeyboardCallbackQuery(
         id=f"reply-keyboard-{update.update_id}",
