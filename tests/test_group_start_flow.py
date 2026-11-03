@@ -3,7 +3,8 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from telegram import ReplyKeyboardMarkup\nfrom telegram.ext import ConversationHandler
+from telegram import ReplyKeyboardMarkup
+from telegram.ext import ConversationHandler
 
 from handlers.base import (
     MAIN_MENU,
