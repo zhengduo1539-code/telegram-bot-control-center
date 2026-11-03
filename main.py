@@ -190,8 +190,8 @@ class _TrackedBot(Bot):
         markup = kwargs.get("reply_markup")
 
         if is_private_chat(target_chat_id) and isinstance(markup, InlineKeyboardMarkup):
-            # InlineKeyboardMarkup is an internal route definition only.
-            # Users receive native Reply Keyboard buttons exclusively.
+            # Feature callbacks are bridged to Reply Keyboard actions; the
+            # dedicated Add to My Group / Share Bot URL actions stay inline.
             inline_markup, reply_markup, routes = split_inline_keyboard(markup)
             await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
             clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
@@ -246,8 +246,8 @@ class _TrackedBot(Bot):
                     reply_keyboard, routes, target_message,
                 )
             elif reply_keyboard is None:
-                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
                 await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
+                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
             return result
 
         if is_private_chat(target_chat_id) and markup is None:
@@ -288,8 +288,8 @@ class _TrackedBot(Bot):
                     reply_markup, routes, target_message,
                 )
             elif reply_markup is None:
-                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
                 await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
+                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
             return result
         return await super().edit_message_reply_markup(*args, **kwargs)
 
