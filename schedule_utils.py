@@ -129,6 +129,54 @@ def next_daily_slot(slots: Iterable[str], timezone_name: str, after: datetime) -
     return None
 
 
+def next_weekday_slot(
+    days_of_week: Iterable[int],
+    timezone_name: str,
+    slot: str,
+    after: datetime,
+) -> datetime | None:
+    """Return the next selected weekday occurrence as an aware UTC datetime.
+
+    Local wall-clock times remain stable through DST changes. Ambiguous times
+    use standard time, while nonexistent times are skipped to the next
+    selected weekday rather than being silently shifted by an hour.
+    """
+    if after.tzinfo is None or after.utcoffset() is None:
+        raise ValueError("The reference datetime must be timezone-aware.")
+    normalized = parse_hhmm(slot)
+    if normalized is None:
+        raise ValueError("The weekday slot must be a valid HH:MM value.")
+    selected = set(days_of_week)
+    if not selected or any(not isinstance(day, int) or day not in range(7) for day in selected):
+        raise ValueError("days_of_week must contain weekdays numbered 0 through 6.")
+    try:
+        zone = pytz.timezone(timezone_name)
+    except pytz.exceptions.UnknownTimeZoneError as exc:
+        raise ValueError(f"Unknown timezone: {timezone_name}") from exc
+
+    hour, minute = map(int, normalized.split(":"))
+    after_utc = after.astimezone(timezone.utc)
+    local_after = after_utc.astimezone(zone)
+    for day_offset in range(1, 9):
+        candidate_date = local_after.date() + timedelta(days=day_offset)
+        if candidate_date.weekday() not in selected:
+            continue
+        naive = datetime.combine(candidate_date, time(hour, minute))
+        try:
+            try:
+                local_candidate = zone.localize(naive, is_dst=None)
+            except pytz.AmbiguousTimeError:
+                local_candidate = zone.localize(naive, is_dst=False)
+            except pytz.NonExistentTimeError:
+                continue
+        except (ValueError, OverflowError):
+            continue
+        candidate_utc = local_candidate.astimezone(timezone.utc)
+        if candidate_utc > after_utc:
+            return candidate_utc
+    return None
+
+
 def is_future_datetime(value: datetime, now: datetime | None = None) -> bool:
     if value.tzinfo is None or value.utcoffset() is None:
         return False
