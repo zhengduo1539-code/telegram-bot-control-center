@@ -116,7 +116,13 @@ def test_queue_entry_continue_and_back_follow_expected_navigation(monkeypatch):
         assert "qwiz" not in context.user_data
         menu_text = bot.send_message.await_args.kwargs["text"]
         assert menu_text.startswith(translate("my", "menu_title"))
-        assert "https://t.me/share/url?" in menu_text
+        keyboard = bot.send_message.await_args.kwargs["reply_markup"]
+        inline, reply, routes = queue.split_inline_keyboard(keyboard)
+        assert inline is not None
+        assert [button.text for row in inline.inline_keyboard for button in row] == [
+            "➕ Add to My Group", "📤 Share Bot"
+        ]
+        assert reply is not None
         bot.delete_message.assert_awaited_once_with(chat_id=42, message_id=88)
 
     asyncio.run(scenario())
