@@ -116,9 +116,9 @@ def parse_group_start_payload(args: list[str]) -> int | None:
 # Keyboard builders
 # ---------------------------------------------------------------------------
 
-def _bot_username(bot: Bot) -> str:
-    """Return the bot's username, falling back gracefully if not yet available."""
-    return bot.username or "YourSchedulerBot"
+def _bot_username(bot: Bot | None) -> str:
+    """Return the bot's username, falling back gracefully if unavailable."""
+    return getattr(bot, "username", None) or "YourSchedulerBot"
 
 
 def start_keyboard(bot: Bot) -> InlineKeyboardMarkup:
@@ -136,7 +136,7 @@ def start_keyboard(bot: Bot) -> InlineKeyboardMarkup:
     ]])
 
 
-def main_menu_links(bot: Bot, language: str = "en") -> str:
+def main_menu_links(bot: Bot | None, language: str = "en") -> str:
     """Build Markdown links that replace the former inline URL buttons."""
     username = _bot_username(bot)
     add_group_url = f"https://t.me/{username}?startgroup=true"
