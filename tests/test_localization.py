@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from telegram import ReplyKeyboardMarkup
+from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 import database
 from handlers import language as language_handler
@@ -168,7 +168,7 @@ def test_language_picker_exit_returns_to_main_menu_without_changing_saved_locale
         )
         assert selected_message.reply_text.await_count == 1
         sent = selected_message.reply_text.await_args.kwargs
-        assert isinstance(sent["reply_markup"], ReplyKeyboardMarkup)
+        assert isinstance(sent["reply_markup"], InlineKeyboardMarkup)
         assert sent["text"] == translate("en", "menu_title")
 
     asyncio.run(scenario())
