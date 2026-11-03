@@ -410,3 +410,20 @@ def test_queue_content_uses_manual_input_without_template_picker():
         and handler.callback.__name__ == "recv_qm_content"
         for handler in handlers
     )
+
+def test_queue_time_input_normalizes_daily_slots_and_rejects_invalid_values():
+    assert queue._parse_slots("14:00, 9:05\n14:00") == ["09:05", "14:00"]
+    assert queue._parse_slots("09:00 24:00") is None
+    assert queue._parse_slots("9:5") is None
+    assert queue._parse_slots("") is None
+
+
+def test_legacy_queue_datetime_parser_returns_future_utc_and_rejects_past():
+    from datetime import timezone
+
+    future = queue._parse_run_time("25/12/2027 09:00", "Asia/Bangkok")
+    assert future is not None
+    assert future.tzinfo is not None and future.utcoffset() is not None
+    assert future.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M") == "2027-12-25 02:00"
+    assert queue._parse_run_time("25/12/2025 09:00", "Asia/Bangkok") is None
+    assert queue._parse_run_time("31/02/2027 09:00", "Asia/Bangkok") is None

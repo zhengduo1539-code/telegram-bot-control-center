@@ -59,6 +59,7 @@ from handlers.language import resolve_user_language
 from localization import translate as tr
 from media_pool_localization import translate_media_pool as mp_tr
 from queue_manager_localization import translate_queue_manager as qm_tr
+from schedule_utils import next_daily_slot, parse_hhmm, parse_schedule_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -267,13 +268,7 @@ def _qm_content_keyboard(language: str) -> InlineKeyboardMarkup:
     ])
 
 def _parse_hhmm(text: str) -> str | None:
-    m = _TIME_RE.match(text.strip())
-    if not m:
-        return None
-    h, mi = int(m.group(1)), int(m.group(2))
-    if h > 23 or mi > 59:
-        return None
-    return f"{h:02d}:{mi:02d}"
+    return parse_hhmm(text)
 
 
 def _parse_slots(raw: str) -> list[str] | None:
@@ -295,67 +290,17 @@ def _parse_slots(raw: str) -> list[str] | None:
 
 
 def _parse_run_time(text: str, tz: str) -> datetime | None:
-    """
-    Parse user-supplied date/time string into an aware UTC datetime.
-    Accepts:
-      • "HH:MM"               — today in the given tz (tomorrow if already past)
-      • "DD/MM/YYYY HH:MM"    — specific date in the given tz
-    Returns None on parse failure or invalid date.
-    """
-    text = text.strip()
-    try:
-        zone: Any = pytz.timezone(tz) if tz != "UTC" else timezone.utc
-    except pytz.exceptions.UnknownTimeZoneError:
-        zone = timezone.utc
-
-    # Try full date first
-    m = _DT_RE.match(text)
-    if m:
-        d, mo, y, h, mi = (int(x) for x in m.groups())
-        try:
-            naive = datetime(y, mo, d, h, mi, 0)
-        except ValueError:
-            return None
-        if isinstance(zone, pytz.BaseTzInfo):
-            return zone.localize(naive).astimezone(timezone.utc)
-        return naive.replace(tzinfo=zone).astimezone(timezone.utc)
-
-    # Try HH:MM only
-    m2 = _TIME_RE.match(text)
-    if m2:
-        h, mi = int(m2.group(1)), int(m2.group(2))
-        if h > 23 or mi > 59:
-            return None
-        now = datetime.now(tz=zone)
-        candidate = now.replace(hour=h, minute=mi, second=0, microsecond=0)
-        if candidate <= now:
-            candidate += timedelta(days=1)
-        return candidate.astimezone(timezone.utc)
-
-    return None
+    """Parse a future local date/time and normalize it to aware UTC."""
+    return parse_schedule_datetime(text, tz)
 
 
 def _next_slot_datetime(slots: list[str], tz_str: str = "UTC") -> tuple[str, datetime] | None:
-    if not slots:
+    """Return the next valid local slot and its UTC instant."""
+    next_at = next_daily_slot(slots, tz_str, datetime.now(tz=timezone.utc))
+    if next_at is None:
         return None
-    try:
-        zone = pytz.timezone(tz_str) if tz_str != "UTC" else timezone.utc
-    except pytz.exceptions.UnknownTimeZoneError:
-        zone = timezone.utc
-
-    now = datetime.now(tz=zone)
-    candidates: list[tuple[datetime, str]] = []
-
-    for slot in slots:
-        h, mi = int(slot[:2]), int(slot[3:])
-        candidate = now.replace(hour=h, minute=mi, second=0, microsecond=0)
-        if candidate <= now:
-            candidate += timedelta(days=1)
-        candidates.append((candidate, slot))
-
-    candidates.sort(key=lambda x: x[0])
-    dt, label = candidates[0]
-    return label, dt
+    local = next_at.astimezone(pytz.timezone(tz_str))
+    return local.strftime("%H:%M"), next_at
 
 
 def _mp_interval_unit_keyboard(language: str = "en") -> InlineKeyboardMarkup:
@@ -1247,8 +1192,8 @@ async def recv_qm_add_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Add Content — Step 3: receive date/time string, ask for timezone."""
     text = (update.message.text or "").strip()
     # Validate format (we need timezone before we can compute the actual dt)
-    is_full_dt = bool(_DT_RE.match(text))
-    is_hhmm    = bool(_TIME_RE.match(text))
+    is_full_dt = bool(_DT_RE.fullmatch(text))
+    is_hhmm = bool(_TIME_RE.fullmatch(text)) and _parse_hhmm(text) is not None
     if not (is_full_dt or is_hhmm):
         await update.message.reply_text(
             "⚠️ *Invalid format.*\n\n"
@@ -1549,6 +1494,9 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     next_run = queue.get("next_run_at") if queue else None
     if next_run:
+        # Motor/PyMongo may deserialize MongoDB UTC dates without tzinfo.
+        if next_run.tzinfo is None or next_run.utcoffset() is None:
+            next_run = next_run.replace(tzinfo=timezone.utc)
         next_text = next_run.astimezone(
             pytz.timezone(wizard.get("add_tz", "UTC"))
         ).strftime("%d/%m/%Y %H:%M")
@@ -2257,6 +2205,7 @@ async def cb_mp_first_now(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     pm = _pm(context)
     language = await resolve_user_language(context, query.from_user.id)
     pm["first_run"] = "now"
+    pm.pop("first_run_at", None)
     pm.setdefault("tz_page", 0)
     await query.answer()
     await query.edit_message_text(
@@ -2269,6 +2218,9 @@ async def cb_mp_first_now(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cb_mp_first_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     language = await resolve_user_language(context, query.from_user.id)
+    pm = _pm(context)
+    pm.pop("first_run_at", None)
+    pm.pop("first_run", None)
     await _edit(
         query,
         mp_tr(language, "time_prompt"),
@@ -2289,6 +2241,7 @@ async def recv_mp_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await update.message.reply_text(mp_tr(language, "invalid_time"))
             return MP_SET_FIRST_RUN
         pm["first_run"] = parsed
+    pm.pop("first_run_at", None)
     pm.setdefault("tz_page", 0)
     await update.message.reply_text(
         mp_tr(language, "timezone"),
@@ -2316,12 +2269,26 @@ async def cb_mp_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     language = await resolve_user_language(context, query.from_user.id)
     tz_key = (query.data or "").replace("mptz:", "", 1)
     try:
-        pytz.timezone(tz_key)
+        zone = pytz.timezone(tz_key)
     except pytz.exceptions.UnknownTimeZoneError:
         await query.answer(mp_tr(language, "invalid_timezone"), show_alert=True)
         return MP_SET_TIMEZONE
+
     pm = _pm(context)
     pm["timezone"] = tz_key
+    if pm.get("first_run") == "now":
+        pm["first_run_at"] = datetime.now(tz=timezone.utc) + timedelta(minutes=1)
+    else:
+        first_run_at = parse_schedule_datetime(str(pm.get("first_run") or ""), tz_key)
+        if first_run_at is None:
+            await query.answer(mp_tr(language, "invalid_time"), show_alert=True)
+            await query.edit_message_text(
+                mp_tr(language, "time_prompt"),
+                reply_markup=_mp_nav_keyboard(language, back_data=CB_BACK_MP_FR),
+            )
+            return MP_SET_FIRST_RUN
+        pm["first_run_at"] = first_run_at
+
     await query.answer()
     await query.edit_message_text(
         mp_tr(language, "auto_delete"),
@@ -2345,7 +2312,13 @@ def _mp_summary_text(pm: dict, language: str = "en") -> str:
     first_run = pm.get("first_run", "?")
     tz_key = pm.get("timezone", "UTC")
     tz_label = next((key for key, _label in TIMEZONES if key == tz_key), tz_key)
-    first_run_display = mp_tr(language, "start_now") if first_run == "now" else first_run
+    first_run_at = pm.get("first_run_at")
+    if isinstance(first_run_at, datetime):
+        if first_run_at.tzinfo is None or first_run_at.utcoffset() is None:
+            first_run_at = first_run_at.replace(tzinfo=timezone.utc)
+        first_run_display = first_run_at.astimezone(pytz.timezone(tz_key)).strftime("%d/%m/%Y %H:%M")
+    else:
+        first_run_display = mp_tr(language, "start_now") if first_run == "now" else str(first_run)
     ad_hours = pm.get("mp_ad_hours")
     ad_line = (
         pm.get("mp_ad_duration_label", f"{ad_hours} hours")
@@ -2494,22 +2467,30 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     try:
         zone = pytz.timezone(tz_str)
     except pytz.exceptions.UnknownTimeZoneError:
-        zone = timezone.utc
-
-    now_local = datetime.now(tz=zone)
-    if first_run == "now":
-        first_run_dt = datetime.now(tz=timezone.utc) + timedelta(minutes=1)
-    else:
-        hour, minute = int(first_run[:2]), int(first_run[3:])
-        candidate = now_local.replace(
-            hour=hour,
-            minute=minute,
-            second=0,
-            microsecond=0,
+        await query.edit_message_text(
+            mp_tr(language, "invalid_timezone"),
+            reply_markup=_mp_tz_keyboard(pm.get("tz_page", 0), language),
         )
-        if candidate <= now_local:
-            candidate += timedelta(days=1)
-        first_run_dt = candidate.astimezone(timezone.utc)
+        return MP_SET_TIMEZONE
+
+    now_utc = datetime.now(tz=timezone.utc)
+    first_run_dt = pm.get("first_run_at")
+    if isinstance(first_run_dt, datetime) and (first_run_dt.tzinfo is None or first_run_dt.utcoffset() is None):
+        first_run_dt = first_run_dt.replace(tzinfo=timezone.utc)
+    if first_run == "now":
+        if not isinstance(first_run_dt, datetime) or first_run_dt <= now_utc:
+            first_run_dt = now_utc + timedelta(minutes=1)
+    else:
+        if not isinstance(first_run_dt, datetime):
+            first_run_dt = parse_schedule_datetime(str(first_run), tz_str)
+        if first_run_dt is None or first_run_dt <= now_utc:
+            pm.pop("first_run_at", None)
+            await query.edit_message_text(
+                mp_tr(language, "invalid_time"),
+                reply_markup=_mp_first_run_keyboard(language),
+            )
+            return MP_SET_FIRST_RUN
+    pm["first_run_at"] = first_run_dt
 
     auto_delete_hours = pm.get("mp_ad_hours")
     try:
@@ -2535,7 +2516,7 @@ async def cb_mp_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return MP_MENU
 
     title = pm.get("mp_chat_title", str(chat_id))
-    first_display = mp_tr(language, "start_now") if first_run == "now" else first_run
+    first_display = first_run_dt.astimezone(zone).strftime("%d/%m/%Y %H:%M")
     interval_label = pm.get("interval_label") or f"{value} {mp_tr(language, unit)}"
     auto_delete_label = (
         pm.get("mp_ad_duration_label", f"{auto_delete_hours} hours")

@@ -1,5 +1,6 @@
 """Regression tests for Schedule New Post onboarding and navigation."""
 import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -114,3 +115,54 @@ def test_schedule_content_step_is_manual_only():
         "template" in getattr(handler.callback, "__name__", "").lower()
         for handler in handlers
     )
+
+def test_manual_first_run_input_uses_timezone_parser_and_displays_resolved_date(monkeypatch):
+    async def scenario():
+        parsed = datetime(2027, 12, 25, 2, 0, tzinfo=timezone.utc)
+        monkeypatch.setattr(wizard, "_parse_run_time", lambda raw, tz: parsed)
+        message = SimpleNamespace(text="09:00", reply_text=AsyncMock())
+        context = SimpleNamespace(user_data={"language": "en", "wizard": {"timezone": "Asia/Bangkok"}})
+
+        state = await wizard.recv_first_run(SimpleNamespace(message=message), context)
+
+        assert state == wizard.WIZARD_MAX_RUNS
+        assert context.user_data["wizard"]["first_run"] == parsed
+        assert "25/12/2027 09:00" in message.reply_text.await_args.args[0]
+
+    asyncio.run(scenario())
+
+
+def test_manual_first_run_rejects_invalid_or_past_time_without_advancing(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(wizard, "_parse_run_time", lambda *_: None)
+        message = SimpleNamespace(text="25/12/2025 09:00", reply_text=AsyncMock())
+        context = SimpleNamespace(user_data={"language": "en", "wizard": {"timezone": "UTC"}})
+
+        state = await wizard.recv_first_run(SimpleNamespace(message=message), context)
+
+        assert state == wizard.WIZARD_FIRST_RUN
+        assert "first_run" not in context.user_data["wizard"]
+        assert "future time" in message.reply_text.await_args.args[0].lower()
+
+    asyncio.run(scenario())
+
+
+def test_confirm_post_requires_first_run_still_in_future():
+    async def scenario():
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={
+            "language": "en",
+            "wizard": {"first_run": datetime.now(timezone.utc) - timedelta(minutes=1)},
+        })
+
+        state = await wizard.cb_confirm_post(SimpleNamespace(callback_query=query), context)
+
+        assert state == wizard.WIZARD_FIRST_RUN
+        assert "time has passed" in query.edit_message_text.await_args.args[0].lower()
+        assert "reply_markup" in query.edit_message_text.await_args.kwargs
+
+    asyncio.run(scenario())
