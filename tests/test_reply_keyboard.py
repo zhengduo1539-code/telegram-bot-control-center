@@ -322,6 +322,45 @@ def test_private_reply_keyboard_tap_dispatch_survives_delete_failure():
     asyncio.run(scenario())
 
 
+def test_private_url_choice_deletes_tap_and_returns_clickable_link():
+    async def scenario():
+        chat_id = 123456
+        message = SimpleNamespace(
+            text="📤 Share Bot",
+            message_id=705,
+            reply_text=AsyncMock(),
+        )
+        bot_data = {}
+        register_reply_keyboard_routes(
+            bot_data,
+            chat_id,
+            {"📤 Share Bot": {"type": "url", "url": "https://t.me/share/url?url=https%3A%2F%2Ft.me%2FScheduler"}},
+            SimpleNamespace(chat_id=chat_id, message_id=600),
+        )
+        bot = SimpleNamespace(delete_message=AsyncMock(return_value=True))
+        context = SimpleNamespace(
+            bot=bot,
+            bot_data=bot_data,
+            application=SimpleNamespace(bot_data=bot_data),
+        )
+        update = SimpleNamespace(
+            update_id=706,
+            message=message,
+            effective_chat=SimpleNamespace(id=chat_id),
+            effective_user=SimpleNamespace(id=chat_id),
+        )
+
+        with pytest.raises(ApplicationHandlerStop):
+            await handle_reply_keyboard_message(update, context)
+
+        bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=705)
+        message.reply_text.assert_awaited_once_with(
+            "🔗 Open this link:\nhttps://t.me/share/url?url=https%3A%2F%2Ft.me%2FScheduler"
+        )
+
+    asyncio.run(scenario())
+
+
 def test_unmatched_text_is_left_for_the_active_conversation():
     async def scenario():
         chat_id = 123456
