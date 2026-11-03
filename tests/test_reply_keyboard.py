@@ -31,7 +31,7 @@ def _labels(markup):
     return [button.text for row in markup.keyboard for button in row]
 
 
-def test_every_button_becomes_a_reply_keyboard_choice():
+def test_welcome_actions_stay_inline_while_feature_actions_use_reply_keyboard():
     markup = InlineKeyboardMarkup(
         [
             [
@@ -59,18 +59,20 @@ def test_every_button_becomes_a_reply_keyboard_choice():
 
     inline, reply, routes = split_inline_keyboard(markup)
 
-    assert inline is None
-    assert isinstance(reply, ReplyKeyboardMarkup)
-    assert set(_labels(reply)) == {
+    assert isinstance(inline, InlineKeyboardMarkup)
+    assert [[button.text for button in row] for row in inline.inline_keyboard] == [[
         "➕ Add to My Group",
         "📤 Share Bot",
+    ]]
+    assert isinstance(reply, ReplyKeyboardMarkup)
+    assert set(_labels(reply)) == {
         "📅 Schedule New Post",
         "📋 My Posts",
         "🏠 Main Menu",
         "⚙️ Language",
     }
-    assert routes["➕ Add to My Group"]["type"] == "url"
-    assert routes["📤 Share Bot"]["type"] == "url"
+    assert "➕ Add to My Group" not in routes
+    assert "📤 Share Bot" not in routes
     assert routes["📅 Schedule New Post"] == {
         "type": "callback",
         "data": "action:schedule_new",

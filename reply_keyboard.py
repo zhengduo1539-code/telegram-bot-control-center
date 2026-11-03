@@ -38,14 +38,30 @@ def split_inline_keyboard(
         return None, None, {}
 
     reply_rows: list[list[KeyboardButton]] = []
+    inline_rows: list[list[Any]] = []
     routes: dict[str, dict[str, str]] = {}
 
     for row in markup.inline_keyboard:
         converted: list[KeyboardButton] = []
+        retained_inline: list[Any] = []
         for button in row:
             label = str(getattr(button, "text", "") or "").strip() or "Select option"
             callback_data = getattr(button, "callback_data", None)
             url = getattr(button, "url", None)
+            # Only the two explicit welcome actions remain native Inline Buttons.
+            # Other URL actions (for example, group-to-private setup links) keep
+            # the established Reply Keyboard routing behaviour.
+            keep_inline = bool(
+                url
+                and (
+                    "startgroup=true" in str(url)
+                    or "/share/url?" in str(url)
+                )
+            )
+            if keep_inline:
+                retained_inline.append(button)
+                continue
+
             if callback_data is not None:
                 route = {"type": "callback", "data": str(callback_data)}
             elif url:
@@ -61,6 +77,8 @@ def split_inline_keyboard(
             routes[display_label] = route
             converted.append(KeyboardButton(display_label))
 
+        if retained_inline:
+            inline_rows.append(retained_inline)
         if converted:
             # Three buttons per row keep mobile layouts compact and scannable.
             reply_rows.extend(
@@ -78,7 +96,8 @@ def split_inline_keyboard(
         if reply_rows
         else None
     )
-    return None, reply_markup, routes
+    inline_markup = InlineKeyboardMarkup(inline_rows) if inline_rows else None
+    return inline_markup, reply_markup, routes
 
 
 def _chat_key(chat_id: Any) -> str:
