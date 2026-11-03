@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ChatType, ParseMode
 from telegram.ext import ContextTypes, filters
 
 from database import get_user_language, set_user_language
-from localization import (
+from reply_keyboard import register_reply_keyboard_routes\nfrom localization import (
     DEFAULT_LANGUAGE,
     LANGUAGES,
     language_button_pattern,
@@ -58,12 +58,31 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.exception("Could not create private language-settings link.")
             private_url = None
 
-        rows = [[InlineKeyboardButton("📩 Open Bot in Private Chat", url=private_url)]] if private_url else []
-        await message.reply_text(
-            "🌐 Language settings are available in the bot's private chat. "
-            "Open the bot privately and send /lang.",
-            reply_markup=InlineKeyboardMarkup(rows) if rows else None,
-        )
+        if private_url:
+            open_label = "📩 Open Bot in Private Chat"
+            keyboard = ReplyKeyboardMarkup(
+                [[KeyboardButton(open_label)]],
+                resize_keyboard=True,
+                one_time_keyboard=False,
+                is_persistent=True,
+            )
+            sent = await message.reply_text(
+                "🌐 Language settings are available in the bot's private chat. "
+                "Open the bot privately and send /lang.\n\n"
+                f"🔗 {private_url}",
+                reply_markup=keyboard,
+            )
+            register_reply_keyboard_routes(
+                context.bot_data,
+                chat.id,
+                {open_label: {"type": "url", "url": private_url}},
+                sent,
+            )
+        else:
+            await message.reply_text(
+                "🌐 Language settings are available in the bot's private chat. "
+                "Open the bot privately and send /lang."
+            )
         return
 
     language = await resolve_user_language(context, user_id)
