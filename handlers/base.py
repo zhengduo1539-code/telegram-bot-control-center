@@ -21,6 +21,8 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
     Update,
 )
@@ -42,7 +44,7 @@ from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from welcome_localization import welcome_text
-from reply_keyboard import publish_reply_keyboard, split_inline_keyboard
+from reply_keyboard import publish_reply_keyboard, register_reply_keyboard_routes, split_inline_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -566,20 +568,29 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         group_title = escape_markdown(chat.title or "this group", version=1)
         open_private_label = tr(language, "open_private")
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                open_private_label,
-                style="primary",
-                url=private_url,
-            ),
-        ]])
+        # Reply Keyboard buttons cannot open URLs directly. Keep the deep link
+        # as a normal clickable Telegram link and provide a Reply Keyboard
+        # action that re-sends it when the user needs it.
+        keyboard = ReplyKeyboardMarkup(
+            [[KeyboardButton(open_private_label)]],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            is_persistent=True,
+        )
         group_message = await message.reply_text(
-            f"{tr(language, 'group_start_title')}\n\n"
-            f"{tr(language, 'group_start_body', group=group_title)}\n\n"
-            f"🔒 {tr(language, 'private_setup_action')}\n\n"
+            f"{tr(language, 'group_start_title')}\\n\\n"
+            f"{tr(language, 'group_start_body', group=group_title)}\\n\\n"
+            f"🔒 {tr(language, 'private_setup_action')}\\n\\n"
+            f"🔗 {private_url}\\n\\n"
             f"{tr(language, 'group_admin_note')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
+        )
+        register_reply_keyboard_routes(
+            context.bot_data,
+            chat.id,
+            {open_private_label: {"type": "url", "url": private_url}},
+            group_message,
         )
         return ConversationHandler.END
 
@@ -671,14 +682,18 @@ async def cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await chat_cleanup.cleanup(context, chat_id, keep_message_id=keep_id)
 
     await query.edit_message_text(
-        "❌ *Cancelled.*\n\nUse /start to begin again.",
+        "❌ *Cancelled.*",
         parse_mode=ParseMode.MARKDOWN,
     )
     if chat_id is not None:
         await context.bot.send_message(
             chat_id=chat_id,
-            text="Use /start to open the menu again.",
-            reply_markup=ReplyKeyboardRemove(),
+            text=tr(language, "menu_title"),
+            reply_markup=main_menu_keyboard(
+                context.bot,
+                query.from_user.id if query.from_user else None,
+                language,
+            ),
         )
     return ConversationHandler.END
 
@@ -692,10 +707,12 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # everything else including the user's own "/cancel" text — so only
         # one message (the confirmation) remains, matching cb_cancel's
         # behaviour.
+        user_id = update.effective_user.id if update.effective_user else None
+        language = await resolve_user_language(context, user_id)
         final = await update.message.reply_text(
-            "❌ *Cancelled.* Use /start to begin again.",
+            f"❌ *Cancelled.*\\n\\n{tr(language, 'menu_title')}",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=ReplyKeyboardRemove(),
+            reply_markup=main_menu_keyboard(context.bot, user_id, language),
         )
         await chat_cleanup.cleanup(context, chat_id, keep_message_id=final.message_id)
     return ConversationHandler.END
