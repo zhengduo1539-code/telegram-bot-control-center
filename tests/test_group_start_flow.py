@@ -155,10 +155,7 @@ def test_private_start_validates_and_remembers_deep_linked_group():
         assert "Publisher Group" in text
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
         inline, reply, routes = split_inline_keyboard(keyboard)
-        assert inline is not None
-        assert [button.text for row in inline.inline_keyboard for button in row] == [
-            "➕ Add to My Group", "📤 Share Bot"
-        ]
+        assert inline is None
         assert reply is not None
         assert "https://t.me/share/url?" not in text
         callback_data = {
