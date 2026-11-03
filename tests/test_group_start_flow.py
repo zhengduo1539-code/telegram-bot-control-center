@@ -93,12 +93,10 @@ def test_private_start_shows_welcome_guide_and_clear_primary_action():
         assert "Quick start" in body
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
         inline, reply, routes = split_inline_keyboard(keyboard)
-        inline_buttons = [button for row in inline.inline_keyboard for button in row]
-        assert len(inline_buttons) == 2
-        assert {button.url.split("?")[0] for button in inline_buttons} == {
-            "https://t.me/ScheduleBot",
-            "https://t.me/share/url",
-        }
+        assert inline is None
+        assert reply is not None
+        assert "[➕ Add to My Group](https://t.me/ScheduleBot?startgroup=true)" in body
+        assert "[📤 Share Bot](https://t.me/share/url?" in body
         reply_labels = {
             button.text for row in reply.keyboard for button in row
         }
@@ -146,10 +144,10 @@ def test_private_start_validates_and_remembers_deep_linked_group():
         assert "Publisher Group" in text
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
         inline, reply, routes = split_inline_keyboard(keyboard)
-        assert [button.text for row in inline.inline_keyboard for button in row] == [
-            "➕ Add to My Group",
-            "📤 Share Bot",
-        ]
+        assert inline is None
+        assert reply is not None
+        assert "[➕ Add to My Group]" in text
+        assert "[📤 Share Bot]" in text
         callback_data = {
             route.get("data") for route in routes.values()
             if route.get("type") == "callback"
