@@ -63,8 +63,13 @@ def test_group_start_shows_private_chat_button_not_feature_menu():
             "type": "url",
             "url": "https://t.me/ScheduleBot?start=setup_-1001234567890",
         }
-        assert "Publisher Group" in message.reply_text.await_args.args[0]
-        assert "private chat" in message.reply_text.await_args.args[0].lower()
+        rendered = message.reply_text.await_args.args[0]
+        assert rendered.split("\n\n") == [
+            "👋 *Schedule Posts for This Group*",
+            "To schedule posts for *Publisher Group*, continue in the bot's private chat.",
+            "🔒 Select *📅 Schedule New Post* to get started. This group will be selected automatically.",
+            "ℹ️ Only this group's administrators can create schedules.",
+        ]
         assert not hasattr(keyboard, "inline_keyboard")
 
     asyncio.run(scenario())
