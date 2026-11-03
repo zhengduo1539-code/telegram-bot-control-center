@@ -112,7 +112,7 @@ def test_queue_entry_continue_and_back_follow_expected_navigation(monkeypatch):
         assert "qwiz" not in context.user_data
         menu_text = query.edit_message_text.await_args.args[0]
         assert menu_text.startswith(translate("my", "menu_title"))
-        assert "Share Bot" in menu_text
+        assert "https://t.me/share/url?" in menu_text
 
     asyncio.run(scenario())
 
