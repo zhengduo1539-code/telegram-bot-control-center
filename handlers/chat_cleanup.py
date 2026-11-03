@@ -41,6 +41,15 @@ def track(bot_data: dict, chat_id: int, message_id: int) -> None:
         ids.append(message_id)
 
 
+def untrack(bot_data: dict, chat_id: int, message_id: int) -> None:
+    """Forget a message that has already been deleted successfully."""
+    ids = _store(bot_data).get(chat_id, [])
+    try:
+        ids.remove(message_id)
+    except ValueError:
+        pass
+
+
 def reset(bot_data: dict, chat_id: int) -> None:
     """Start a fresh tracking window for `chat_id` (call at wizard start)."""
     _store(bot_data)[chat_id] = []
