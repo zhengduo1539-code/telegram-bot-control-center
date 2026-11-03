@@ -166,12 +166,10 @@ def test_language_picker_exit_returns_to_main_menu_without_changing_saved_locale
         context.bot.delete_message.assert_awaited_once_with(
             chat_id=chat_id, message_id=777
         )
-        assert selected_message.reply_text.await_count == 2
-        first = selected_message.reply_text.await_args_list[0].kwargs
-        second = selected_message.reply_text.await_args_list[1].kwargs
-        assert isinstance(first["reply_markup"], __import__("telegram").ReplyKeyboardRemove)
-        assert isinstance(second["reply_markup"], ReplyKeyboardMarkup)
-        assert second["text"] == translate("en", "menu_title")
+        assert selected_message.reply_text.await_count == 1
+        sent = selected_message.reply_text.await_args.kwargs
+        assert isinstance(sent["reply_markup"], ReplyKeyboardMarkup)
+        assert sent["text"] == translate("en", "menu_title")
 
     asyncio.run(scenario())
 
