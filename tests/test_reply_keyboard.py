@@ -51,7 +51,7 @@ def test_only_add_to_group_and_share_bot_remain_inline():
                 InlineKeyboardButton("📋 My Posts", callback_data="action:my_posts"),
             ],
             [
-                InlineKeyboardButton("❓ Help", callback_data="nav:help"),
+                InlineKeyboardButton("🏠 Main Menu", callback_data="nav:main_menu"),
                 InlineKeyboardButton("⚙️ Language", callback_data="nav:language"),
             ],
         ]
@@ -66,7 +66,7 @@ def test_only_add_to_group_and_share_bot_remain_inline():
     assert set(_labels(reply)) == {
         "📅 Schedule New Post",
         "📋 My Posts",
-        "❓ Help",
+        "🏠 Main Menu",
         "⚙️ Language",
     }
     assert routes["📅 Schedule New Post"] == {

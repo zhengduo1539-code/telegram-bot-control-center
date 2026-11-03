@@ -29,7 +29,7 @@ English, Myanmar (မြန်မာ), Simplified Chinese, Spanish, Hindi, Arabi
 
 The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard. In private chat, feature actions use Reply Keyboards, while **Add to My Group** and **Share Bot** remain Inline Keyboard URL buttons. Telegram permits only one keyboard type per message, so a separate invisible anchor message displays the Reply Keyboard without adding a visible prompt. Workflow screens that contain their own inline navigation retain the existing Reply Keyboard bridge.
 
-Localized screens include the main menu, group-to-private onboarding, Help Guide, Schedule New Post setup, recurrence/timezone selection and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
+Localized screens include the main menu, group-to-private onboarding, Schedule New Post setup, recurrence/timezone selection and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
 
 ## Project structure
 
@@ -37,7 +37,7 @@ Localized screens include the main menu, group-to-private onboarding, Help Guide
 - config.py: validated environment configuration.
 - database.py: MongoDB persistence, indexes and scheduled-post retention.
 - scheduler.py: one-time and recurring post execution, plus message lifecycle actions.
-- schedule_utils.py: pure timezone-aware daily-slot calculations.
+- schedule_utils.py: pure timezone-aware schedule and recurrence calculations.
 - handlers/: guided user flows, owner tools and permission checks.
 - keep_alive.py: Render liveness/readiness endpoints.
 - tests/: automated unit tests.

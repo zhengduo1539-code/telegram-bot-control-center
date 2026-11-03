@@ -18,9 +18,9 @@ def test_welcome_messages_cover_all_twenty_supported_locales():
         assert "template" not in message.lower()
         assert "📝" not in message
         assert translate(language, "schedule_new") in message
-        assert translate(language, "help_title") in message
-        assert translate(language, "language") in message
-        assert "template" not in translate(language, "help_text").lower()
+        assert "{help}" not in message
+        assert "🗂" not in message
+        assert "🎲" not in message
         assert "Welcome to Schedule Bot" not in message if language != "en" else True
 
 
