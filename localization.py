@@ -688,8 +688,12 @@ def language_keyboard(selected_language: str | None = None) -> ReplyKeyboardMark
 
 
 def language_cancel_button_label(language: str | None = None) -> str:
-    """Return the localized Main Menu action shown below language choices."""
-    return "🏠 " + translate(language, "menu_title")
+    """Return the localized Main Menu action shown below language choices.
+
+    The translated menu title already includes its own leading emoji, so do
+    not prepend another one here.
+    """
+    return translate(language, "menu_title")
 
 
 def language_button_pattern() -> str:
