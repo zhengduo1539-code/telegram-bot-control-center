@@ -710,7 +710,7 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = update.effective_user.id if update.effective_user else None
         language = await resolve_user_language(context, user_id)
         final = await update.message.reply_text(
-            f"❌ *Cancelled.*\\n\\n{tr(language, 'menu_title')}",
+            f"❌ *Cancelled.*\n\n{tr(language, 'menu_title')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=main_menu_keyboard(context.bot, user_id, language),
         )
