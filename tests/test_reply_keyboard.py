@@ -170,6 +170,7 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
                     query.data,
                     query.from_user.id,
                     query.message.message_id,
+                    query.get_bot() is application.bot,
                 )
             )
 
@@ -231,6 +232,7 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
         context = SimpleNamespace(
             bot_data=bot_data,
             application=application,
+            bot=application.bot,
         )
 
         with pytest.raises(ApplicationHandlerStop):
@@ -242,6 +244,9 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
         assert synthetic_update.callback_query.data == "action:schedule_new"
         assert synthetic_update.callback_query.from_user.id == chat_id
         assert synthetic_update.callback_query.message.message_id == 600
+        # Handlers throughout Schedule Wizard, Queue Manager, and Media Pool
+        # call query.get_bot(); synthetic queries must carry the real Bot.
+        assert synthetic_update.callback_query.get_bot() is application.bot
 
         # The update queue is consumed by PTB's normal update fetcher after
         # this handler returns. Verify the queued update matches and invokes
@@ -256,7 +261,7 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
         await callback_handler.handle_update(
             synthetic_update, application, check_result, dispatch_context
         )
-        assert handled == [("action:schedule_new", chat_id, 600)]
+        assert handled == [("action:schedule_new", chat_id, 600, True)]
 
     asyncio.run(scenario())
 
