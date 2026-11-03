@@ -1,4 +1,4 @@
-"""Regression tests for the Reply Keyboard-only Main Menu."""
+"""Regression tests for the mixed Inline / Reply Keyboard Main Menu."""
 
 import asyncio
 from types import SimpleNamespace
@@ -8,26 +8,29 @@ from handlers.base import main_menu_keyboard, replace_with_main_menu_message
 from reply_keyboard import split_inline_keyboard
 
 
-def test_main_menu_exposes_only_reply_keyboard_routes():
+def test_main_menu_keeps_welcome_actions_inline_and_features_on_reply_keyboard():
     bot = SimpleNamespace(username="ScheduleBot")
     markup = main_menu_keyboard(bot=bot, user_id=123456789, language="en")
 
     inline, reply, routes = split_inline_keyboard(markup)
 
-    assert inline is None
+    assert inline is not None
+    assert [
+        button.text for row in inline.inline_keyboard for button in row
+    ] == ["➕ Add to My Group", "📤 Share Bot"]
     assert reply is not None
     labels = {button.text for row in reply.keyboard for button in row}
     assert {
-        "➕ Add to My Group",
-        "📤 Share Bot",
         "📅 Schedule New Post",
         "📋 My Posts",
         "🌐 Language",
     }.issubset(labels)
+    assert "➕ Add to My Group" not in labels
+    assert "📤 Share Bot" not in labels
     assert routes["📅 Schedule New Post"]["data"] == "action:schedule_new"
     assert routes["📋 My Posts"]["data"] == "action:my_posts"
-    assert routes["➕ Add to My Group"]["type"] == "url"
-    assert routes["📤 Share Bot"]["type"] == "url"
+    assert "➕ Add to My Group" not in routes
+    assert "📤 Share Bot" not in routes
     assert not any("My Stats" in label or "Feature Guide" in label for label in labels)
 
 
@@ -64,8 +67,14 @@ def test_menu_navigation_replaces_the_old_screen_with_a_keyboard_ready_message()
         assert sent["chat_id"] == old_message.chat_id
         assert sent["text"] == text
         inline, reply, routes = split_inline_keyboard(sent["reply_markup"])
-        assert inline is None
+        assert inline is not None
+        assert [
+            button.text for row in inline.inline_keyboard for button in row
+        ] == ["➕ Add to My Group", "📤 Share Bot"]
         assert reply is not None
+        labels = {button.text for row in reply.keyboard for button in row}
+        assert "➕ Add to My Group" not in labels
+        assert "📤 Share Bot" not in labels
         assert routes["📅 Schedule New Post"]["data"] == "action:schedule_new"
         bot.delete_message.assert_awaited_once_with(
             chat_id=old_message.chat_id,
