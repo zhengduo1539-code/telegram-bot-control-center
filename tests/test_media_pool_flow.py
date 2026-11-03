@@ -10,6 +10,7 @@ from database import COL_MEDIA_POOLS, COL_POSTS
 from handlers import queue_manager as media_pool
 from localization import LANGUAGES
 from media_pool_localization import _EXTRA_ROWS, _KEYS, TRANSLATIONS, translate_media_pool
+from reply_keyboard import split_inline_keyboard
 
 
 def _button_labels(keyboard):
@@ -141,7 +142,7 @@ def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
         menu_text = bot.send_message.await_args.kwargs["text"]
         assert menu_text.startswith(translate("my", "menu_title"))
         keyboard = bot.send_message.await_args.kwargs["reply_markup"]
-        inline, reply, routes = media_pool.split_inline_keyboard(keyboard)
+        inline, reply, routes = split_inline_keyboard(keyboard)
         assert inline is not None
         assert [button.text for row in inline.inline_keyboard for button in row] == [
             "➕ Add to My Group", "📤 Share Bot"
