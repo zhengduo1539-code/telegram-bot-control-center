@@ -247,7 +247,7 @@ class _TrackedBot(Bot):
                 clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
                 anchor = await super().send_message(
                     chat_id=target_chat_id,
-                    text="\\u2063",
+                    text="\u2063",
                     reply_markup=ReplyKeyboardRemove(),
                     disable_notification=True,
                 )
