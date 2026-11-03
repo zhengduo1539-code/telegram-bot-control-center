@@ -4,7 +4,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from handlers.base import main_menu_keyboard, replace_with_main_menu_message
+from handlers.base import main_menu_keyboard, nav_keyboard, replace_with_main_menu_message
 from reply_keyboard import split_inline_keyboard
 
 
@@ -48,8 +48,13 @@ def test_main_menu_keeps_add_share_inline_and_feature_actions_in_reply_keyboard(
         "action:my_stats",
         "nav:language",
         "nav:help",
-        "nav:cancel",
     }.issubset(callback_data)
+    assert "nav:cancel" not in callback_data
+    assert any(
+        button.text == "❌ Cancel"
+        for row in nav_keyboard().inline_keyboard
+        for button in row
+    )
     assert all(route["type"] == "callback" for route in routes.values())
     assert not any("Add to My Group" in label or "Share Bot" in label for label in routes)
 
