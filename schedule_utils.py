@@ -157,7 +157,7 @@ def next_weekday_slot(
     hour, minute = map(int, normalized.split(":"))
     after_utc = after.astimezone(timezone.utc)
     local_after = after_utc.astimezone(zone)
-    for day_offset in range(1, 9):
+    for day_offset in range(1, 15):
         candidate_date = local_after.date() + timedelta(days=day_offset)
         if candidate_date.weekday() not in selected:
             continue
