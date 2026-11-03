@@ -7,12 +7,12 @@ this module double-checks the caller against ADMIN_IDS again before doing
 anything, so even a crafted callback_data can't be replayed by a non-owner.
 
 Features:
-  - 📊 Status        — live counts: users, groups, posts by status, queues, pools
+  - 📊 Status        — live counts: users, groups and scheduled posts by status
   - 👤 User List      — paginated list of every user_id who has ever messaged the bot
   - 👥 Group List     — paginated list of every group/channel the bot is active in
   - 📣 Broadcast All  — send a message to every tracked user
   - 🎯 Broadcast One  — send a message to one specific user_id ("broadcast signal")
-  - 🧹 Clear Data     — wipe all scheduled posts / queues / media pools (double-confirm)
+  - 🧹 Clear Data     — wipe scheduled posts, retained legacy data and lifecycle tasks (double-confirm)
 """
 
 from __future__ import annotations
@@ -148,7 +148,7 @@ async def cb_owner_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 
 async def cb_owner_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show live counts of users, groups, posts, queues, pools."""
+    """Show live counts of users, groups and scheduled posts."""
     from database import get_bot_stats
 
     query = update.callback_query
@@ -178,8 +178,6 @@ async def cb_owner_status(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"  ⏸ Paused: `{stats['posts_paused']}`\n"
         f"  ✅ Posted: `{stats['posts_posted']}`\n"
         f"  ❌ Failed: `{stats['posts_failed']}`\n\n"
-        f"🗂 Queue slots: `{stats['queues']}`\n"
-        f"🎲 Media pools: `{stats['pools']}`"
     )
     await query.edit_message_text(
         text, parse_mode=ParseMode.MARKDOWN, reply_markup=_back_only_keyboard()
@@ -475,8 +473,7 @@ async def cb_owner_cleardata_confirm(update: Update, context: ContextTypes.DEFAU
         "⚠️ *Clear All Scheduled Data*\n\n"
         "This permanently deletes:\n"
         "• All scheduled posts (pending, paused, posted, failed)\n"
-        "• All queue slots\n"
-        "• All media pools\n"
+        "• Any retained data from retired posting tools\n"
         "• Pending message lifecycle tasks\n\n"
         "Tracked user/group lists are kept so broadcasting keeps working.\n\n"
         "*This cannot be undone.* Proceed?",
@@ -515,8 +512,7 @@ async def cb_owner_cleardata_yes(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(
         "🧹 *Data cleared.*\n\n"
         f"Posts removed: `{result['posts']}`\n"
-        f"Queue slots removed: `{result['queues']}`\n"
-        f"Media pools removed: `{result['pools']}`\n"
+        f"Legacy records removed: `{result['queues'] + result['pools']}`\n"
         f"Lifecycle tasks removed: `{result.get('lifecycle_tasks', 0)}`",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_back_only_keyboard(),

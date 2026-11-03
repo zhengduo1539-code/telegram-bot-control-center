@@ -114,8 +114,9 @@ def test_private_start_shows_welcome_guide_and_clear_primary_action():
             if route.get("type") == "callback"
         }
         assert "nav:help" in callbacks
-        assert "action:manage_queue" in callbacks
-        assert "action:media_pool" in callbacks
+        assert "action:schedule_new" in callbacks
+        assert "action:manage_queue" not in callbacks
+        assert "action:media_pool" not in callbacks
 
     asyncio.run(scenario())
 
@@ -165,7 +166,8 @@ def test_private_start_validates_and_remembers_deep_linked_group():
             button.text for row in reply.keyboard for button in row
         }
         assert "action:schedule_new" in callback_data
-        assert "action:manage_queue" in callback_data
+        assert "action:manage_queue" not in callback_data
+        assert "action:media_pool" not in callback_data
         assert any("Schedule New Post" in label for label in reply_labels)
 
     asyncio.run(scenario())

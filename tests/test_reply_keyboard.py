@@ -250,7 +250,7 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
         assert synthetic_update.callback_query.data == "action:schedule_new"
         assert synthetic_update.callback_query.from_user.id == chat_id
         assert synthetic_update.callback_query.message.message_id == 600
-        # Handlers throughout Schedule Wizard, Queue Manager, and Media Pool
+        # Schedule Wizard handlers
         # call query.get_bot(); synthetic queries must carry the real Bot.
         assert synthetic_update.callback_query.get_bot() is application.bot
 

@@ -3,28 +3,25 @@ database.py — Async MongoDB connection and data-access layer.
 
 Collections:
   - scheduled_posts   : every scheduled/recurring post job
-  - queue_slots       : per-chat slot-based posting queues
-  - media_pools       : random-shuffler content pools
+  - queue_slots       : legacy records retained for safe cleanup only
+  - media_pools       : legacy records retained for safe cleanup only
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
-import pytz
 
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorCollection,
     AsyncIOMotorDatabase,
 )
-from pymongo import ASCENDING, DESCENDING, IndexModel, ReturnDocument
+from pymongo import ASCENDING, DESCENDING, IndexModel
 
-from schedule_utils import next_daily_slot
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 logger = logging.getLogger(__name__)
@@ -47,7 +44,7 @@ COL_ACTIVITY  = "chat_activity"
 # Valid enum values (used in validation helpers)
 # ---------------------------------------------------------------------------
 POST_STATUSES = {"pending", "posted", "failed", "paused"}
-RECURRENCE_TYPES = {"once", "interval", "days_of_week", "cron", "pool"}
+RECURRENCE_TYPES = {"once", "interval", "days_of_week", "cron"}
 INTERVAL_UNITS = {"minutes", "hours", "days"}
 MEDIA_TYPES = {"photo", "video", "document", "audio", "animation", "voice", None}
 
@@ -134,22 +131,6 @@ async def _ensure_indexes(db: AsyncIOMotorDatabase) -> None:
         ),
     ])
 
-    # ── queue_slots ───────────────────────────────────────────────────────────
-    queues: AsyncIOMotorCollection = db[COL_QUEUE_SLOTS]
-    await queues.create_indexes([
-        IndexModel([("user_id", ASCENDING)]),
-        IndexModel([("chat_id", ASCENDING)]),
-        IndexModel([("user_id", ASCENDING), ("chat_id", ASCENDING)], unique=True),
-        IndexModel([("next_run_at", ASCENDING)]),
-    ])
-
-    # ── media_pools ───────────────────────────────────────────────────────────
-    pools: AsyncIOMotorCollection = db[COL_MEDIA_POOLS]
-    await pools.create_indexes([
-        IndexModel([("user_id", ASCENDING)]),
-        IndexModel([("chat_id", ASCENDING)]),
-        IndexModel([("user_id", ASCENDING), ("chat_id", ASCENDING)], unique=True),
-    ])
 
     # ── lifecycle_tasks ───────────────────────────────────────────────────────
     tasks: AsyncIOMotorCollection = db["lifecycle_tasks"]
@@ -316,53 +297,6 @@ def build_scheduled_post(
     return doc
 
 
-def build_queue_slot_doc(
-    user_id: int,
-    chat_id: int,
-    slots: list[str] | None = None,
-    contents: list[dict[str, Any]] | None = None,
-    timezone_str: str = "UTC",
-) -> dict[str, Any]:
-    """
-    Build a queue-slot document.
-
-    - slots        : list of time strings, e.g. ["09:00", "14:00", "20:00"]
-    - contents     : list of content dicts queued for those slots
-    - timezone_str : IANA timezone key, e.g. "Asia/Rangoon"
-    """
-    now = datetime.now(tz=timezone.utc)
-    return {
-        "user_id": user_id,
-        "chat_id": chat_id,
-        "slots": slots or [],
-        "timezone": timezone_str,
-        "contents": contents or [],
-        "created_at": now,
-        "updated_at": now,
-    }
-
-
-def build_media_pool_doc(
-    user_id: int,
-    chat_id: int,
-    items: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """
-    Build a media-pool document for the random-shuffler.
-
-    Each item in `items` should be a dict with at least:
-      { "text": str|None, "media_file_id": str|None, "media_type": str|None, "posted": bool }
-    """
-    now = datetime.now(tz=timezone.utc)
-    return {
-        "user_id": user_id,
-        "chat_id": chat_id,
-        "items": items or [],
-        "created_at": now,
-        "updated_at": now,
-    }
-
-
 # ---------------------------------------------------------------------------
 # CRUD helpers — scheduled_posts
 # ---------------------------------------------------------------------------
@@ -515,255 +449,22 @@ async def clone_post(post_id: str) -> str:
     return str(result.inserted_id)
 
 
-# ---------------------------------------------------------------------------
-# CRUD helpers — queue_slots
-# ---------------------------------------------------------------------------
-
-async def upsert_queue_slots(
-    user_id: int,
-    chat_id: int,
-    slots: list[str],
-    timezone_str: str = "UTC",
-) -> None:
-    """Set daily slots and calculate the next due slot without deleting queued content."""
-    from schedule_utils import parse_hhmm
-    parsed = [parse_hhmm(raw) for raw in slots]
-    if not parsed or any(slot is None for slot in parsed):
-        raise ValueError("Provide one or more valid HH:MM time slots.")
-    normalized = sorted(set(parsed))
-    try:
-        pytz.timezone(timezone_str)
-    except pytz.exceptions.UnknownTimeZoneError as exc:
-        raise ValueError(f"Unknown timezone: {timezone_str}") from exc
+async def pause_legacy_pool_posts() -> int:
+    """Pause old Media Pool schedules so they cannot run as ordinary posts."""
     db = await get_db()
     now = datetime.now(tz=timezone.utc)
-    existing = await db[COL_QUEUE_SLOTS].find_one({"user_id": user_id, "chat_id": chat_id})
-    contents = (existing or {}).get("contents", [])
-    has_pending = any(
-        not item.get("posted", False) and item.get("state") not in ("failed", "cancelled")
-        for item in contents
-    )
-    next_run = next_daily_slot(normalized, timezone_str, now) if has_pending else None
-    await db[COL_QUEUE_SLOTS].update_one(
-        {"user_id": user_id, "chat_id": chat_id},
-        {"$set": {"slots": normalized, "timezone": timezone_str, "next_run_at": next_run, "updated_at": now},
-         "$setOnInsert": {"contents": [], "created_at": now}},
-        upsert=True,
-    )
-
-
-async def add_to_queue(user_id: int, chat_id: int, content: dict[str, Any]) -> str:
-    """Append content as pending; the scheduler publishes it at the next daily slot."""
-    db = await get_db()
-    now = datetime.now(tz=timezone.utc)
-    queue = await db[COL_QUEUE_SLOTS].find_one({
-        "user_id": user_id, "chat_id": chat_id, "slots.0": {"$exists": True}
-    })
-    if not queue:
-        raise ValueError("Daily posting slots must be configured before adding queue content.")
-    item_id = uuid.uuid4().hex
-    item = dict(content)
-    item.update({"item_id": item_id, "state": "pending", "posted": False, "queued_at": now})
-    next_run = queue.get("next_run_at")
-    if next_run is None:
-        next_run = next_daily_slot(queue.get("slots", []), queue.get("timezone", "UTC"), now)
-    await db[COL_QUEUE_SLOTS].update_one(
-        {"_id": queue["_id"]},
-        {"$push": {"contents": item}, "$set": {"next_run_at": next_run, "updated_at": now}},
-    )
-    return item_id
-
-
-async def get_queue(user_id: int, chat_id: int) -> dict[str, Any] | None:
-    db = await get_db()
-    return await db[COL_QUEUE_SLOTS].find_one({"user_id": user_id, "chat_id": chat_id})
-
-
-async def cleanup_expired_queue_history(days: int = POST_TTL_DAYS) -> int:
-    """
-    Remove only completed queue entries older than the retention window.
-    Pending, sending, retryable, and otherwise active entries are preserved.
-    Queue documents, daily slots, and media-pool items are never deleted here.
-    """
-    if days < 1:
-        raise ValueError("Queue history retention must be at least one day.")
-    db = await get_db()
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-    result = await db[COL_QUEUE_SLOTS].update_many(
-        {},
-        {
-            "$pull": {
-                "contents": {
-                    "$or": [
-                        {"state": "posted", "posted_at": {"$lte": cutoff}},
-                        {"state": "failed", "failed_at": {"$lte": cutoff}},
-                    ]
-                }
-            },
-            "$set": {"updated_at": datetime.now(tz=timezone.utc)},
-        },
-    )
-    return result.modified_count
-
-
-async def get_due_queue_slots(now: datetime, limit: int = 100) -> list[dict[str, Any]]:
-    db = await get_db()
-    cursor = db[COL_QUEUE_SLOTS].find({
-        "slots.0": {"$exists": True}, "contents.0": {"$exists": True},
-        "next_run_at": {"$lte": now},
-    }).sort("next_run_at", ASCENDING).limit(limit)
-    return await cursor.to_list(length=limit)
-
-
-async def claim_queue_item(user_id: int, chat_id: int, now: datetime, lease_seconds: int = 600):
-    """Atomically claim one pending item or recover a stale in-flight item."""
-    db = await get_db()
-    stale_before = now - timedelta(seconds=lease_seconds)
-    claim_id = uuid.uuid4().hex
-    doc = await db[COL_QUEUE_SLOTS].find_one_and_update(
-        {"user_id": user_id, "chat_id": chat_id,
-         "contents": {"$elemMatch": {"posted": {"$ne": True}, "$or": [
-             {"state": {"$in": ["pending", "queued"]}},
-             {"state": {"$exists": False}},
-             {"state": "sending", "claimed_at": {"$lte": stale_before}},
-         ]}}},
-        {"$set": {"contents.$.state": "sending", "contents.$.claimed_at": now,
-                  "contents.$.claim_token": claim_id, "updated_at": now}},
-        return_document=ReturnDocument.AFTER,
-    )
-    if not doc:
-        return None
-    item = next((entry for entry in doc.get("contents", []) if entry.get("claim_token") == claim_id), None)
-    return (doc, item) if item else None
-
-
-async def update_queue_item(user_id: int, chat_id: int, item_id: str, state: str, *, error: str | None = None) -> None:
-    if state not in ("pending", "posted", "failed"):
-        raise ValueError("Invalid queue item state.")
-    db = await get_db()
-    now = datetime.now(tz=timezone.utc)
-    fields: dict[str, Any] = {
-        "contents.$[item].state": state, "contents.$[item].updated_at": now,
-        "contents.$[item].last_error": error[:500] if error else None,
-    }
-    if state == "posted":
-        fields.update({"contents.$[item].posted": True, "contents.$[item].posted_at": now})
-    elif state == "failed":
-        fields.update({"contents.$[item].posted": True, "contents.$[item].failed_at": now})
-    else:
-        fields["contents.$[item].posted"] = False
-    await db[COL_QUEUE_SLOTS].update_one(
-        {"user_id": user_id, "chat_id": chat_id}, {"$set": fields},
-        array_filters=[{"item.item_id": item_id}],
-    )
-
-
-async def set_queue_next_run(user_id: int, chat_id: int, after: datetime, retry_at: datetime | None = None) -> datetime | None:
-    db = await get_db()
-    queue = await get_queue(user_id, chat_id)
-    if not queue:
-        return None
-    pending = any(not item.get("posted", False) and item.get("state") not in ("failed", "cancelled")
-                  for item in queue.get("contents", []))
-    if retry_at is not None and pending:
-        next_run = retry_at
-    elif pending:
-        next_run = next_daily_slot(queue.get("slots", []), queue.get("timezone", "UTC"), after)
-    else:
-        next_run = None
-    await db[COL_QUEUE_SLOTS].update_one(
-        {"_id": queue["_id"]},
-        {"$set": {"next_run_at": next_run, "updated_at": datetime.now(tz=timezone.utc)}},
-    )
-    return next_run
-
-
-# ---------------------------------------------------------------------------
-# CRUD helpers — media_pools (random shuffler)
-# ---------------------------------------------------------------------------
-
-async def add_to_media_pool(
-    user_id: int,
-    chat_id: int,
-    item: dict[str, Any],
-) -> None:
-    """Add a single item to the media pool for a chat."""
-    item.setdefault("posted", False)
-    db = await get_db()
-    now = datetime.now(tz=timezone.utc)
-    await db[COL_MEDIA_POOLS].update_one(
-        {"user_id": user_id, "chat_id": chat_id},
-        {
-            "$push": {"items": item},
-            "$set": {"updated_at": now},
-            "$setOnInsert": {"created_at": now},
-        },
-        upsert=True,
-    )
-
-
-async def pick_random_pool_item(
-    user_id: int,
-    chat_id: int,
-) -> dict[str, Any] | None:
-    """
-    Return a random un-posted item from the pool using MongoDB $sample.
-    Returns None when the pool is empty or all items are posted.
-    """
-    db = await get_db()
-    pipeline = [
-        {"$match": {"user_id": user_id, "chat_id": chat_id}},
-        {"$project": {"items": {"$filter": {
-            "input": "$items",
-            "as": "item",
-            "cond": {"$eq": ["$$item.posted", False]},
-        }}}},
-        {"$unwind": "$items"},
-        {"$sample": {"size": 1}},
-        {"$replaceRoot": {"newRoot": "$items"}},
-    ]
-    results = await db[COL_MEDIA_POOLS].aggregate(pipeline).to_list(length=1)
-    return results[0] if results else None
-
-
-async def mark_pool_item_posted(
-    user_id: int,
-    chat_id: int,
-    item_media_file_id: str | None,
-    item_text: str | None,
-) -> None:
-    """Mark a specific pool item as posted (matched by file_id or text)."""
-    db = await get_db()
-    now = datetime.now(tz=timezone.utc)
-    match_field = "items.media_file_id" if item_media_file_id else "items.text"
-    match_value = item_media_file_id if item_media_file_id else item_text
-    await db[COL_MEDIA_POOLS].update_one(
-        {"user_id": user_id, "chat_id": chat_id, match_field: match_value},
-        {
-            "$set": {"items.$.posted": True, "updated_at": now},
-        },
-    )
-
-
-async def reset_media_pool(user_id: int, chat_id: int) -> None:
-    """
-    Mark all items in a pool as un-posted (full cycle reset).
-
-    Both fields go inside a SINGLE $set dict.  Two separate "$set" keys in
-    the same Python dict causes the first one to be silently overwritten by
-    the second before the document ever reaches the driver.
-    """
-    db = await get_db()
-    now = datetime.now(tz=timezone.utc)
-    await db[COL_MEDIA_POOLS].update_one(
-        {"user_id": user_id, "chat_id": chat_id},
+    result = await db[COL_POSTS].update_many(
+        {"recurrence.type": "pool", "status": "pending"},
         {
             "$set": {
-                "items.$[].posted": False,
+                "status": "paused",
                 "updated_at": now,
+                "legacy_pause_reason": "Media Pool scheduling has been retired.",
             },
+            "$unset": {"expire_at": ""},
         },
     )
+    return int(result.modified_count or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -854,8 +555,8 @@ async def upsert_group(
 async def remove_group(chat_id: int) -> dict[str, int]:
     """
     Cascade-delete ALL data tied to a group (bot was kicked/removed).
-    Removes records from: bot_groups, scheduled_posts, queue_slots,
-    media_pools, and chat_activity — all in parallel.
+    Removes records from bot_groups, scheduled_posts, legacy Queue/Media Pool
+    collections, chat_activity and lifecycle_tasks — all in parallel.
     Returns a dict of deleted document counts per collection.
     """
     db = await get_db()
@@ -933,8 +634,6 @@ async def get_bot_stats() -> dict[str, int]:
     paused = await db[COL_POSTS].count_documents({"status": "paused"})
     posted = await db[COL_POSTS].count_documents({"status": "posted"})
     failed = await db[COL_POSTS].count_documents({"status": "failed"})
-    queues = await db[COL_QUEUE_SLOTS].count_documents({})
-    pools = await db[COL_MEDIA_POOLS].count_documents({})
     return {
         "users": users_count,
         "groups": groups_count,
@@ -943,8 +642,6 @@ async def get_bot_stats() -> dict[str, int]:
         "posts_paused": paused,
         "posts_posted": posted,
         "posts_failed": failed,
-        "queues": queues,
-        "pools": pools,
     }
 
 
@@ -973,10 +670,9 @@ async def get_best_hours(chat_id: int, top_n: int = 3) -> list[dict]:
 
 async def clear_all_bot_data() -> dict[str, int]:
     """
-    Owner-only hard reset: wipes ALL scheduled posts, queue slots, and media
-    pools. Does NOT delete the tracked users/groups lists (those are needed
-    to keep broadcasting working). Returns the number of documents removed
-    from each collection so the caller can report exact numbers.
+    Owner-only hard reset: wipes scheduled posts, retained legacy posting
+    records, and lifecycle tasks. Tracked users/groups remain so broadcasting
+    keeps working. Returns deletion counts for the owner panel.
     """
     db = await get_db()
     posts_res = await db[COL_POSTS].delete_many({})

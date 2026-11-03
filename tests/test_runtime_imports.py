@@ -14,7 +14,6 @@ def test_runtime_modules_import_without_external_services():
         "handlers.chat_cleanup",
         "handlers.permissions",
         "handlers.owner_panel",
-        "handlers.queue_manager",
         "handlers.schedule_wizard",
         "keep_alive",
     )

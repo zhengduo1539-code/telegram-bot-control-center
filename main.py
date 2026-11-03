@@ -32,6 +32,7 @@ from config import MONGO_URI, MONGODB_DATABASE, PORT, TELEGRAM_BOT_TOKEN
 from database import (
     close_db,
     connect_db,
+    pause_legacy_pool_posts,
     record_chat_activity,
     remove_group,
     upsert_group,
@@ -41,7 +42,6 @@ from handlers import chat_cleanup
 from handlers.base import CB_LANGUAGE, build_base_conversation
 from handlers.language import cmd_lang, handle_language_choice, language_selection_filter
 from handlers.owner_panel import build_owner_panel
-from handlers.queue_manager import build_media_pool, build_queue_manager
 from handlers.schedule_wizard import build_schedule_wizard
 from keep_alive import app as health_app
 from keep_alive import set_readiness, start_keep_alive
@@ -58,7 +58,7 @@ from reply_keyboard import (
 
 logger = logging.getLogger(__name__)
 
-BOT_VERSION = "Schedule Bot | Daily Queue Engine | Permission Checks | 2026-10"
+BOT_VERSION = "Schedule Bot | Guided Scheduling | Permission Checks | 2026-11"
 ALLOWED_UPDATES = ["message", "callback_query", "my_chat_member"]
 
 _scheduler = None
@@ -103,6 +103,9 @@ async def post_init(application: Application) -> None:
     global _scheduler
 
     await connect_db(MONGO_URI, db_name=MONGODB_DATABASE)
+    paused_legacy_pools = await pause_legacy_pool_posts()
+    if paused_legacy_pools:
+        logger.warning("Paused %d legacy Media Pool schedule(s); Media Pool is retired.", paused_legacy_pools)
     logger.info("MongoDB connected.")
 
     loop = asyncio.get_running_loop()
@@ -309,8 +312,6 @@ def build_application() -> Application:
     )
 
     application.add_handler(build_schedule_wizard())
-    application.add_handler(build_queue_manager())
-    application.add_handler(build_media_pool())
     application.add_handler(build_owner_panel())
     application.add_handler(build_base_conversation())
     return application

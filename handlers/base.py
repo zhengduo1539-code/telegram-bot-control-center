@@ -54,8 +54,6 @@ CB_CANCEL       = "nav:cancel"
 CB_MAIN_MENU    = "nav:main_menu"
 CB_SCHEDULE_NEW = "action:schedule_new"
 CB_MY_POSTS     = "action:my_posts"
-CB_MANAGE_QUEUE = "action:manage_queue"
-CB_MEDIA_POOL   = "action:media_pool"
 CB_LANGUAGE    = "nav:language"
 
 # My Posts action prefixes
@@ -156,10 +154,6 @@ def main_menu_keyboard(
         ],
         [
             InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS),
-            InlineKeyboardButton(tr(language, "manage_queue"), callback_data=CB_MANAGE_QUEUE),
-        ],
-        [
-            InlineKeyboardButton(tr(language, "media_pool"), callback_data=CB_MEDIA_POOL),
             InlineKeyboardButton(tr(language, "my_stats"), callback_data=CB_MY_STATS),
         ],
         [
@@ -251,10 +245,6 @@ HELP_TEXT = (
     "  Set up a one-off or recurring post with full lifecycle control.\n\n"
     "*📋 My Posts*\n"
     "  View, pause, resume, or delete your scheduled posts.\n\n"
-    "*🗂 Manage Queue*\n"
-    "  Define daily posting slots. Content auto-fills the next free slot.\n\n"
-    "*🎲 Media Pool*\n"
-    "  Upload multiple pieces of content. The bot picks one randomly at each interval.\n\n"
     "*🕐 Time Windows*\n"
     "  Set a daily active window (e.g. 08:00–22:00). Posts outside it are skipped.\n\n"
     "*📌 Lifecycle Options*\n"
@@ -812,13 +802,20 @@ async def cb_mpp_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def cb_mpp_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Resume a paused post (sets status back to pending)."""
-    from database import update_post_status
+    """Resume a supported scheduled post (sets status back to pending)."""
+    from database import get_post, update_post_status
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
     post_id = (query.data or "").replace(CB_MPP_RESUME, "")
     try:
+        post = await get_post(post_id)
+        if post and (post.get("recurrence") or {}).get("type") == "pool":
+            await query.answer(
+                "This legacy Media Pool schedule is retired. Create a new schedule with Schedule New Post.",
+                show_alert=True,
+            )
+            return MY_POSTS
         await update_post_status(post_id, "pending")
         await query.answer("▶️ Post resumed.")
     except Exception as exc:
@@ -980,6 +977,12 @@ async def cb_mpp_clone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await query.answer()
     chat_id  = post.get("chat_id", "?")
     rec_type = (post.get("recurrence") or {}).get("type", "once")
+    if rec_type == "pool":
+        await query.answer(
+            "This legacy Media Pool schedule is retired. Create a new schedule with Schedule New Post.",
+            show_alert=True,
+        )
+        return MY_POSTS
     await query.edit_message_text(
         f"🔁 *Clone Post*\n\n"
         f"🗂 Chat: `{chat_id}`\n"
@@ -1000,12 +1003,19 @@ async def cb_mpp_clone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def cb_mpp_clone_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Execute the clone and refresh the My Posts list."""
-    from database import clone_post
+    from database import clone_post, get_post
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
     post_id = (query.data or "").replace(CB_MPP_CLONE_YES, "")
     try:
+        post = await get_post(post_id)
+        if post and (post.get("recurrence") or {}).get("type") == "pool":
+            await query.answer(
+                "This legacy Media Pool schedule is retired. Create a new schedule with Schedule New Post.",
+                show_alert=True,
+            )
+            return MY_POSTS
         new_id = await clone_post(post_id)
     except Exception as exc:
         logger.exception("Clone post %s failed: %s", post_id, exc)
@@ -1026,9 +1036,8 @@ def build_base_conversation() -> ConversationHandler:
     Root ConversationHandler — handles /start, navigation, help, cancel,
     and the full My Posts management flow (list / pause / resume / delete).
 
-    Action entry-points for Schedule New Post, Manage Queue, and Media Pool are
-    intentionally NOT registered here — they live as entry_points in their own
-    higher-priority ConversationHandlers so those wizards always intercept first.
+    The Schedule New Post action is registered in its dedicated, higher-priority
+    ConversationHandler so its wizard intercepts the action before navigation.
     """
     nav_pattern = f"^({CB_HELP}|{CB_CANCEL}|{CB_MAIN_MENU})$"
 
