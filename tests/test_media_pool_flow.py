@@ -603,3 +603,108 @@ def test_media_pool_schedule_summary_displays_resolved_local_date_and_time():
     }, "en")
 
     assert "25/12/2027 09:00" in summary
+
+def test_media_pool_confirm_persists_the_frozen_utc_first_run(monkeypatch):
+    async def scenario():
+        import database
+
+        frozen = datetime(2027, 12, 25, 2, 0, tzinfo=timezone.utc)
+        class PoolCollection:
+            async def find_one(self, query):
+                return {"items": [{"text": "queued pool item"}]}
+
+        class PostsCollection:
+            async def find_one(self, query):
+                return None
+
+        class FakeDatabase:
+            def __getitem__(self, name):
+                return PoolCollection() if name == COL_MEDIA_POOLS else PostsCollection()
+
+        build = lambda **kwargs: kwargs
+        insert = AsyncMock(return_value="new-post-id")
+        monkeypatch.setattr(database, "build_scheduled_post", build)
+        monkeypatch.setattr(database, "insert_post", insert)
+        monkeypatch.setattr(media_pool, "get_db", AsyncMock(return_value=FakeDatabase()))
+        monkeypatch.setattr(media_pool, "ensure_chat_access", AsyncMock(return_value=SimpleNamespace(title="Publisher Group")))
+        monkeypatch.setattr(media_pool, "resolve_user_language", AsyncMock(return_value="en"))
+        monkeypatch.setattr(media_pool.chat_cleanup, "cleanup", AsyncMock())
+
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            message=SimpleNamespace(chat_id=42, message_id=99),
+            get_bot=lambda: object(),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={
+            "language": "en",
+            "mpwiz": {
+                "mp_chat_id": -1001234567890,
+                "mp_chat_title": "Publisher Group",
+                "interval_value": 6,
+                "interval_unit": "hours",
+                "first_run": "09:00",
+                "first_run_at": frozen,
+                "timezone": "Asia/Bangkok",
+            },
+        })
+
+        state = await media_pool.cb_mp_confirm(SimpleNamespace(callback_query=query), context)
+
+        assert state == media_pool.MP_MENU
+        saved_doc = insert.await_args.args[0]
+        assert saved_doc["recurrence"]["next_run_at"] == frozen
+        assert saved_doc["timezone"] == "Asia/Bangkok"
+
+    asyncio.run(scenario())
+
+
+def test_media_pool_confirm_refuses_expired_custom_first_run_without_database_write(monkeypatch):
+    async def scenario():
+        import database
+
+        class PoolCollection:
+            async def find_one(self, query):
+                return {"items": [{"text": "queued pool item"}]}
+
+        class PostsCollection:
+            async def find_one(self, query):
+                return None
+
+        class FakeDatabase:
+            def __getitem__(self, name):
+                return PoolCollection() if name == COL_MEDIA_POOLS else PostsCollection()
+
+        insert = AsyncMock(return_value="should-not-save")
+        monkeypatch.setattr(database, "insert_post", insert)
+        monkeypatch.setattr(media_pool, "get_db", AsyncMock(return_value=FakeDatabase()))
+        monkeypatch.setattr(media_pool, "ensure_chat_access", AsyncMock(return_value=SimpleNamespace(title="Publisher Group")))
+        monkeypatch.setattr(media_pool, "resolve_user_language", AsyncMock(return_value="en"))
+
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            message=SimpleNamespace(chat_id=42, message_id=99),
+            get_bot=lambda: object(),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={
+            "language": "en",
+            "mpwiz": {
+                "mp_chat_id": -1001234567890,
+                "interval_value": 6,
+                "interval_unit": "hours",
+                "first_run": "09:00",
+                "first_run_at": datetime(2020, 1, 1, tzinfo=timezone.utc),
+                "timezone": "Asia/Bangkok",
+            },
+        })
+
+        state = await media_pool.cb_mp_confirm(SimpleNamespace(callback_query=query), context)
+
+        assert state == media_pool.MP_SET_FIRST_RUN
+        insert.assert_not_awaited()
+        assert "reply_markup" in query.edit_message_text.await_args.kwargs
+
+    asyncio.run(scenario())
