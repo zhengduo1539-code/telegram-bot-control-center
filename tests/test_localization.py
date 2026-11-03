@@ -129,7 +129,7 @@ def test_lang_command_displays_the_reply_keyboard_in_private_chat(monkeypatch):
         await language_handler.cmd_lang(update, context)
 
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
-        assert len([b for row in keyboard.keyboard for b in row]) == 20
+        assert len([b for row in keyboard.keyboard for b in row]) == 21
         assert context.user_data["awaiting_language_choice"] is True
 
     asyncio.run(scenario())
@@ -169,7 +169,7 @@ def test_language_picker_exit_returns_to_main_menu_without_changing_saved_locale
         assert selected_message.reply_text.await_count == 1
         sent = selected_message.reply_text.await_args.kwargs
         assert isinstance(sent["reply_markup"], InlineKeyboardMarkup)
-        assert sent["text"] == translate("en", "menu_title")
+        assert selected_message.reply_text.await_args.args[0] == translate("en", "menu_title")
 
     asyncio.run(scenario())
 
