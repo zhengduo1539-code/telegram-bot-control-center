@@ -621,9 +621,7 @@ def test_media_pool_confirm_persists_the_frozen_utc_first_run(monkeypatch):
             def __getitem__(self, name):
                 return PoolCollection() if name == COL_MEDIA_POOLS else PostsCollection()
 
-        build = lambda **kwargs: kwargs
         insert = AsyncMock(return_value="new-post-id")
-        monkeypatch.setattr(database, "build_scheduled_post", build)
         monkeypatch.setattr(database, "insert_post", insert)
         monkeypatch.setattr(media_pool, "get_db", AsyncMock(return_value=FakeDatabase()))
         monkeypatch.setattr(media_pool, "ensure_chat_access", AsyncMock(return_value=SimpleNamespace(title="Publisher Group")))
