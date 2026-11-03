@@ -1192,8 +1192,8 @@ async def recv_qm_add_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Add Content — Step 3: receive date/time string, ask for timezone."""
     text = (update.message.text or "").strip()
     # Validate format (we need timezone before we can compute the actual dt)
-    is_full_dt = bool(_DT_RE.match(text))
-    is_hhmm    = bool(_TIME_RE.match(text))
+    is_full_dt = bool(_DT_RE.fullmatch(text))
+    is_hhmm = bool(_TIME_RE.fullmatch(text)) and _parse_hhmm(text) is not None
     if not (is_full_dt or is_hhmm):
         await update.message.reply_text(
             "⚠️ *Invalid format.*\n\n"
@@ -1494,6 +1494,9 @@ async def cb_qm_confirm_add(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     next_run = queue.get("next_run_at") if queue else None
     if next_run:
+        # Motor/PyMongo may deserialize MongoDB UTC dates without tzinfo.
+        if next_run.tzinfo is None or next_run.utcoffset() is None:
+            next_run = next_run.replace(tzinfo=timezone.utc)
         next_text = next_run.astimezone(
             pytz.timezone(wizard.get("add_tz", "UTC"))
         ).strftime("%d/%m/%Y %H:%M")
