@@ -355,7 +355,7 @@ def _posts_rich_message(
             },
             {
                 "type": "footer",
-                "text": "Use the buttons below each post to pause, resume, duplicate, or delete it.",
+                "text": "Use the Reply Keyboard below to filter posts or choose a numbered action.",
             },
         ]
     }
