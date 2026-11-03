@@ -168,9 +168,6 @@ def main_menu_keyboard(
             InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
             InlineKeyboardButton(tr(language, "help_title"), callback_data=CB_HELP),
         ],
-        [
-            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
-        ],
     ]
     if user_id is not None and user_id in ADMIN_IDS:
         rows.append([
