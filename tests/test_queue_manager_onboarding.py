@@ -110,9 +110,9 @@ def test_queue_entry_continue_and_back_follow_expected_navigation(monkeypatch):
         assert state == queue.ConversationHandler.END
         assert "active_queue_manager" not in context.user_data
         assert "qwiz" not in context.user_data
-        assert query.edit_message_text.await_args.args[0] == translate(
-            "my", "menu_title"
-        )
+        menu_text = query.edit_message_text.await_args.args[0]
+        assert menu_text.startswith(translate("my", "menu_title"))
+        assert "Share Bot" in menu_text
 
     asyncio.run(scenario())
 
