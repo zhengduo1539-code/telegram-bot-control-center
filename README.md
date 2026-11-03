@@ -7,6 +7,7 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 - **Schedule New Post:** text, photos, videos, documents, audio, animations and voice messages.
 - **Recurring schedules:** repeat every N minutes, hours or days, or on selected weekdays.
 - **Timezone support:** choose an IANA timezone; execution timestamps are persisted in UTC.
+- **Post URL buttons:** add optional clickable links below scheduled posts.
 - **Reply Keyboard navigation:** every bot menu and wizard action uses Telegram Reply Keyboard buttons; no Inline Keyboard navigation is shown.
 - **Message lifecycle:** auto-pin/unpin, auto-delete and self-destruct.
 - **Owner Panel:** service statistics, user/group lists, broadcast and data cleanup.
