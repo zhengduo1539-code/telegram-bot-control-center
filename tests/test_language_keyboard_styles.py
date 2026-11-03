@@ -1,5 +1,5 @@
 """Regression tests for selected-language reply-keyboard styling."""
-from localization import LANGUAGES, language_cancel_button_label, language_keyboard
+from localization import LANGUAGES, language_cancel_button_label, language_keyboard, translate
 
 
 def test_saved_language_is_the_only_success_styled_button():
@@ -44,4 +44,4 @@ def test_language_picker_main_menu_button_has_no_duplicate_home_emoji():
     for language in LANGUAGES:
         label = language_cancel_button_label(language)
         assert label.count("🏠") == 1
-        assert label == __import__("localization").translate(language, "menu_title")
+        assert label == translate(language, "menu_title")
