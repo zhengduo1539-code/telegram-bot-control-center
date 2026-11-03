@@ -602,12 +602,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         group_title = escape_markdown(chat.title or "this group", version=1)
         open_private_label = tr(language, "open_private")
-        keyboard = ReplyKeyboardMarkup(
-            [[KeyboardButton(open_private_label)]],
-            resize_keyboard=True,
-            one_time_keyboard=False,
-            is_persistent=True,
-        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                open_private_label,
+                style="primary",
+                url=private_url,
+            ),
+        ]])
         group_message = await message.reply_text(
             f"{tr(language, 'group_start_title')}\n\n"
             f"{tr(language, 'group_start_body', group=group_title)}\n\n"
@@ -615,12 +616,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"{tr(language, 'group_admin_note')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
-        )
-        register_reply_keyboard_routes(
-            getattr(context, "bot_data", None),
-            chat.id,
-            {open_private_label: {"type": "url", "url": private_url}},
-            group_message,
         )
         return ConversationHandler.END
 
