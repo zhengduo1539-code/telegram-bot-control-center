@@ -150,6 +150,11 @@ def _compute_next_run(post: dict[str, Any], fired_at: datetime) -> datetime | No
         # Preserve the HH:MM from the original next_run_at
         original_run: datetime | None = rec.get("next_run_at")
         if isinstance(original_run, datetime):
+            # MongoDB/PyMongo commonly returns UTC datetimes as naive values.
+            # Stored schedule timestamps are UTC, so make that explicit before
+            # converting to the group's timezone (never use the host local zone).
+            if original_run.tzinfo is None or original_run.utcoffset() is None:
+                original_run = original_run.replace(tzinfo=timezone.utc)
             local_orig = original_run.astimezone(zone)
             h, mi = local_orig.hour, local_orig.minute
         else:
