@@ -26,31 +26,23 @@ def is_private_chat(chat_id: Any) -> bool:
         return False
 
 
-def _preserve_inline_button(button: Any) -> bool:
-    """No inline buttons are displayed; URL actions become Reply Keyboard routes."""
-    return False
-
-
-
 def split_inline_keyboard(
     markup: InlineKeyboardMarkup | None,
-) -> tuple[InlineKeyboardMarkup | None, ReplyKeyboardMarkup | None, dict[str, dict[str, str]]]:
-    """Convert every button into a Reply Keyboard choice and an internal route."""
+) -> tuple[None, ReplyKeyboardMarkup | None, dict[str, dict[str, str]]]:
+    """Convert every inline-button definition into a Reply Keyboard and route map.
+
+    The first tuple item remains None for compatibility with existing callers.
+    No Inline Keyboard is ever returned for display.
+    """
     if not isinstance(markup, InlineKeyboardMarkup):
         return None, None, {}
 
-    inline_rows: list[list[Any]] = []
     reply_rows: list[list[KeyboardButton]] = []
     routes: dict[str, dict[str, str]] = {}
 
     for row in markup.inline_keyboard:
-        kept_inline: list[Any] = []
         converted: list[KeyboardButton] = []
         for button in row:
-            if _preserve_inline_button(button):
-                kept_inline.append(button)
-                continue
-
             label = str(getattr(button, "text", "") or "").strip() or "Select option"
             callback_data = getattr(button, "callback_data", None)
             url = getattr(button, "url", None)
@@ -59,9 +51,6 @@ def split_inline_keyboard(
             elif url:
                 route = {"type": "url", "url": str(url)}
             else:
-                # Some future inline-only button types do not have a direct
-                # ReplyKeyboardButton equivalent. Keep a visible menu choice
-                # and explain its limitation rather than silently dropping it.
                 route = {"type": "unsupported"}
 
             display_label = label
@@ -72,16 +61,13 @@ def split_inline_keyboard(
             routes[display_label] = route
             converted.append(KeyboardButton(display_label))
 
-        if kept_inline:
-            inline_rows.append(kept_inline)
         if converted:
-            # Three buttons per row is a manageable mobile layout.
+            # Three buttons per row keep mobile layouts compact and scannable.
             reply_rows.extend(
                 converted[index:index + 3]
                 for index in range(0, len(converted), 3)
             )
 
-    inline_markup = InlineKeyboardMarkup(inline_rows) if inline_rows else None
     reply_markup = (
         ReplyKeyboardMarkup(
             reply_rows,
@@ -92,7 +78,7 @@ def split_inline_keyboard(
         if reply_rows
         else None
     )
-    return inline_markup, reply_markup, routes
+    return None, reply_markup, routes
 
 
 def _chat_key(chat_id: Any) -> str:
