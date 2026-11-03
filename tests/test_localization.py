@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from telegram import ReplyKeyboardMarkup
 
 import database
 from handlers import language as language_handler
@@ -126,6 +127,39 @@ def test_lang_command_displays_the_reply_keyboard_in_private_chat(monkeypatch):
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
         assert len([b for row in keyboard.keyboard for b in row]) == 20
         assert context.user_data["awaiting_language_choice"] is True
+
+    asyncio.run(scenario())
+
+
+def test_group_lang_command_uses_reply_keyboard_and_clickable_private_link():
+    async def scenario():
+        chat_id = -1001234567890
+        sent = SimpleNamespace(message_id=901)
+        message = SimpleNamespace(reply_text=AsyncMock(return_value=sent))
+        bot = SimpleNamespace(
+            get_me=AsyncMock(return_value=SimpleNamespace(username="ScheduleBot"))
+        )
+        context = SimpleNamespace(bot=bot, bot_data={}, user_data={})
+        update = SimpleNamespace(
+            callback_query=None,
+            effective_message=message,
+            effective_chat=SimpleNamespace(type="supergroup", id=chat_id),
+            effective_user=SimpleNamespace(id=123),
+        )
+
+        await language_handler.cmd_lang(update, context)
+
+        kwargs = message.reply_text.await_args.kwargs
+        assert isinstance(kwargs["reply_markup"], ReplyKeyboardMarkup)
+        assert [[button.text for button in row] for row in kwargs["reply_markup"].keyboard] == [
+            ["📩 Open Bot in Private Chat"]
+        ]
+        assert "https://t.me/ScheduleBot" in message.reply_text.await_args.args[0]
+        route = context.bot_data["_reply_keyboard_route_registry"][str(chat_id)]["routes"]
+        assert route["📩 Open Bot in Private Chat"] == {
+            "type": "url",
+            "url": "https://t.me/ScheduleBot",
+        }
 
     asyncio.run(scenario())
 
