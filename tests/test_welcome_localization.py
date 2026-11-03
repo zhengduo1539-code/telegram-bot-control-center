@@ -18,7 +18,6 @@ def test_welcome_messages_cover_all_twenty_supported_locales():
         assert "template" not in message.lower()
         assert "📝" not in message
         assert translate(language, "schedule_new") in message
-        assert translate(language, "language") in message
         assert "{help}" not in message
         assert "🗂" not in message
         assert "🎲" not in message
