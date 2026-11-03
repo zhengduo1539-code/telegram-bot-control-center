@@ -51,7 +51,10 @@ from database import (
 )
 from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
-from handlers.base import CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard, main_menu_keyboard
+from handlers.base import (
+    CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard,
+    main_menu_keyboard, main_menu_links,
+)
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from media_pool_localization import translate_media_pool as mp_tr
@@ -577,7 +580,8 @@ async def cb_qm_back_main_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     _clear(context)
     await query.answer()
     await query.edit_message_text(
-        tr(language, "menu_title"),
+        f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
             bot=context.bot,
             user_id=query.from_user.id,
@@ -2600,7 +2604,8 @@ async def cb_mp_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     _clear_mp(context)
     await query.answer()
     await query.edit_message_text(
-        tr(language, "menu_title"),
+        f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
             bot=context.bot,
             user_id=query.from_user.id,
@@ -2935,7 +2940,8 @@ async def cmd_mp_cancel(
         keep_message_id=message.message_id,
     )
     await message.reply_text(
-        mp_tr(language, "cancelled"),
+        f"{mp_tr(language, 'cancelled')}\n\n{main_menu_links(context.bot, language)}",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
             bot=context.bot,
             user_id=user.id if user is not None else None,
@@ -2964,7 +2970,8 @@ async def cmd_qm_cancel(
 
     chat_id = update.effective_chat.id if update.effective_chat else message.chat_id
     confirmation = await message.reply_text(
-        qm_tr(language, "cancelled"),
+        f"{qm_tr(language, 'cancelled')}\n\n{main_menu_links(context.bot, language)}",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
             bot=context.bot,
             user_id=user.id if user is not None else None,
@@ -3007,13 +3014,14 @@ async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         cancel_text = qm_tr(language, "cancelled")
     else:
         cancel_text = "❌ *Cancelled.* Back to Main Menu."
+    menu_language = language if (is_media_pool or is_queue_manager) else "en"
     await query.edit_message_text(
-        cancel_text,
+        f"{cancel_text}\n\n{main_menu_links(context.bot, menu_language)}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
             bot=context.bot,
             user_id=user_id,
-            language=language if (is_media_pool or is_queue_manager) else "en",
+            language=menu_language,
         ),
     )
     return ConversationHandler.END
