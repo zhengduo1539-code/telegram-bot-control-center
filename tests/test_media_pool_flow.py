@@ -112,8 +112,13 @@ def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
         )
         query = SimpleNamespace(
             from_user=SimpleNamespace(id=42),
+            message=SimpleNamespace(chat_id=42, message_id=88),
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
+        )
+        bot = SimpleNamespace(
+            send_message=AsyncMock(return_value=SimpleNamespace(message_id=89)),
+            delete_message=AsyncMock(return_value=True),
         )
         context = SimpleNamespace(
             user_data={
@@ -121,7 +126,7 @@ def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
                 "active_media_pool": True,
                 "mpwiz": {"mp_chat_id": -1001234567890},
             },
-            bot=None,
+            bot=bot,
         )
 
         state = await media_pool.cb_mp_main_menu(
@@ -133,10 +138,11 @@ def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
         assert state == media_pool.ConversationHandler.END
         assert "active_media_pool" not in context.user_data
         assert "mpwiz" not in context.user_data
-        menu_text = query.edit_message_text.await_args.args[0]
+        menu_text = bot.send_message.await_args.kwargs["text"]
         assert menu_text.startswith(translate("my", "menu_title"))
         assert "https://t.me/share/url?" in menu_text
-        keyboard = query.edit_message_text.await_args.kwargs["reply_markup"]
+        keyboard = bot.send_message.await_args.kwargs["reply_markup"]
+        bot.delete_message.assert_awaited_once_with(chat_id=42, message_id=88)
         callbacks = [
             button.callback_data
             for row in keyboard.inline_keyboard
