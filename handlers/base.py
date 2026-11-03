@@ -191,6 +191,42 @@ def main_menu_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+async def replace_with_main_menu_message(
+    query: Any,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    user_id: int | None,
+    language: str = "en",
+) -> Message:
+    """Send a fresh menu message with its Reply Keyboard, then remove the old screen.
+
+    Telegram cannot attach a Reply Keyboard while editing a message. Sending the
+    replacement first lets the tracked Bot attach the keyboard directly to that
+    visible message and refresh its callback routes without creating an anchor.
+    """
+    old_message = getattr(query, "message", None)
+    if old_message is None:
+        raise ValueError("Cannot show the Main Menu without a source message.")
+
+    new_message = await context.bot.send_message(
+        chat_id=old_message.chat_id,
+        text=text,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=main_menu_keyboard(
+            user_id=user_id,
+            language=language,
+        ),
+    )
+    try:
+        await context.bot.delete_message(
+            chat_id=old_message.chat_id,
+            message_id=old_message.message_id,
+        )
+    except Exception as exc:
+        logger.debug("Could not remove the previous menu screen: %s", exc)
+    return new_message
+
+
 def nav_keyboard(back_data: str | None = None) -> InlineKeyboardMarkup:
     """
     Universal navigation row.  Pass `back_data` to enable the Back button;
@@ -671,10 +707,12 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await query.answer()
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
-    await query.edit_message_text(
+    await replace_with_main_menu_message(
+        query,
+        context,
         f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu_keyboard(context.bot, user_id, language),
+        user_id,
+        language,
     )
     return MAIN_MENU
 
