@@ -232,6 +232,12 @@ async def handle_reply_keyboard_message(
         message=target_message,
         data=route["data"],
     )
+    # A synthetic CallbackQuery is not deserialized from Telegram's API
+    # payload, so PTB cannot attach the originating Bot automatically.
+    # Existing callbacks rely on query.get_bot() / query.bot in wizard and
+    # group-permission flows. Bind the real application bot before the update
+    # is queued so those handlers behave exactly like native callback queries.
+    query.set_bot(context.bot)
     synthetic_update = Update(update_id=update.update_id, callback_query=query)
     try:
         # Do not call process_update() from inside another update handler.
