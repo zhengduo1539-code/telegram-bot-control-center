@@ -135,7 +135,7 @@ def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
         assert "mpwiz" not in context.user_data
         menu_text = query.edit_message_text.await_args.args[0]
         assert menu_text.startswith(translate("my", "menu_title"))
-        assert "Share Bot" in menu_text
+        assert "https://t.me/share/url?" in menu_text
         keyboard = query.edit_message_text.await_args.kwargs["reply_markup"]
         callbacks = [
             button.callback_data
