@@ -121,34 +121,25 @@ def _bot_username(bot: Bot | None) -> str:
     return getattr(bot, "username", None) or "YourSchedulerBot"
 
 
-def start_keyboard(bot: Bot) -> InlineKeyboardMarkup:
-    """Only Add to My Group and Share Bot remain inline."""
+def start_keyboard(bot: Bot | None, language: str = "en") -> InlineKeyboardMarkup:
+    """Build the two URL actions that remain native Inline Keyboard buttons."""
     username = _bot_username(bot)
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "➕ Add to My Group",
-            url=f"https://t.me/{username}?startgroup=true",
-        ),
-        InlineKeyboardButton(
-            "📤 Share Bot",
-            url=f"https://t.me/share/url?url=https://t.me/{username}&text=Check out this Advanced Scheduler Bot!",
-        ),
-    ]])
-
-
-def main_menu_links(bot: Bot | None, language: str = "en") -> str:
-    """Build Markdown links that replace the former inline URL buttons."""
-    username = _bot_username(bot)
-    add_group_url = f"https://t.me/{username}?startgroup=true"
     share_url = "https://t.me/share/url?" + urlencode(
         {
             "url": f"https://t.me/{username}",
             "text": "Check out this Advanced Scheduler Bot!",
         }
     )
-    add_group_label = escape_markdown(tr(language, "add_group"), version=1)
-    share_label = escape_markdown(tr(language, "share_bot"), version=1)
-    return f"[{add_group_label}]({add_group_url})  ·  [{share_label}]({share_url})"
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            tr(language, "add_group"),
+            url=f"https://t.me/{username}?startgroup=true",
+        ),
+        InlineKeyboardButton(
+            tr(language, "share_bot"),
+            url=share_url,
+        ),
+    ]])
 
 
 def main_menu_keyboard(
@@ -181,13 +172,13 @@ def main_menu_keyboard(
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ]
-    # Add-to-group and share actions are rendered as message links by
-    # main_menu_links(), leaving this keyboard callback-only. The Reply
-    # Keyboard can therefore be attached directly to the menu message.
     if user_id is not None and user_id in ADMIN_IDS:
         rows.append([
             InlineKeyboardButton(tr(language, "owner_panel"), callback_data=CB_OWNER_PANEL),
         ])
+    # The tracked Bot keeps these two URL actions inline and converts feature
+    # callbacks to the Reply Keyboard, publishing its invisible anchor message.
+    rows.extend(start_keyboard(bot, language).inline_keyboard)
     return InlineKeyboardMarkup(rows)
 
 
@@ -213,6 +204,7 @@ async def replace_with_main_menu_message(
         text=text,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
+            bot=context.bot,
             user_id=user_id,
             language=language,
         ),
@@ -674,7 +666,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if launch_notice:
             menu_text = f"{launch_notice}\n\n{menu_text}"
 
-    menu_text = f"{menu_text}\n\n{main_menu_links(context.bot, language)}"
     await message.reply_text(
         menu_text,
         parse_mode=ParseMode.MARKDOWN,
@@ -710,7 +701,7 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await replace_with_main_menu_message(
         query,
         context,
-        f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
+        tr(language, "menu_title"),
         user_id,
         language,
     )

@@ -48,7 +48,7 @@ from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.base import (
     CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard,
-    main_menu_keyboard, main_menu_links, replace_with_main_menu_message,
+    main_menu_keyboard, replace_with_main_menu_message,
 )
 from handlers.language import resolve_user_language
 from localization import translate as tr
@@ -1732,7 +1732,7 @@ async def cb_cancel_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await replace_with_main_menu_message(
         query,
         context,
-        f"❌ *Cancelled.* Back to Main Menu.\n\n{main_menu_links(context.bot, 'en')}",
+        "❌ *Cancelled.* Back to Main Menu.",
         user_id,
         "en",
     )

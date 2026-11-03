@@ -126,11 +126,10 @@ async def handle_language_choice(
         # when Telegram does not permit deleting the user's selection message.
         logger.debug("Could not remove language selection message: %s", exc)
 
-    from handlers.base import main_menu_keyboard, main_menu_links
+    from handlers.base import main_menu_keyboard
 
     await message.reply_text(
-        f"{translate(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
-        parse_mode=ParseMode.MARKDOWN,
+        translate(language, "menu_title"),
         reply_markup=main_menu_keyboard(context.bot, user.id, language),
     )
 

@@ -53,7 +53,7 @@ from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.base import (
     CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard,
-    main_menu_keyboard, main_menu_links, replace_with_main_menu_message,
+    main_menu_keyboard, replace_with_main_menu_message,
 )
 from handlers.language import resolve_user_language
 from localization import translate as tr
@@ -582,7 +582,7 @@ async def cb_qm_back_main_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     await replace_with_main_menu_message(
         query,
         context,
-        f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
+        tr(language, "menu_title"),
         query.from_user.id,
         language,
     )
@@ -2604,7 +2604,7 @@ async def cb_mp_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await replace_with_main_menu_message(
         query,
         context,
-        f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
+        tr(language, "menu_title"),
         query.from_user.id,
         language,
     )
@@ -2936,7 +2936,7 @@ async def cmd_mp_cancel(
         keep_message_id=message.message_id,
     )
     await message.reply_text(
-        f"{mp_tr(language, 'cancelled')}\n\n{main_menu_links(context.bot, language)}",
+        mp_tr(language, "cancelled"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
             bot=context.bot,
@@ -2966,7 +2966,7 @@ async def cmd_qm_cancel(
 
     chat_id = update.effective_chat.id if update.effective_chat else message.chat_id
     confirmation = await message.reply_text(
-        f"{qm_tr(language, 'cancelled')}\n\n{main_menu_links(context.bot, language)}",
+        qm_tr(language, "cancelled"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(
             bot=context.bot,
@@ -3014,7 +3014,7 @@ async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await replace_with_main_menu_message(
         query,
         context,
-        f"{cancel_text}\n\n{main_menu_links(context.bot, menu_language)}",
+        cancel_text,
         user_id,
         menu_language,
     )
