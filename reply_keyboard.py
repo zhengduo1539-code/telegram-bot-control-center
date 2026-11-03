@@ -1,11 +1,8 @@
-"""Bridge all private-chat feature buttons to native Reply Keyboards.
+"""Render all bot navigation actions as native Telegram Reply Keyboards.
 
-The welcome screen keeps only Add to My Group and Share Bot as inline URL
-buttons. Telegram permits one keyboard type per message, so the Reply Keyboard
-is attached to a minimal, non-visible anchor message. Selections are queued as
-synthetic callback updates and handled by the existing conversation handlers.
-Private-chat button-tap messages are deleted best-effort so navigation does not
-fill the conversation with repeated button labels.
+Inline button definitions are retained internally as route definitions only.
+Their actions are dispatched to existing conversation handlers through
+synthetic callback updates. Private-chat button taps are deleted best-effort.
 """
 from __future__ import annotations
 
@@ -30,14 +27,15 @@ def is_private_chat(chat_id: Any) -> bool:
 
 
 def _preserve_inline_button(button: Any) -> bool:
-    url = str(getattr(button, "url", None) or "").lower()
-    return "startgroup=true" in url or "t.me/share/url" in url
+    """No inline buttons are displayed; URL actions become Reply Keyboard routes."""
+    return False
+
 
 
 def split_inline_keyboard(
     markup: InlineKeyboardMarkup | None,
 ) -> tuple[InlineKeyboardMarkup | None, ReplyKeyboardMarkup | None, dict[str, dict[str, str]]]:
-    """Keep only the two approved URL links inline and convert other buttons."""
+    """Convert every button into a Reply Keyboard choice and an internal route."""
     if not isinstance(markup, InlineKeyboardMarkup):
         return None, None, {}
 
