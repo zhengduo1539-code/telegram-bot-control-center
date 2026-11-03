@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 from handlers import queue_manager as queue
 from localization import LANGUAGES, translate
 from queue_manager_localization import _MESSAGES, translate_queue_manager
+from reply_keyboard import split_inline_keyboard
 
 
 def _buttons(keyboard):
@@ -117,7 +118,7 @@ def test_queue_entry_continue_and_back_follow_expected_navigation(monkeypatch):
         menu_text = bot.send_message.await_args.kwargs["text"]
         assert menu_text.startswith(translate("my", "menu_title"))
         keyboard = bot.send_message.await_args.kwargs["reply_markup"]
-        inline, reply, routes = queue.split_inline_keyboard(keyboard)
+        inline, reply, routes = split_inline_keyboard(keyboard)
         assert inline is not None
         assert [button.text for row in inline.inline_keyboard for button in row] == [
             "➕ Add to My Group", "📤 Share Bot"
