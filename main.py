@@ -111,13 +111,17 @@ async def post_init(application: Application) -> None:
     # beside the message composer). Keep command tokens emoji-free; use one
     # leading emoji in each concise description. Internal diagnostics and
     # owner-only commands are intentionally not exposed to regular users.
-    await application.bot.set_my_commands([
-        BotCommand("start", "🏠 Open the main menu"),
-        BotCommand("lang", "🌐 Change language"),
-        BotCommand("id", "ℹ️ Show chat and user IDs"),
-        BotCommand("cancel", "❌ Cancel the current action"),
-    ])
-    logger.info("Telegram Bot Commands Menu configured.")
+    try:
+        await application.bot.set_my_commands([
+            BotCommand("start", "🏠 Open the main menu"),
+            BotCommand("lang", "🌐 Change language"),
+            BotCommand("id", "ℹ️ Show chat and user IDs"),
+            BotCommand("cancel", "❌ Cancel the current action"),
+        ])
+        logger.info("Telegram Bot Commands Menu configured.")
+    except Exception:
+        # A command-menu API issue must not prevent the scheduler from starting.
+        logger.exception("Could not update the Telegram Bot Commands Menu.")
 
     logger.info("MongoDB connected.")
 
