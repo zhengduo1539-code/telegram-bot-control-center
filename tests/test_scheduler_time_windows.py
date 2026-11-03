@@ -27,3 +27,19 @@ def test_normal_time_window_includes_boundaries():
     assert _is_within_window(post, datetime(2026, 10, 31, 9, 0, tzinfo=timezone.utc))
     assert _is_within_window(post, datetime(2026, 10, 31, 17, 0, tzinfo=timezone.utc))
     assert not _is_within_window(post, datetime(2026, 10, 31, 17, 1, tzinfo=timezone.utc))
+
+
+def test_weekly_recurrence_treats_naive_mongo_datetime_as_utc_and_skips_dst_gap():
+    from scheduler import _compute_next_run
+
+    post = {
+        "timezone": "America/New_York",
+        "recurrence": {
+            "type": "days_of_week",
+            "days_of_week": [6],
+            # PyMongo default datetime decoding returns this UTC value as naive.
+            "next_run_at": datetime(2026, 3, 1, 7, 30),
+        },
+    }
+    fired_at = datetime(2026, 3, 1, 7, 30, tzinfo=timezone.utc)
+    assert _compute_next_run(post, fired_at) == datetime(2026, 3, 15, 6, 30, tzinfo=timezone.utc)
