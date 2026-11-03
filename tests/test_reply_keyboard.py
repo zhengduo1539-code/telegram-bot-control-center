@@ -2,7 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from telegram import (
@@ -235,10 +235,16 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
             bot=application.bot,
         )
 
-        with pytest.raises(ApplicationHandlerStop):
-            await handle_reply_keyboard_message(update, context)
+        with patch.object(
+            type(application.bot), "delete_message", new_callable=AsyncMock
+        ) as delete_message:
+            delete_message.return_value = True
+            with pytest.raises(ApplicationHandlerStop):
+                await handle_reply_keyboard_message(update, context)
 
         assert handled == []
+        delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=700)
+        assert bot_data["chat_cleanup"][chat_id] == []
         assert application.update_queue.qsize() == 1
         synthetic_update = application.update_queue.get_nowait()
         assert synthetic_update.callback_query.data == "action:schedule_new"
@@ -262,6 +268,54 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
             synthetic_update, application, check_result, dispatch_context
         )
         assert handled == [("action:schedule_new", chat_id, 600, True)]
+
+    asyncio.run(scenario())
+
+
+def test_private_reply_keyboard_tap_dispatch_survives_delete_failure():
+    async def scenario():
+        chat_id = 123456
+        queue = asyncio.Queue()
+        tapped_message = SimpleNamespace(
+            text="🛠 Owner Panel",
+            message_id=702,
+            reply_text=AsyncMock(),
+        )
+        target_message = SimpleNamespace(chat_id=chat_id, message_id=600)
+        bot_data = {}
+        register_reply_keyboard_routes(
+            bot_data,
+            chat_id,
+            {"🛠 Owner Panel": {"type": "callback", "data": "owner:panel"}},
+            target_message,
+        )
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(side_effect=RuntimeError("delete unavailable"))
+        )
+        context = SimpleNamespace(
+            bot=bot,
+            bot_data=bot_data,
+            application=SimpleNamespace(
+                bot_data=bot_data,
+                update_queue=queue,
+            ),
+        )
+        update = SimpleNamespace(
+            update_id=703,
+            message=tapped_message,
+            effective_chat=SimpleNamespace(id=chat_id),
+            effective_user=SimpleNamespace(id=chat_id),
+        )
+
+        with pytest.raises(ApplicationHandlerStop):
+            await handle_reply_keyboard_message(update, context)
+
+        bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=702)
+        assert bot_data["chat_cleanup"][chat_id] == [702]
+        assert queue.qsize() == 1
+        synthetic = queue.get_nowait()
+        assert synthetic.callback_query.data == "owner:panel"
+        assert synthetic.callback_query.message is target_message
 
     asyncio.run(scenario())
 
