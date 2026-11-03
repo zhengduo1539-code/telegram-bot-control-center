@@ -133,7 +133,9 @@ def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
         assert state == media_pool.ConversationHandler.END
         assert "active_media_pool" not in context.user_data
         assert "mpwiz" not in context.user_data
-        assert query.edit_message_text.await_args.args[0] == translate("my", "menu_title")
+        menu_text = query.edit_message_text.await_args.args[0]
+        assert menu_text.startswith(translate("my", "menu_title"))
+        assert "https://t.me/share/url?" in menu_text
         keyboard = query.edit_message_text.await_args.kwargs["reply_markup"]
         callbacks = [
             button.callback_data

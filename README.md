@@ -28,7 +28,7 @@ The bot provides a private-chat `/lang` command and a **🌐 Language** option i
 
 English, Myanmar (မြန်မာ), Simplified Chinese, Spanish, Hindi, Arabic, Portuguese, French, Russian, Bengali, Indonesian, Japanese, Korean, Thai, Vietnamese, Turkish, German, Italian, Urdu and Swahili.
 
-The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard. In private chat, all feature and workflow actions use Reply Keyboards; only **Add to My Group** and **Share Bot** remain inline under the welcome message. Because Telegram permits only one keyboard type per message, the feature keyboard is shown in a small follow-up message.
+The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard. In private chat, feature actions use Reply Keyboards, while **Add to My Group** and **Share Bot** are clickable links in the menu message. The main-menu keyboard is attached directly to the welcome/menu message, avoiding a separate invisible anchor message. Workflow screens that contain their own inline navigation retain the existing Reply Keyboard bridge.
 
 Localized screens include the main menu, group-to-private onboarding, Help Guide, initial Schedule New Post steps, recurrence/timezone/first-run setup, Queue Manager overview and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
 

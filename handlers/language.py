@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
-from telegram.constants import ChatType
+from telegram.constants import ChatType, ParseMode
 from telegram.ext import ContextTypes, filters
 
 from database import get_user_language, set_user_language
@@ -126,10 +126,11 @@ async def handle_language_choice(
         # when Telegram does not permit deleting the user's selection message.
         logger.debug("Could not remove language selection message: %s", exc)
 
-    from handlers.base import main_menu_keyboard
+    from handlers.base import main_menu_keyboard, main_menu_links
 
     await message.reply_text(
-        translate(language, "menu_title"),
+        f"{translate(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(context.bot, user.id, language),
     )
 

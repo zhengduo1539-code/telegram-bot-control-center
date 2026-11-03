@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import timezone as _dt_timezone
 from typing import Any
+from urllib.parse import urlencode
 
 import pytz
 
@@ -115,9 +116,9 @@ def parse_group_start_payload(args: list[str]) -> int | None:
 # Keyboard builders
 # ---------------------------------------------------------------------------
 
-def _bot_username(bot: Bot) -> str:
-    """Return the bot's username, falling back gracefully if not yet available."""
-    return bot.username or "YourSchedulerBot"
+def _bot_username(bot: Bot | None) -> str:
+    """Return the bot's username, falling back gracefully if unavailable."""
+    return getattr(bot, "username", None) or "YourSchedulerBot"
 
 
 def start_keyboard(bot: Bot) -> InlineKeyboardMarkup:
@@ -133,6 +134,21 @@ def start_keyboard(bot: Bot) -> InlineKeyboardMarkup:
             url=f"https://t.me/share/url?url=https://t.me/{username}&text=Check out this Advanced Scheduler Bot!",
         ),
     ]])
+
+
+def main_menu_links(bot: Bot | None, language: str = "en") -> str:
+    """Build Markdown links that replace the former inline URL buttons."""
+    username = _bot_username(bot)
+    add_group_url = f"https://t.me/{username}?startgroup=true"
+    share_url = "https://t.me/share/url?" + urlencode(
+        {
+            "url": f"https://t.me/{username}",
+            "text": "Check out this Advanced Scheduler Bot!",
+        }
+    )
+    add_group_label = escape_markdown(tr(language, "add_group"), version=1)
+    share_label = escape_markdown(tr(language, "share_bot"), version=1)
+    return f"[{add_group_label}]({add_group_url})  ·  [{share_label}]({share_url})"
 
 
 def main_menu_keyboard(
@@ -165,18 +181,9 @@ def main_menu_keyboard(
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ]
-    if bot is not None:
-        username = _bot_username(bot)
-        rows.append([
-            InlineKeyboardButton(
-                tr(language, "add_group"),
-                url=f"https://t.me/{username}?startgroup=true",
-            ),
-            InlineKeyboardButton(
-                tr(language, "share_bot"),
-                url=f"https://t.me/share/url?url=https://t.me/{username}&text=Check out this Advanced Scheduler Bot!",
-            ),
-        ])
+    # Add-to-group and share actions are rendered as message links by
+    # main_menu_links(), leaving this keyboard callback-only. The Reply
+    # Keyboard can therefore be attached directly to the menu message.
     if user_id is not None and user_id in ADMIN_IDS:
         rows.append([
             InlineKeyboardButton(tr(language, "owner_panel"), callback_data=CB_OWNER_PANEL),
@@ -631,6 +638,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if launch_notice:
             menu_text = f"{launch_notice}\n\n{menu_text}"
 
+    menu_text = f"{menu_text}\n\n{main_menu_links(context.bot, language)}"
     await message.reply_text(
         menu_text,
         parse_mode=ParseMode.MARKDOWN,
@@ -664,7 +672,7 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
     await query.edit_message_text(
-        tr(language, "menu_title"),
+        f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard(context.bot, user_id, language),
     )
