@@ -2,7 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from telegram import (
@@ -216,7 +216,6 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
             application.bot,
         )
 
-        application.bot.delete_message = AsyncMock(return_value=True)
         bot_data = application.bot_data
         register_reply_keyboard_routes(
             bot_data,
@@ -236,13 +235,15 @@ def test_private_reply_keyboard_choice_is_queued_and_dispatched_normally():
             bot=application.bot,
         )
 
-        with pytest.raises(ApplicationHandlerStop):
-            await handle_reply_keyboard_message(update, context)
+        with patch.object(
+            type(application.bot), "delete_message", new_callable=AsyncMock
+        ) as delete_message:
+            delete_message.return_value = True
+            with pytest.raises(ApplicationHandlerStop):
+                await handle_reply_keyboard_message(update, context)
 
         assert handled == []
-        application.bot.delete_message.assert_awaited_once_with(
-            chat_id=chat_id, message_id=700
-        )
+        delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=700)
         assert bot_data["chat_cleanup"][chat_id] == []
         assert application.update_queue.qsize() == 1
         synthetic_update = application.update_queue.get_nowait()
