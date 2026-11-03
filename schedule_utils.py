@@ -9,6 +9,8 @@ _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 
 
 def parse_hhmm(value: str) -> str | None:
+    if not isinstance(value, str):
+        return None
     match = _TIME_RE.fullmatch(value.strip())
     if not match:
         return None
@@ -16,6 +18,82 @@ def parse_hhmm(value: str) -> str | None:
     if hour > 23 or minute > 59:
         return None
     return f"{hour:02d}:{minute:02d}"
+
+_DATETIME_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})$")
+
+
+def parse_schedule_datetime(
+    value: str,
+    timezone_name: str,
+    *,
+    now: datetime | None = None,
+) -> datetime | None:
+    """Parse a future local time and return an aware UTC datetime.
+
+    Accepts ``HH:MM`` (the next valid occurrence) or
+    ``DD/MM/YYYY HH:MM`` (that exact future local date/time). Ambiguous
+    daylight-saving times consistently use standard time. Nonexistent local
+    times are rejected for explicit dates and skipped for daily HH:MM input.
+    """
+    if not isinstance(value, str) or not isinstance(timezone_name, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+
+    try:
+        zone = pytz.timezone(timezone_name)
+    except (pytz.exceptions.UnknownTimeZoneError, TypeError):
+        return None
+
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None or reference.utcoffset() is None:
+        raise ValueError("The reference datetime must be timezone-aware.")
+    reference_utc = reference.astimezone(timezone.utc)
+
+    date_match = _DATETIME_RE.fullmatch(raw)
+    if date_match:
+        day, month, year, hour, minute = map(int, date_match.groups())
+        try:
+            naive = datetime(year, month, day, hour, minute)
+        except ValueError:
+            return None
+        try:
+            try:
+                local_candidate = zone.localize(naive, is_dst=None)
+            except pytz.AmbiguousTimeError:
+                local_candidate = zone.localize(naive, is_dst=False)
+            except pytz.NonExistentTimeError:
+                return None
+        except (ValueError, OverflowError):
+            return None
+        candidate_utc = local_candidate.astimezone(timezone.utc)
+        return candidate_utc if candidate_utc > reference_utc else None
+
+    normalized = parse_hhmm(raw)
+    if normalized is None:
+        return None
+    hour, minute = map(int, normalized.split(":"))
+    local_reference = reference_utc.astimezone(zone)
+
+    # A wall-clock time can be skipped by a daylight-saving transition.
+    # Search subsequent dates and skip the gap instead of shifting the hour.
+    for day_offset in range(3):
+        candidate_date = local_reference.date() + timedelta(days=day_offset)
+        naive = datetime.combine(candidate_date, time(hour, minute))
+        try:
+            try:
+                local_candidate = zone.localize(naive, is_dst=None)
+            except pytz.AmbiguousTimeError:
+                local_candidate = zone.localize(naive, is_dst=False)
+            except pytz.NonExistentTimeError:
+                continue
+        except (ValueError, OverflowError):
+            continue
+        candidate_utc = local_candidate.astimezone(timezone.utc)
+        if candidate_utc > reference_utc:
+            return candidate_utc
+    return None
 
 
 def next_daily_slot(slots: Iterable[str], timezone_name: str, after: datetime) -> datetime | None:
