@@ -3,15 +3,17 @@ from __future__ import annotations
 
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ChatType, ParseMode
 from telegram.ext import ContextTypes, filters
 
 from database import get_user_language, set_user_language
+from reply_keyboard import register_reply_keyboard_routes
 from localization import (
     DEFAULT_LANGUAGE,
     LANGUAGES,
     language_button_pattern,
+    language_cancel_button_label,
     language_from_button,
     language_keyboard,
     normalize_language,
@@ -58,12 +60,31 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.exception("Could not create private language-settings link.")
             private_url = None
 
-        rows = [[InlineKeyboardButton("📩 Open Bot in Private Chat", url=private_url)]] if private_url else []
-        await message.reply_text(
-            "🌐 Language settings are available in the bot's private chat. "
-            "Open the bot privately and send /lang.",
-            reply_markup=InlineKeyboardMarkup(rows) if rows else None,
-        )
+        if private_url:
+            open_label = "📩 Open Bot in Private Chat"
+            keyboard = ReplyKeyboardMarkup(
+                [[KeyboardButton(open_label)]],
+                resize_keyboard=True,
+                one_time_keyboard=False,
+                is_persistent=True,
+            )
+            sent = await message.reply_text(
+                "🌐 Language settings are available in the bot's private chat. "
+                "Open the bot privately and send /lang.\n\n"
+                f"🔗 {private_url}",
+                reply_markup=keyboard,
+            )
+            register_reply_keyboard_routes(
+                context.bot_data,
+                chat.id,
+                {open_label: {"type": "url", "url": private_url}},
+                sent,
+            )
+        else:
+            await message.reply_text(
+                "🌐 Language settings are available in the bot's private chat. "
+                "Open the bot privately and send /lang."
+            )
         return
 
     language = await resolve_user_language(context, user_id)
@@ -88,6 +109,25 @@ async def handle_language_choice(
     if update.effective_chat is None or update.effective_chat.type != ChatType.PRIVATE:
         return
     if not context.user_data.get("awaiting_language_choice"):
+        return
+
+    current_language = await resolve_user_language(context, user.id)
+    if message.text == language_cancel_button_label(current_language):
+        context.user_data.pop("awaiting_language_choice", None)
+        try:
+            await context.bot.delete_message(
+                chat_id=message.chat_id,
+                message_id=message.message_id,
+            )
+        except Exception as exc:
+            logger.debug("Could not remove language-picker exit message: %s", exc)
+
+        from handlers.base import main_menu_keyboard
+
+        await message.reply_text(
+            translate(current_language, "menu_title"),
+            reply_markup=main_menu_keyboard(context.bot, user.id, current_language),
+        )
         return
 
     language = language_from_button(message.text)

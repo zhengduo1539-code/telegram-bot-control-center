@@ -48,6 +48,7 @@ from keep_alive import set_readiness, start_keep_alive
 from scheduler import setup_scheduler
 from reply_keyboard import (
     clear_reply_keyboard_routes,
+    get_reply_keyboard_entry,
     handle_reply_keyboard_message,
     is_private_chat,
     publish_reply_keyboard,
@@ -189,29 +190,31 @@ class _TrackedBot(Bot):
         markup = kwargs.get("reply_markup")
 
         if is_private_chat(target_chat_id) and isinstance(markup, InlineKeyboardMarkup):
-            inline_markup, reply_markup, routes = split_inline_keyboard(markup)
+            # InlineKeyboardMarkup is an internal route definition only.
+            # Users receive native Reply Keyboard buttons exclusively.
+            _, reply_markup, routes = split_inline_keyboard(markup)
+            await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
+            clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
+            kwargs["reply_markup"] = reply_markup
+            message = await super().send_message(chat_id, *args, **kwargs)
+            self._track_outgoing(target_chat_id, message)
             if reply_markup is not None:
-                await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
-                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
-                kwargs["reply_markup"] = inline_markup or reply_markup
-                message = await super().send_message(chat_id, *args, **kwargs)
-                self._track_outgoing(target_chat_id, message)
-                if inline_markup is not None:
-                    await publish_reply_keyboard(
-                        self, _bot_data_ref, target_chat_id,
-                        reply_markup, routes, message,
-                    )
-                else:
-                    register_reply_keyboard_routes(
-                        _bot_data_ref, target_chat_id, routes, message
-                    )
-                return message
+                register_reply_keyboard_routes(
+                    _bot_data_ref, target_chat_id, routes, message
+                )
+            return message
 
         if is_private_chat(target_chat_id) and isinstance(
             markup, (ReplyKeyboardMarkup, ReplyKeyboardRemove)
         ):
             await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
             clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
+        elif is_private_chat(target_chat_id) and markup is None:
+            # A text-input screen must not leave stale step buttons visible.
+            if _bot_data_ref is not None and get_reply_keyboard_entry(_bot_data_ref, target_chat_id):
+                await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
+                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
+                kwargs["reply_markup"] = ReplyKeyboardRemove()
 
         message = await super().send_message(chat_id, *args, **kwargs)
         self._track_outgoing(target_chat_id, message)
@@ -224,21 +227,33 @@ class _TrackedBot(Bot):
         markup = kwargs.get("reply_markup")
 
         if is_private_chat(target_chat_id) and isinstance(markup, InlineKeyboardMarkup):
-            inline_markup, reply_markup, routes = split_inline_keyboard(markup)
-            if reply_markup is not None:
-                kwargs["reply_markup"] = inline_markup
-                result = await super().edit_message_text(*args, **kwargs)
-                old_entry = (
-                    _bot_data_ref.get("_reply_keyboard_route_registry", {}).get(str(target_chat_id), {})
-                    if _bot_data_ref is not None else {}
+            _, reply_keyboard, routes = split_inline_keyboard(markup)
+            kwargs["reply_markup"] = None
+            result = await super().edit_message_text(*args, **kwargs)
+            old_entry = get_reply_keyboard_entry(_bot_data_ref or {}, target_chat_id) or {}
+            target_message = result if hasattr(result, "chat_id") else old_entry.get("target_message")
+            if target_message is not None and reply_keyboard is not None:
+                await publish_reply_keyboard(
+                    self, _bot_data_ref, target_chat_id,
+                    reply_keyboard, routes, target_message,
                 )
-                target_message = result if hasattr(result, "chat_id") else old_entry.get("target_message")
-                if target_message is not None:
-                    await publish_reply_keyboard(
-                        self, _bot_data_ref, target_chat_id,
-                        reply_markup, routes, target_message,
-                    )
-                return result
+            return result
+
+        if is_private_chat(target_chat_id) and markup is None:
+            old_entry = get_reply_keyboard_entry(_bot_data_ref or {}, target_chat_id)
+            result = await super().edit_message_text(*args, **kwargs)
+            if old_entry is not None:
+                await remove_previous_keyboard_anchor(self, _bot_data_ref, target_chat_id)
+                clear_reply_keyboard_routes(_bot_data_ref, target_chat_id)
+                anchor = await super().send_message(
+                    chat_id=target_chat_id,
+                    text="\u2063",
+                    reply_markup=ReplyKeyboardRemove(),
+                    disable_notification=True,
+                )
+                self._track_outgoing(target_chat_id, anchor)
+            return result
+
         return await super().edit_message_text(*args, **kwargs)
 
     async def edit_message_reply_markup(self, *args, **kwargs):

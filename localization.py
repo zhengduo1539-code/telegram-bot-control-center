@@ -677,6 +677,7 @@ def language_keyboard(selected_language: str | None = None) -> ReplyKeyboardMark
         ]
         for index in range(0, len(codes), 2)
     ]
+    rows.append([KeyboardButton(language_cancel_button_label(selected), style="primary")])
     return ReplyKeyboardMarkup(
         rows,
         resize_keyboard=True,
@@ -686,9 +687,17 @@ def language_keyboard(selected_language: str | None = None) -> ReplyKeyboardMark
     )
 
 
+def language_cancel_button_label(language: str | None = None) -> str:
+    """Return the localized Main Menu action shown below language choices."""
+    return "🏠 " + translate(language, "menu_title")
+
+
 def language_button_pattern() -> str:
-    """Regex that matches only one of the official language-picker button labels."""
-    return "^(?:" + "|".join(re.escape(label) for label in LANGUAGE_BY_LABEL) + ")$"
+    """Match official language choices and the localized language-picker exit."""
+    labels = set(LANGUAGE_BY_LABEL) | {
+        language_cancel_button_label(code) for code in LANGUAGES
+    }
+    return "^(?:" + "|".join(re.escape(label) for label in labels) + ")$"
 
 
 def language_from_button(label: str | None) -> str | None:

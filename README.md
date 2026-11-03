@@ -7,7 +7,8 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 - **Schedule New Post:** text, photos, videos, documents, audio, animations and voice messages.
 - **Recurring schedules:** repeat every N minutes, hours or days, or on selected weekdays.
 - **Timezone support:** choose an IANA timezone; execution timestamps are persisted in UTC.
-- **Inline URL buttons:** add optional links below posts.
+- **Post URL buttons:** add optional clickable links below scheduled posts.
+- **Reply Keyboard navigation:** every bot menu and wizard action uses Telegram Reply Keyboard buttons; no Inline Keyboard navigation is shown.
 - **Message lifecycle:** auto-pin/unpin, auto-delete and self-destruct.
 - **Owner Panel:** service statistics, user/group lists, broadcast and data cleanup.
 
@@ -27,7 +28,7 @@ The bot provides a private-chat `/lang` command and a **🌐 Language** option i
 
 English, Myanmar (မြန်မာ), Simplified Chinese, Spanish, Hindi, Arabic, Portuguese, French, Russian, Bengali, Indonesian, Japanese, Korean, Thai, Vietnamese, Turkish, German, Italian, Urdu and Swahili.
 
-The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard. In private chat, feature actions use Reply Keyboards, while **Add to My Group** and **Share Bot** remain Inline Keyboard URL buttons. Telegram permits only one keyboard type per message, so a separate invisible anchor message displays the Reply Keyboard without adding a visible prompt. Workflow screens that contain their own inline navigation retain the existing Reply Keyboard bridge.
+The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard. All private-chat navigation—including **Add to My Group**, **Share Bot**, Schedule New Post, My Posts and Owner Panel—is presented as Reply Keyboard buttons. URL actions return a clickable link in the chat because Telegram Reply Keyboard buttons cannot open URLs directly. When a workflow edits an existing message, a minimal invisible keyboard anchor keeps the Reply Keyboard synchronized with the active step.
 
 Localized screens include the main menu, group-to-private onboarding, Schedule New Post setup, recurrence/timezone selection and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
 

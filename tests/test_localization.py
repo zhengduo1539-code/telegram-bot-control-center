@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 import database
 from handlers import language as language_handler
@@ -12,6 +13,7 @@ from localization import (
     LANGUAGE_LABELS,
     TRANSLATIONS,
     language_button_pattern,
+    language_cancel_button_label,
     language_from_button,
     language_keyboard,
     translate,
@@ -31,9 +33,11 @@ def test_language_reply_keyboard_has_twenty_buttons_in_two_columns():
     keyboard = language_keyboard()
     labels = [button.text for row in keyboard.keyboard for button in row]
 
-    assert len(labels) == 20
-    assert all(len(row) == 2 for row in keyboard.keyboard)
-    assert set(labels) == set(LANGUAGE_LABELS.values())
+    assert len(labels) == 21
+    assert all(len(row) == 2 for row in keyboard.keyboard[:-1])
+    assert keyboard.keyboard[-1][0].text == language_cancel_button_label("en")
+    assert len(keyboard.keyboard[-1]) == 1
+    assert set(labels[:-1]) == set(LANGUAGE_LABELS.values())
     assert keyboard.resize_keyboard is True
     assert keyboard.one_time_keyboard is True
     assert keyboard.is_persistent is False
@@ -48,6 +52,7 @@ def test_language_button_mapping_and_regex_are_exact():
         assert re.fullmatch(pattern, label)
     assert language_from_button("English") is None
     assert language_from_button("🌐 Unknown") is None
+    assert re.fullmatch(pattern, language_cancel_button_label("en"))
 
 
 def test_translation_interpolates_group_name_and_falls_back_safely():
@@ -124,8 +129,80 @@ def test_lang_command_displays_the_reply_keyboard_in_private_chat(monkeypatch):
         await language_handler.cmd_lang(update, context)
 
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
-        assert len([b for row in keyboard.keyboard for b in row]) == 20
+        assert len([b for row in keyboard.keyboard for b in row]) == 21
         assert context.user_data["awaiting_language_choice"] is True
+
+    asyncio.run(scenario())
+
+
+def test_language_picker_exit_returns_to_main_menu_without_changing_saved_locale():
+    async def scenario():
+        user_id = 123456
+        chat_id = user_id
+        menu_message = SimpleNamespace(reply_text=AsyncMock())
+        selected_message = SimpleNamespace(
+            text=language_cancel_button_label("en"),
+            chat_id=chat_id,
+            message_id=777,
+            reply_text=AsyncMock(),
+        )
+        context = SimpleNamespace(
+            user_data={"language": "en", "awaiting_language_choice": True},
+            bot_data={},
+            bot=SimpleNamespace(
+                delete_message=AsyncMock(return_value=True),
+            ),
+        )
+        update = SimpleNamespace(
+            effective_message=selected_message,
+            effective_user=SimpleNamespace(id=user_id),
+            effective_chat=SimpleNamespace(type="private"),
+        )
+
+        await language_handler.handle_language_choice(update, context)
+
+        assert context.user_data["language"] == "en"
+        assert "awaiting_language_choice" not in context.user_data
+        context.bot.delete_message.assert_awaited_once_with(
+            chat_id=chat_id, message_id=777
+        )
+        assert selected_message.reply_text.await_count == 1
+        sent = selected_message.reply_text.await_args.kwargs
+        assert isinstance(sent["reply_markup"], InlineKeyboardMarkup)
+        assert selected_message.reply_text.await_args.args[0] == translate("en", "menu_title")
+
+    asyncio.run(scenario())
+
+
+def test_group_lang_command_uses_reply_keyboard_and_clickable_private_link():
+    async def scenario():
+        chat_id = -1001234567890
+        sent = SimpleNamespace(message_id=901)
+        message = SimpleNamespace(reply_text=AsyncMock(return_value=sent))
+        bot = SimpleNamespace(
+            get_me=AsyncMock(return_value=SimpleNamespace(username="ScheduleBot"))
+        )
+        context = SimpleNamespace(bot=bot, bot_data={}, user_data={})
+        update = SimpleNamespace(
+            callback_query=None,
+            effective_message=message,
+            effective_chat=SimpleNamespace(type="supergroup", id=chat_id),
+            effective_user=SimpleNamespace(id=123),
+        )
+
+        await language_handler.cmd_lang(update, context)
+
+        kwargs = message.reply_text.await_args.kwargs
+        assert isinstance(kwargs["reply_markup"], ReplyKeyboardMarkup)
+        assert [[button.text for button in row] for row in kwargs["reply_markup"].keyboard] == [
+            ["📩 Open Bot in Private Chat"]
+        ]
+        assert "https://t.me/ScheduleBot" in message.reply_text.await_args.args[0]
+        route = context.bot_data["_reply_keyboard_route_registry"][str(chat_id)]["routes"]
+        assert route["📩 Open Bot in Private Chat"] == {
+            "type": "url",
+            "url": "https://t.me/ScheduleBot",
+        }
 
     asyncio.run(scenario())
 

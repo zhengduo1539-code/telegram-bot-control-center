@@ -31,7 +31,7 @@ def _labels(markup):
     return [button.text for row in markup.keyboard for button in row]
 
 
-def test_only_add_to_group_and_share_bot_remain_inline():
+def test_every_button_becomes_a_reply_keyboard_choice():
     markup = InlineKeyboardMarkup(
         [
             [
@@ -59,16 +59,18 @@ def test_only_add_to_group_and_share_bot_remain_inline():
 
     inline, reply, routes = split_inline_keyboard(markup)
 
-    assert [
-        button.text for row in inline.inline_keyboard for button in row
-    ] == ["➕ Add to My Group", "📤 Share Bot"]
+    assert inline is None
     assert isinstance(reply, ReplyKeyboardMarkup)
     assert set(_labels(reply)) == {
+        "➕ Add to My Group",
+        "📤 Share Bot",
         "📅 Schedule New Post",
         "📋 My Posts",
         "🏠 Main Menu",
         "⚙️ Language",
     }
+    assert routes["➕ Add to My Group"]["type"] == "url"
+    assert routes["📤 Share Bot"]["type"] == "url"
     assert routes["📅 Schedule New Post"] == {
         "type": "callback",
         "data": "action:schedule_new",
@@ -316,6 +318,45 @@ def test_private_reply_keyboard_tap_dispatch_survives_delete_failure():
         synthetic = queue.get_nowait()
         assert synthetic.callback_query.data == "owner:panel"
         assert synthetic.callback_query.message is target_message
+
+    asyncio.run(scenario())
+
+
+def test_private_url_choice_deletes_tap_and_returns_clickable_link():
+    async def scenario():
+        chat_id = 123456
+        message = SimpleNamespace(
+            text="📤 Share Bot",
+            message_id=705,
+            reply_text=AsyncMock(),
+        )
+        bot_data = {}
+        register_reply_keyboard_routes(
+            bot_data,
+            chat_id,
+            {"📤 Share Bot": {"type": "url", "url": "https://t.me/share/url?url=https%3A%2F%2Ft.me%2FScheduler"}},
+            SimpleNamespace(chat_id=chat_id, message_id=600),
+        )
+        bot = SimpleNamespace(delete_message=AsyncMock(return_value=True))
+        context = SimpleNamespace(
+            bot=bot,
+            bot_data=bot_data,
+            application=SimpleNamespace(bot_data=bot_data),
+        )
+        update = SimpleNamespace(
+            update_id=706,
+            message=message,
+            effective_chat=SimpleNamespace(id=chat_id),
+            effective_user=SimpleNamespace(id=chat_id),
+        )
+
+        with pytest.raises(ApplicationHandlerStop):
+            await handle_reply_keyboard_message(update, context)
+
+        bot.delete_message.assert_awaited_once_with(chat_id=chat_id, message_id=705)
+        message.reply_text.assert_awaited_once_with(
+            "🔗 Open this link:\nhttps://t.me/share/url?url=https%3A%2F%2Ft.me%2FScheduler"
+        )
 
     asyncio.run(scenario())
 

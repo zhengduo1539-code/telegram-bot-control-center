@@ -3,6 +3,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from telegram import ReplyKeyboardMarkup
 from telegram.ext import ConversationHandler
 
 from handlers.base import (
@@ -57,20 +58,25 @@ def test_group_start_shows_private_chat_button_not_feature_menu():
         bot.get_me.assert_awaited_once()
         kwargs = message.reply_text.await_args.kwargs
         keyboard = kwargs["reply_markup"]
-        assert len(keyboard.inline_keyboard) == 1
-        assert len(keyboard.inline_keyboard[0]) == 1
-        button = keyboard.inline_keyboard[0][0]
-        assert button.text == "📩 Open Bot in Private Chat"
-        assert button.style == "primary"
-        assert button.url == "https://t.me/ScheduleBot?start=setup_-1001234567890"
+        assert isinstance(keyboard, ReplyKeyboardMarkup)
+        assert [[button.text for button in row] for row in keyboard.keyboard] == [
+            ["📩 Open Bot in Private Chat"]
+        ]
+        assert context.bot_data["_reply_keyboard_route_registry"][str(chat_id)]["routes"][
+            "📩 Open Bot in Private Chat"
+        ] == {
+            "type": "url",
+            "url": "https://t.me/ScheduleBot?start=setup_-1001234567890",
+        }
         rendered = message.reply_text.await_args.args[0]
         assert rendered.split("\n\n") == [
             "👋 *Schedule Posts for This Group*",
             "To schedule posts for *Publisher Group*, continue in the bot's private chat.",
             "🔒 Select *📅 Schedule New Post* to get started. This group will be selected automatically.",
+            "🔗 https://t.me/ScheduleBot?start=setup_-1001234567890",
             "ℹ️ Only this group's administrators can create schedules.",
         ]
-        assert keyboard.inline_keyboard
+        assert "https://t.me/ScheduleBot?start=setup_-1001234567890" in rendered
 
     asyncio.run(scenario())
 
@@ -98,10 +104,7 @@ def test_private_start_shows_welcome_guide_and_clear_primary_action():
         assert "Quick start" in body
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
         inline, reply, routes = split_inline_keyboard(keyboard)
-        assert inline is not None
-        assert [button.text for row in inline.inline_keyboard for button in row] == [
-            "➕ Add to My Group", "📤 Share Bot"
-        ]
+        assert inline is None
         assert reply is not None
         assert "https://t.me/share/url?" not in body
         reply_labels = {
@@ -153,10 +156,7 @@ def test_private_start_validates_and_remembers_deep_linked_group():
         assert "Publisher Group" in text
         keyboard = message.reply_text.await_args.kwargs["reply_markup"]
         inline, reply, routes = split_inline_keyboard(keyboard)
-        assert inline is not None
-        assert [button.text for row in inline.inline_keyboard for button in row] == [
-            "➕ Add to My Group", "📤 Share Bot"
-        ]
+        assert inline is None
         assert reply is not None
         assert "https://t.me/share/url?" not in text
         callback_data = {
