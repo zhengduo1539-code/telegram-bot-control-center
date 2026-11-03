@@ -209,3 +209,14 @@ def test_help_guide_has_no_templates_feature_in_any_locale():
         help_text = translate(language, "help_text")
         assert "template" not in help_text.lower(), language
         assert "📝" not in help_text, language
+
+
+def test_main_menu_and_help_only_advertise_remaining_features():
+    from handlers.base import main_menu_keyboard
+
+    for language in LANGUAGES:
+        menu = main_menu_keyboard(language=language)
+        labels = [button.text for row in menu.inline_keyboard for button in row]
+        assert not any("Queue" in label or "Pool" in label for label in labels), language
+        help_text = translate(language, "help_text")
+        assert "Queue" not in help_text and "Pool" not in help_text, language

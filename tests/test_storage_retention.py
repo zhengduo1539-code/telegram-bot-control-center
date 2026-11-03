@@ -62,28 +62,29 @@ async def test_active_post_status_removes_expiry(monkeypatch, status):
     assert update["$unset"] == {"expire_at": ""}
 
 
+
 @pytest.mark.asyncio
-async def test_queue_cleanup_only_targets_old_terminal_entries(monkeypatch):
+async def test_legacy_media_pool_schedules_are_paused_without_deletion(monkeypatch):
     fake_db = _DB()
 
     async def fake_get_db():
         return fake_db
 
     monkeypatch.setattr(database, "get_db", fake_get_db)
-    removed = await database.cleanup_expired_queue_history(days=30)
+    paused = await database.pause_legacy_pool_posts()
 
-    query, update = fake_db[database.COL_QUEUE_SLOTS].calls[0]
-    assert query == {}
-    clauses = update["$pull"]["contents"]["$or"]
-    assert {clause["state"] for clause in clauses} == {"posted", "failed"}
-    assert removed == 2
+    query, update = fake_db[database.COL_POSTS].calls[0]
+    assert query == {"recurrence.type": "pool", "status": "pending"}
+    assert update["$set"]["status"] == "paused"
+    assert update["$set"]["legacy_pause_reason"]
+    assert update["$unset"] == {"expire_at": ""}
+    assert paused == 2
 
 
-@pytest.mark.asyncio
-async def test_queue_cleanup_rejects_non_positive_retention(monkeypatch):
-    async def fail_get_db():
-        raise AssertionError("database should not be touched")
-
-    monkeypatch.setattr(database, "get_db", fail_get_db)
+def test_scheduled_post_builder_rejects_retired_pool_recurrence():
     with pytest.raises(ValueError):
-        await database.cleanup_expired_queue_history(days=0)
+        database.build_scheduled_post(
+            user_id=123,
+            chat_id=-1001234567890,
+            recurrence_type="pool",
+        )

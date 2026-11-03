@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 import pytest
 from schedule_utils import (
     is_future_datetime,
-    next_daily_slot,
     parse_hhmm,
     parse_schedule_datetime,
 )
@@ -14,25 +13,6 @@ def test_parse_hhmm_normalizes_and_validates():
     assert parse_hhmm("24:00") is None
     assert parse_hhmm("09:60") is None
     assert parse_hhmm("9") is None
-
-
-def test_next_daily_slot_uses_selected_timezone():
-    after = datetime(2026, 10, 31, 1, 0, tzinfo=timezone.utc)
-    assert next_daily_slot(["09:00", "14:00"], "Asia/Bangkok", after) == datetime(
-        2026, 10, 31, 2, 0, tzinfo=timezone.utc
-    )
-
-
-def test_next_daily_slot_rolls_forward_after_last_slot():
-    after = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
-    assert next_daily_slot(["09:00", "14:00"], "Asia/Bangkok", after) == datetime(
-        2026, 11, 1, 2, 0, tzinfo=timezone.utc
-    )
-
-
-def test_next_daily_slot_rejects_naive_datetime():
-    with pytest.raises(ValueError):
-        next_daily_slot(["09:00"], "UTC", datetime(2026, 10, 31))
 
 
 def test_is_future_datetime_requires_an_aware_future_value():
@@ -85,18 +65,6 @@ def test_parse_schedule_datetime_handles_daylight_saving_gaps_and_ambiguity():
 def test_parse_schedule_datetime_requires_aware_reference_datetime():
     with pytest.raises(ValueError):
         parse_schedule_datetime("09:00", "UTC", now=datetime(2026, 10, 31))
-
-
-def test_next_daily_slot_skips_nonexistent_dst_time_and_resolves_ambiguous_time():
-    before_spring_gap = datetime(2026, 3, 8, 5, 0, tzinfo=timezone.utc)
-    assert next_daily_slot(["02:30"], "America/New_York", before_spring_gap) == datetime(
-        2026, 3, 9, 6, 30, tzinfo=timezone.utc
-    )
-
-    before_fall_back = datetime(2026, 11, 1, 4, 0, tzinfo=timezone.utc)
-    assert next_daily_slot(["01:30"], "America/New_York", before_fall_back) == datetime(
-        2026, 11, 1, 6, 30, tzinfo=timezone.utc
-    )
 
 
 def test_next_weekday_slot_preserves_local_time_across_dst_gap():

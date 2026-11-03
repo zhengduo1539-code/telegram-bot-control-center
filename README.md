@@ -1,12 +1,11 @@
 # Schedule Bot
 
-A Telegram scheduling bot for group and channel publishers. It supports one-time posts, recurring schedules, timezone-aware daily queues and message lifecycle actions.
+A Telegram scheduling bot for group and channel publishers. It supports one-time posts, recurring schedules, timezone-aware delivery and message lifecycle actions.
 
 ## Main features
 
 - **Schedule New Post:** text, photos, videos, documents, audio, animations and voice messages.
 - **Recurring schedules:** repeat every N minutes, hours or days, or on selected weekdays.
-- **Daily Queue:** configure posting times such as 09:00, 14:00 and 20:00, then add content. The bot publishes one pending item per configured slot.
 - **Timezone support:** choose an IANA timezone; execution timestamps are persisted in UTC.
 - **Inline URL buttons:** add optional links below posts.
 - **Message lifecycle:** auto-pin/unpin, auto-delete and self-destruct.
@@ -17,7 +16,7 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 1. Add the bot to a group or channel.
 2. Give it permission to send messages. For channels, make it an administrator with **Post Messages** permission.
 3. Open a private chat with the bot and send /start.
-4. Choose **Schedule New Post**, **Manage Queue**, or **Media Pool**.
+4. Choose **Schedule New Post**.
 5. Follow the guided steps, review the summary and confirm.
 
 Only a group administrator or channel owner can create schedules for a target chat. The bot re-checks target permissions before saving.
@@ -30,14 +29,14 @@ English, Myanmar (မြန်မာ), Simplified Chinese, Spanish, Hindi, Arabi
 
 The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard. In private chat, feature actions use Reply Keyboards, while **Add to My Group** and **Share Bot** remain Inline Keyboard URL buttons. Telegram permits only one keyboard type per message, so a separate invisible anchor message displays the Reply Keyboard without adding a visible prompt. Workflow screens that contain their own inline navigation retain the existing Reply Keyboard bridge.
 
-Localized screens include the main menu, group-to-private onboarding, Help Guide, initial Schedule New Post steps, recurrence/timezone/first-run setup, Queue Manager overview and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
+Localized screens include the main menu, group-to-private onboarding, Help Guide, Schedule New Post setup, recurrence/timezone selection and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
 
 ## Project structure
 
 - main.py: Telegram application startup, ASGI lifecycle and health-server integration.
 - config.py: validated environment configuration.
-- database.py: MongoDB persistence, indexes, atomic queue claims and retention.
-- scheduler.py: recurring post execution, daily queue delivery and message lifecycle.
+- database.py: MongoDB persistence, indexes and scheduled-post retention.
+- scheduler.py: one-time and recurring post execution, plus message lifecycle actions.
 - schedule_utils.py: pure timezone-aware daily-slot calculations.
 - handlers/: guided user flows, owner tools and permission checks.
 - keep_alive.py: Render liveness/readiness endpoints.
@@ -62,7 +61,7 @@ Never commit credentials. Use .env.example only as a template.
 
 The included render.yaml uses build command pip install -r requirements.txt, start command uvicorn main:app --host 0.0.0.0 --port $PORT, liveness /healthz and readiness /health.
 
-Run one service instance only. This bot uses an in-process polling scheduler; multiple service instances would run multiple scheduler loops. MongoDB atomic queue claims provide a second layer of protection against duplicate queue claims.
+Run one service instance only. This bot uses an in-process polling scheduler; multiple service instances would run duplicate scheduler loops.
 
 ## Local development
 
@@ -80,7 +79,7 @@ Run one service instance only. This bot uses an in-process polling scheduler; mu
 - Completed and permanently failed scheduled posts expire after 30 days.
 - Paused schedules are retained until the user resumes or deletes them.
 - Completed lifecycle tasks expire automatically after their retention period.
-- When the bot is removed from a group, the group's scheduled posts, queues, media pools, activity and lifecycle tasks are cleaned up.
-- Daily Queue publishes one pending item per slot. Missed slots are not burst-sent; the next item waits for the next available slot.
+- When the bot is removed from a group, the group's scheduled posts, retained legacy records, activity and lifecycle tasks are cleaned up.
+- Retired Queue and Media Pool records are no longer processed; existing records remain available for cleanup rather than being automatically deleted.
 - Delivery can be delayed by up to one scheduler polling interval plus Telegram/network latency.
 - Render free instances may sleep; an HTTP health ping is not a guarantee that polling will never be interrupted.

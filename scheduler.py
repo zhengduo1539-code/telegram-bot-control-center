@@ -2,7 +2,7 @@
 scheduler.py — APScheduler engine that polls MongoDB and fires scheduled posts.
 
 Tick cadence : every 60 seconds (configurable via SCHEDULER_INTERVAL_SECS)
-Handles      : one-time, interval, days-of-week, and pool-based posts
+Handles      : one-time, interval, and days-of-week posts
 Lifecycle    : auto-delete, self-destruct, auto-pin/unpin
 Error policy : Forbidden/ChatNotFound → status='failed'
                Network/transient      → log + retry next tick
@@ -37,16 +37,7 @@ from database import (
     get_due_posts,
     update_post_status,
     increment_run_count,
-    pick_random_pool_item,
-    mark_pool_item_posted,
-    reset_media_pool,
-    get_due_queue_slots,
-    claim_queue_item,
-    update_queue_item,
-    set_queue_next_run,
-    cleanup_expired_queue_history,
     COL_POSTS,
-    COL_MEDIA_POOLS,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,7 +112,7 @@ def _is_within_window(post: dict[str, Any], now_utc: datetime) -> bool:
 def _compute_next_run(post: dict[str, Any], fired_at: datetime) -> datetime | None:
     """
     Given a post that just fired at `fired_at`, return the next UTC datetime to fire,
-    or None if the post should not fire again (one-time / pool exhausted).
+    or None if the post should not fire again (one-time schedule).
     """
     rec = post.get("recurrence", {})
     rec_type: str = rec.get("type", "once")
@@ -162,14 +153,6 @@ def _compute_next_run(post: dict[str, Any], fired_at: datetime) -> datetime | No
             slot = fired_at.astimezone(zone).strftime("%H:%M")
         return next_weekday_slot(days, resolved_tz_str, slot, fired_at)
 
-    if rec_type == "pool":
-        # Pool posts recur on a fixed interval; next_run uses the same interval logic
-        unit  = rec.get("interval_unit", "hours")
-        value = rec.get("interval_value", 24)
-        delta_map = {"minutes": timedelta(minutes=value),
-                     "hours":   timedelta(hours=value),
-                     "days":    timedelta(days=value)}
-        return fired_at + delta_map.get(unit, timedelta(hours=value))
 
     return None
 
@@ -336,173 +319,6 @@ async def _run_lifecycle_tasks(bot: Bot) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pool-post executor
-# ---------------------------------------------------------------------------
-
-async def _execute_pool_post(bot: Bot, post: dict[str, Any]) -> None:
-    """Pick a random un-posted pool item and send it."""
-    user_id: int = post["user_id"]
-    chat_id: int = post["chat_id"]
-    post_id = str(post["_id"])
-
-    item = await pick_random_pool_item(user_id, chat_id)
-
-    if item is None:
-        # All items posted — auto-reset and pick again
-        logger.info("Pool exhausted for user %s chat %s — resetting.", user_id, chat_id)
-        await reset_media_pool(user_id, chat_id)
-        item = await pick_random_pool_item(user_id, chat_id)
-
-    if item is None:
-        # Pool is completely empty
-        logger.warning("Pool is empty for user %s chat %s — pausing pool post.", user_id, chat_id)
-        await update_post_status(post_id, "paused")
-        return
-
-    # Build a transient post doc just for sending
-    ephemeral = dict(post)
-    ephemeral["content"] = {
-        "text":          item.get("text"),
-        "media_file_id": item.get("media_file_id"),
-        "media_type":    item.get("media_type"),
-    }
-
-    try:
-        sent_msg = await _send_post(bot, ephemeral)
-    except (Forbidden, BadRequest) as exc:
-        await update_post_status(post_id, "failed")
-        reason = (
-            "Bot was removed or blocked from the chat."
-            if isinstance(exc, Forbidden)
-            else str(exc)
-        )
-        await _notify_failure(bot, post, reason)
-        return
-    except (NetworkError, TimedOut):
-        return   # retry next tick
-
-    if sent_msg is None:
-        return
-
-    # Mark item as posted
-    await mark_pool_item_posted(user_id, chat_id, item.get("media_file_id"), item.get("text"))
-
-    # Handle lifecycle
-    await _handle_lifecycle(bot, post, sent_msg)
-
-    # Compute & store next run
-    now = datetime.now(tz=timezone.utc)
-    new_count = await increment_run_count(post_id)
-    next_run  = _compute_next_run(post, now)
-    if next_run:
-        db = await get_db()
-        await db[COL_POSTS].update_one(
-            {"_id": post["_id"]},
-            {"$set": {
-                "recurrence.next_run_at": next_run,
-                "updated_at": now,
-            }},
-        )
-    else:
-        await update_post_status(post_id, "posted")
-
-
-
-# ---------------------------------------------------------------------------
-# Daily queue executor
-# ---------------------------------------------------------------------------
-
-async def _execute_queue_slot(bot: Bot, queue: dict[str, Any], now: datetime) -> None:
-    """Claim and publish one pending item for this chat's next daily slot."""
-    user_id = int(queue["user_id"])
-    chat_id = int(queue["chat_id"])
-    claimed = await claim_queue_item(user_id, chat_id, now)
-    if claimed is None:
-        await set_queue_next_run(user_id, chat_id, now)
-        return
-    queue_doc, item = claimed
-    item_id = item["item_id"]
-    ephemeral = {
-        "_id": item_id,
-        "user_id": user_id,
-        "chat_id": chat_id,
-        "content": {
-            "text": item.get("text"),
-            "media_file_id": item.get("media_file_id"),
-            "media_type": item.get("media_type"),
-        },
-    }
-    try:
-        sent = await _send_post(bot, ephemeral)
-        if sent is None:
-            await update_queue_item(user_id, chat_id, item_id, "failed",
-                error="The queued item has no supported text or media content.")
-        else:
-            await update_queue_item(user_id, chat_id, item_id, "posted")
-            delete_hours = item.get("auto_delete_after_hours")
-            if delete_hours is not None and float(delete_hours) > 0:
-                fire_at = datetime.now(tz=timezone.utc) + timedelta(hours=float(delete_hours))
-                await _store_lifecycle_task(
-                    chat_id=chat_id,
-                    message_id=sent.message_id,
-                    action="delete",
-                    fire_at=fire_at,
-                )
-            logger.info("Queue item %s posted to chat %s.", item_id, chat_id)
-    except Forbidden as exc:
-        reason = "The bot cannot access this chat. Check its membership and posting permissions."
-        await update_queue_item(user_id, chat_id, item_id, "failed", error=reason)
-        await _notify_failure(bot, ephemeral, reason)
-        logger.warning("Queue item %s failed permanently: %s", item_id, exc)
-    except BadRequest as exc:
-        reason = f"Telegram rejected this queued message: {exc}"
-        await update_queue_item(user_id, chat_id, item_id, "failed", error=reason)
-        await _notify_failure(bot, ephemeral, reason)
-        logger.warning("Queue item %s rejected by Telegram: %s", item_id, exc)
-    except ChatMigrated as exc:
-        new_chat_id = int(exc.new_chat_id)
-        db = await get_db()
-        await db[COL_POSTS].update_many({"chat_id": chat_id}, {"$set": {"chat_id": new_chat_id, "updated_at": now}})
-        await db[COL_MEDIA_POOLS].update_many({"chat_id": chat_id}, {"$set": {"chat_id": new_chat_id, "updated_at": now}})
-        await db["queue_slots"].update_one({"_id": queue_doc["_id"]}, {"$set": {"chat_id": new_chat_id, "updated_at": now}})
-        await update_queue_item(user_id, new_chat_id, item_id, "pending")
-        await set_queue_next_run(user_id, new_chat_id, now)
-        logger.info("Daily queue chat migrated from %s to %s.", chat_id, new_chat_id)
-        return
-    except RetryAfter as exc:
-        delay = max(1, int(float(exc.retry_after)) + 1)
-        retry_at = now + timedelta(seconds=delay)
-        await update_queue_item(user_id, chat_id, item_id, "pending", error=f"Telegram rate limit; retry in {delay}s.")
-        await set_queue_next_run(user_id, chat_id, now, retry_at=retry_at)
-        logger.warning("Queue item %s rate-limited; retrying after %ss.", item_id, delay)
-        return
-    except (NetworkError, TimedOut) as exc:
-        retry_at = now + timedelta(seconds=60)
-        await update_queue_item(user_id, chat_id, item_id, "pending", error=f"Temporary network error: {exc}")
-        await set_queue_next_run(user_id, chat_id, now, retry_at=retry_at)
-        logger.warning("Queue item %s will retry after a temporary network error.", item_id)
-        return
-    except Exception as exc:
-        retry_at = now + timedelta(seconds=60)
-        await update_queue_item(user_id, chat_id, item_id, "pending", error=f"Unexpected error: {exc}")
-        await set_queue_next_run(user_id, chat_id, now, retry_at=retry_at)
-        logger.exception("Unexpected queue executor error for item %s.", item_id)
-        return
-    await set_queue_next_run(user_id, chat_id, now)
-
-
-async def _run_due_queue_slots(bot: Bot, now: datetime) -> None:
-    """Process due chats; one item per chat is published on each daily slot."""
-    queues = await get_due_queue_slots(now)
-    for queue in queues:
-        try:
-            await _execute_queue_slot(bot, queue, now)
-        except Exception:
-            logger.exception("Could not process daily queue for user=%s chat=%s.",
-                             queue.get("user_id"), queue.get("chat_id"))
-
-
-# ---------------------------------------------------------------------------
 # Main scheduler tick
 # ---------------------------------------------------------------------------
 
@@ -522,11 +338,6 @@ async def scheduler_tick(bot: Bot) -> None:
         logger.exception("Error in lifecycle tasks: %s", exc)
 
     try:
-        await _run_due_queue_slots(bot, now)
-    except Exception as exc:
-        logger.exception("Error processing daily queue slots: %s", exc)
-
-    try:
         due_posts = await get_due_posts(now)
     except Exception as exc:
         logger.exception("Error fetching due posts: %s", exc)
@@ -538,6 +349,13 @@ async def scheduler_tick(bot: Bot) -> None:
     for post in due_posts:
         post_id = str(post["_id"])
         rec_type = post.get("recurrence", {}).get("type", "once")
+
+        # Retire legacy Media Pool schedules defensively. The startup migration
+        # pauses pending records before this scheduler begins polling.
+        if rec_type == "pool":
+            logger.warning("Legacy Media Pool schedule %s is disabled; pausing it.", post_id)
+            await update_post_status(post_id, "paused")
+            continue
 
         # ── Time-window check ──
         if not _is_within_window(post, now):
@@ -554,14 +372,6 @@ async def scheduler_tick(bot: Bot) -> None:
                         {"_id": post["_id"]},
                         {"$set": {"recurrence.next_run_at": next_run, "updated_at": now}},
                     )
-            continue
-
-        # ── Pool posts ──
-        if rec_type == "pool":
-            try:
-                await _execute_pool_post(bot, post)
-            except Exception as exc:
-                logger.exception("Unhandled error in pool post %s: %s", post_id, exc)
             continue
 
         # ── Regular post ──
@@ -642,16 +452,6 @@ async def scheduler_tick(bot: Bot) -> None:
                 logger.exception("Failed to mark post %s as posted: %s", post_id, exc)
 
 
-async def cleanup_storage_history() -> None:
-    """Prune old terminal queue entries without touching active content."""
-    try:
-        removed = await cleanup_expired_queue_history()
-        if removed:
-            logger.info("Storage cleanup removed %d expired queue-history document(s).", removed)
-    except Exception:
-        logger.exception("Scheduled storage cleanup failed; it will retry at the next run.")
-
-
 # ---------------------------------------------------------------------------
 # Scheduler setup
 # ---------------------------------------------------------------------------
@@ -681,17 +481,8 @@ def setup_scheduler(bot: Bot, event_loop: Any = None) -> AsyncIOScheduler:
         coalesce=True,            # collapse missed fires into one
     )
 
-    scheduler.add_job(
-        cleanup_storage_history,
-        trigger="interval",
-        hours=24,
-        id="storage_retention_cleanup",
-        max_instances=1,
-        coalesce=True,
-    )
-
     logger.info(
-        "Scheduler configured — tick every %ds; storage cleanup every 24h",
+        "Scheduler configured — tick every %ds",
         SCHEDULER_INTERVAL_SECS,
     )
     return scheduler

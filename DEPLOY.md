@@ -37,12 +37,12 @@ Configure BOT_TOKEN, MONGODB_URI, ADMIN_IDS and optionally SCHEDULE_BOT_DATABASE
 - In Telegram, send /start and /ping.
 - Render logs should show MongoDB connected and APScheduler started.
 
-## 5. Verify Daily Queue
+## 5. Verify Schedule New Post
 
-1. Open **Manage Queue** in the bot's private chat.
-2. Choose **Set Daily Slots**, select a target chat, enter times in HH:MM format and choose the timezone.
-3. Choose **Add Content to Queue**, send text or supported media and confirm.
-4. The confirmation shows the next posting slot. **View Queue** shows queued, posted and failed content.
-5. Verify the message appears in the target group/channel at the configured time.
+1. Open the bot's private chat and send `/start`.
+2. Choose **Schedule New Post** and select a group or channel.
+3. Send the content, choose one-time or recurring delivery, and set the first posting time and timezone.
+4. Review the summary and confirm. Verify that the post appears in **My Posts**.
+5. Confirm the message is delivered at the selected time. For recurring schedules, verify the next run is shown and updated after delivery.
 
 Run exactly one Render instance for this polling bot. Do not commit real tokens or database credentials.

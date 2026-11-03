@@ -43,12 +43,12 @@ def test_main_menu_keeps_add_share_inline_and_feature_actions_in_reply_keyboard(
     assert {
         "action:schedule_new",
         "action:my_posts",
-        "action:manage_queue",
-        "action:media_pool",
         "action:my_stats",
         "nav:language",
         "nav:help",
     }.issubset(callback_data)
+    assert "action:manage_queue" not in callback_data
+    assert "action:media_pool" not in callback_data
     assert "nav:cancel" not in callback_data
     assert any(
         button.text == "❌ Cancel"
