@@ -13,6 +13,7 @@ from localization import (
     DEFAULT_LANGUAGE,
     LANGUAGES,
     language_button_pattern,
+    language_cancel_button_label,
     language_from_button,
     language_keyboard,
     normalize_language,
@@ -108,6 +109,29 @@ async def handle_language_choice(
     if update.effective_chat is None or update.effective_chat.type != ChatType.PRIVATE:
         return
     if not context.user_data.get("awaiting_language_choice"):
+        return
+
+    current_language = await resolve_user_language(context, user.id)
+    if message.text == language_cancel_button_label(current_language):
+        context.user_data.pop("awaiting_language_choice", None)
+        try:
+            await context.bot.delete_message(
+                chat_id=message.chat_id,
+                message_id=message.message_id,
+            )
+        except Exception as exc:
+            logger.debug("Could not remove language-picker exit message: %s", exc)
+
+        await message.reply_text(
+            translate(current_language, "menu_title"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        from handlers.base import main_menu_keyboard
+
+        await message.reply_text(
+            translate(current_language, "menu_title"),
+            reply_markup=main_menu_keyboard(context.bot, user.id, current_language),
+        )
         return
 
     language = language_from_button(message.text)
