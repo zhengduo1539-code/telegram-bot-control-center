@@ -145,7 +145,7 @@ def test_media_pool_intro_back_returns_to_main_menu(monkeypatch):
         inline, reply, routes = split_inline_keyboard(keyboard)
         assert inline is not None
         assert [button.text for row in inline.inline_keyboard for button in row] == [
-            "➕ Add to My Group", "📤 Share Bot"
+            translate("my", "add_group"), translate("my", "share_bot")
         ]
         assert reply is not None
         bot.delete_message.assert_awaited_once_with(chat_id=42, message_id=88)
