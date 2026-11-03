@@ -31,7 +31,7 @@ def _labels(markup):
     return [button.text for row in markup.keyboard for button in row]
 
 
-def test_only_add_to_group_and_share_bot_remain_inline():
+def test_every_button_becomes_a_reply_keyboard_choice():
     markup = InlineKeyboardMarkup(
         [
             [
@@ -59,16 +59,18 @@ def test_only_add_to_group_and_share_bot_remain_inline():
 
     inline, reply, routes = split_inline_keyboard(markup)
 
-    assert [
-        button.text for row in inline.inline_keyboard for button in row
-    ] == ["➕ Add to My Group", "📤 Share Bot"]
+    assert inline is None
     assert isinstance(reply, ReplyKeyboardMarkup)
     assert set(_labels(reply)) == {
+        "➕ Add to My Group",
+        "📤 Share Bot",
         "📅 Schedule New Post",
         "📋 My Posts",
         "🏠 Main Menu",
         "⚙️ Language",
     }
+    assert routes["➕ Add to My Group"]["type"] == "url"
+    assert routes["📤 Share Bot"]["type"] == "url"
     assert routes["📅 Schedule New Post"] == {
         "type": "callback",
         "data": "action:schedule_new",
