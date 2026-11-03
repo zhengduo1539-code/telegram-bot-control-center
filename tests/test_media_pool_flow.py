@@ -1,4 +1,5 @@
 """Regression tests for the Media Pool onboarding and scoped management flow."""
+from datetime import datetime, timezone
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -538,3 +539,67 @@ def test_media_pool_add_content_uses_manual_input_without_template_picker():
         and handler.callback.__name__ == "recv_mp_item"
         for handler in handlers
     )
+
+def test_media_pool_timezone_selection_freezes_exact_first_run_datetime(monkeypatch):
+    async def scenario():
+        resolved = datetime(2027, 12, 25, 2, 0, tzinfo=timezone.utc)
+        parser = lambda value, tz: resolved if (value, tz) == ("09:00", "Asia/Bangkok") else None
+        monkeypatch.setattr(media_pool, "parse_schedule_datetime", parser)
+        monkeypatch.setattr(media_pool, "resolve_user_language", AsyncMock(return_value="en"))
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            data="mptz:Asia/Bangkok",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={
+            "language": "en",
+            "mpwiz": {"first_run": "09:00", "tz_page": 0},
+        })
+
+        state = await media_pool.cb_mp_tz(SimpleNamespace(callback_query=query), context)
+
+        assert state == media_pool.MP_AUTO_DELETE
+        assert context.user_data["mpwiz"]["timezone"] == "Asia/Bangkok"
+        assert context.user_data["mpwiz"]["first_run_at"] == resolved
+        assert query.edit_message_text.await_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_media_pool_rejects_invalid_custom_time_when_timezone_is_selected(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(media_pool, "parse_schedule_datetime", lambda *_: None)
+        monkeypatch.setattr(media_pool, "resolve_user_language", AsyncMock(return_value="en"))
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            data="mptz:Asia/Bangkok",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={
+            "language": "en",
+            "mpwiz": {"first_run": "99:99", "tz_page": 0},
+        })
+
+        state = await media_pool.cb_mp_tz(SimpleNamespace(callback_query=query), context)
+
+        assert state == media_pool.MP_SET_FIRST_RUN
+        query.answer.assert_awaited_once()
+        assert "reply_markup" in query.edit_message_text.await_args.kwargs
+
+    asyncio.run(scenario())
+
+
+def test_media_pool_schedule_summary_displays_resolved_local_date_and_time():
+    scheduled = datetime(2027, 12, 25, 2, 0, tzinfo=timezone.utc)
+    summary = media_pool._mp_summary_text({
+        "mp_chat_title": "Publisher Group",
+        "interval_value": 6,
+        "interval_unit": "hours",
+        "first_run": "09:00",
+        "first_run_at": scheduled,
+        "timezone": "Asia/Bangkok",
+    }, "en")
+
+    assert "25/12/2027 09:00" in summary
