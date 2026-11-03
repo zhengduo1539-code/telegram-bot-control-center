@@ -53,6 +53,7 @@ from handlers.base import (
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from schedule_wizard_localization import translate_schedule_wizard as sw_tr
+from schedule_utils import parse_schedule_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -392,38 +393,8 @@ _DT_RE    = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})$")
 
 
 def _parse_run_time(text: str, tz: str) -> datetime | None:
-    """
-    Parse user-supplied date/time string into an aware datetime.
-    Accepts: "HH:MM" (today in the given tz) or "DD/MM/YYYY HH:MM".
-    Returns None on parse failure.
-    """
-    text = text.strip()
-    zone = pytz.timezone(tz) if tz != "UTC" else timezone.utc
-
-    m = _DT_RE.match(text)
-    if m:
-        d, mo, y, h, mi = (int(x) for x in m.groups())
-        try:
-            dt = datetime(y, mo, d, h, mi)
-            aware = zone.localize(dt, is_dst=None) if isinstance(zone, pytz.BaseTzInfo) else dt.replace(tzinfo=zone)
-            if aware.astimezone(timezone.utc) <= datetime.now(tz=timezone.utc):
-                return None
-            return aware
-        except (ValueError, pytz.AmbiguousTimeError, pytz.NonExistentTimeError):
-            return None
-
-    m = _TIME_RE.match(text)
-    if m:
-        h, mi = int(m.group(1)), int(m.group(2))
-        if h > 23 or mi > 59:
-            return None
-        now = datetime.now(tz=zone)
-        candidate = now.replace(hour=h, minute=mi, second=0, microsecond=0)
-        if candidate <= now:
-            candidate += timedelta(days=1)
-        return candidate
-
-    return None
+    """Parse the selected local time and return an aware UTC datetime."""
+    return parse_schedule_datetime(text, tz)
 
 
 def _parse_hhmm(text: str) -> str | None:
@@ -978,28 +949,29 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 # ---------------------------------------------------------------------------
 
 async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
+    raw = (update.message.text or "").strip()
     tz_str = _w(context).get("timezone", "UTC")
-
-    try:
-        dt = parse_user_datetime(text, tz_str)
-    except ValueError:
+    dt = _parse_run_time(raw, tz_str)
+    if dt is None:
         await update.message.reply_text(
-            "⚠️ Couldn't parse that. Use a future HH:MM or DD/MM/YYYY HH:MM time.\n"
-            "Example: 14:30 or 25/12/2025 09:00",
+            "⚠️ Couldn't validate that future time. Use HH:MM or DD/MM/YYYY HH:MM.\n"
+            "Example: 14:30 or 25/12/2027 09:00.",
         )
         return WIZARD_FIRST_RUN
 
-    _w(context)["first_run"] = dt
-    _w(context)["first_run_raw"] = text
-    _w(context).setdefault("time_window_enabled", False)
+    w = _w(context)
+    w["first_run"] = dt
+    w["first_run_raw"] = raw
+    w.setdefault("time_window_enabled", False)
     language = context.user_data.get("language", "en")
+    local_display = dt.astimezone(pytz.timezone(tz_str)).strftime("%d/%m/%Y %H:%M")
     await update.message.reply_text(
-        f"✅ First run: {text} ({tz_str})\n\n{tr(language, 'max_runs_prompt')}",
+        f"✅ First run: `{local_display}` ({tz_str})\n\n{tr(language, 'max_runs_prompt')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
     )
     return WIZARD_MAX_RUNS
+
 
 # ---------------------------------------------------------------------------
 # Back to first run
@@ -1031,7 +1003,7 @@ async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "Come back after the bot has been active there for a while.\n\n"
             "For now, type the time manually:\n"
             "• `HH:MM` — e.g. `09:00`\n"
-            "• `DD/MM/YYYY HH:MM` — e.g. `25/12/2025 09:00`",
+            "• `DD/MM/YYYY HH:MM` — e.g. `25/12/2027 09:00`",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN)],
@@ -1092,8 +1064,9 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     tz_str = w.get("timezone", "UTC")
     await query.answer()
+    local_display = dt.astimezone(pytz.timezone(tz_str)).strftime("%d/%m/%Y %H:%M")
     await query.edit_message_text(
-        f"✅ First run: `{time_str}` ({tz_str})\n\n"
+        f"✅ First run: `{local_display}` ({tz_str})\n\n"
         "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
         "How many times should this post be sent?\n\n"
         "Tap a preset or type a custom number:",
@@ -1132,8 +1105,8 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         f"{tr(context.user_data.get('language', 'en'), 'first_run_prompt')}\\n\\n"
         "When should this post fire?\n\n"
         "Type the date/time:\n"
-        "• `HH:MM` — today at this time (e.g. `14:30`)\n"
-        "• `DD/MM/YYYY HH:MM` — specific date (e.g. `25/12/2025 09:00`)\n\n"
+        "• `HH:MM` — the next occurrence (today if upcoming, otherwise tomorrow; e.g. `14:30`)\n"
+        "• `DD/MM/YYYY HH:MM` — specific date (e.g. `25/12/2027 09:00`)\n\n"
         "Or tap *💡 Suggest Best Time* to see active hours for this chat.",
         _first_run_keyboard(CB_BACK_TIMEZONE),
     )
@@ -1583,6 +1556,21 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer("Saving…")
 
     w = _w(context)
+    first_run = w.get("first_run")
+    if (
+        not isinstance(first_run, datetime)
+        or first_run.tzinfo is None
+        or first_run.utcoffset() is None
+        or first_run.astimezone(timezone.utc) <= datetime.now(tz=timezone.utc)
+    ):
+        language = context.user_data.get("language", "en")
+        await query.edit_message_text(
+            "⚠️ The selected first-run time has passed. Please enter a new future time.\n\n"
+            "Use `HH:MM` or `DD/MM/YYYY HH:MM`.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
+        )
+        return WIZARD_FIRST_RUN
     user_id: int = query.from_user.id  # type: ignore[union-attr]
 
     try:
