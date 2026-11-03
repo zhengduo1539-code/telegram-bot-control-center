@@ -85,3 +85,33 @@ def test_parse_schedule_datetime_handles_daylight_saving_gaps_and_ambiguity():
 def test_parse_schedule_datetime_requires_aware_reference_datetime():
     with pytest.raises(ValueError):
         parse_schedule_datetime("09:00", "UTC", now=datetime(2026, 10, 31))
+
+
+def test_next_daily_slot_skips_nonexistent_dst_time_and_resolves_ambiguous_time():
+    before_spring_gap = datetime(2026, 3, 8, 5, 0, tzinfo=timezone.utc)
+    assert next_daily_slot(["02:30"], "America/New_York", before_spring_gap) == datetime(
+        2026, 3, 9, 6, 30, tzinfo=timezone.utc
+    )
+
+    before_fall_back = datetime(2026, 11, 1, 4, 0, tzinfo=timezone.utc)
+    assert next_daily_slot(["01:30"], "America/New_York", before_fall_back) == datetime(
+        2026, 11, 1, 6, 30, tzinfo=timezone.utc
+    )
+
+
+def test_next_weekday_slot_preserves_local_time_across_dst_gap():
+    from schedule_utils import next_weekday_slot
+
+    fired_at = datetime(2026, 3, 1, 7, 30, tzinfo=timezone.utc)  # Sunday 02:30 EST
+    assert next_weekday_slot([6], "America/New_York", "02:30", fired_at) == datetime(
+        2026, 3, 15, 6, 30, tzinfo=timezone.utc
+    )
+
+
+def test_next_weekday_slot_uses_standard_time_for_ambiguous_wall_clock():
+    from schedule_utils import next_weekday_slot
+
+    fired_at = datetime(2026, 10, 25, 5, 30, tzinfo=timezone.utc)  # Sunday 01:30 EDT
+    assert next_weekday_slot([6], "America/New_York", "01:30", fired_at) == datetime(
+        2026, 11, 1, 6, 30, tzinfo=timezone.utc
+    )
