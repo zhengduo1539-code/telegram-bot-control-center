@@ -221,6 +221,8 @@ async def handle_reply_keyboard_message(
         chat_cleanup.track(context.application.bot_data, chat.id, message.message_id)
 
     if route["type"] == "url":
+        if is_private_chat(chat.id):
+            await _delete_private_keyboard_tap(message, context, chat.id)
         await message.reply_text(f"🔗 Open this link:\n{route['url']}")
         raise ApplicationHandlerStop
     if route["type"] != "callback":
