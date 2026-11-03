@@ -122,10 +122,6 @@ async def handle_language_choice(
         except Exception as exc:
             logger.debug("Could not remove language-picker exit message: %s", exc)
 
-        await message.reply_text(
-            translate(current_language, "menu_title"),
-            reply_markup=ReplyKeyboardRemove(),
-        )
         from handlers.base import main_menu_keyboard
 
         await message.reply_text(
