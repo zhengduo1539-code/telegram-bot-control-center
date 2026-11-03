@@ -53,7 +53,7 @@ from handlers import chat_cleanup
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.base import (
     CB_CANCEL, CB_MAIN_MENU, cmd_cancel, nav_keyboard, confirm_keyboard,
-    main_menu_keyboard, main_menu_links,
+    main_menu_keyboard, main_menu_links, replace_with_main_menu_message,
 )
 from handlers.language import resolve_user_language
 from localization import translate as tr
@@ -579,14 +579,12 @@ async def cb_qm_back_main_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.pop("active_queue_manager", None)
     _clear(context)
     await query.answer()
-    await query.edit_message_text(
+    await replace_with_main_menu_message(
+        query,
+        context,
         f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu_keyboard(
-            bot=context.bot,
-            user_id=query.from_user.id,
-            language=language,
-        ),
+        query.from_user.id,
+        language,
     )
     return ConversationHandler.END
 async def cb_qm_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2603,14 +2601,12 @@ async def cb_mp_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data.pop("active_media_pool", None)
     _clear_mp(context)
     await query.answer()
-    await query.edit_message_text(
+    await replace_with_main_menu_message(
+        query,
+        context,
         f"{tr(language, 'menu_title')}\n\n{main_menu_links(context.bot, language)}",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu_keyboard(
-            bot=context.bot,
-            user_id=query.from_user.id,
-            language=language,
-        ),
+        query.from_user.id,
+        language,
     )
     return ConversationHandler.END
 
@@ -3015,14 +3011,12 @@ async def cb_cancel_local(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     else:
         cancel_text = "❌ *Cancelled.* Back to Main Menu."
     menu_language = language if (is_media_pool or is_queue_manager) else "en"
-    await query.edit_message_text(
+    await replace_with_main_menu_message(
+        query,
+        context,
         f"{cancel_text}\n\n{main_menu_links(context.bot, menu_language)}",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu_keyboard(
-            bot=context.bot,
-            user_id=user_id,
-            language=menu_language,
-        ),
+        user_id,
+        menu_language,
     )
     return ConversationHandler.END
 def build_queue_manager() -> ConversationHandler:

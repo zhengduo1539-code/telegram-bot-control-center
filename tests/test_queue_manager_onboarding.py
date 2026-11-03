@@ -64,10 +64,14 @@ def test_queue_entry_continue_and_back_follow_expected_navigation(monkeypatch):
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
         )
+        bot = SimpleNamespace(
+            send_message=AsyncMock(return_value=SimpleNamespace(message_id=89)),
+            delete_message=AsyncMock(return_value=True),
+        )
         context = SimpleNamespace(
             user_data={},
             application=SimpleNamespace(bot_data={}),
-            bot=None,
+            bot=bot,
         )
         update = SimpleNamespace(callback_query=query)
 
@@ -110,9 +114,10 @@ def test_queue_entry_continue_and_back_follow_expected_navigation(monkeypatch):
         assert state == queue.ConversationHandler.END
         assert "active_queue_manager" not in context.user_data
         assert "qwiz" not in context.user_data
-        menu_text = query.edit_message_text.await_args.args[0]
+        menu_text = bot.send_message.await_args.kwargs["text"]
         assert menu_text.startswith(translate("my", "menu_title"))
         assert "https://t.me/share/url?" in menu_text
+        bot.delete_message.assert_awaited_once_with(chat_id=42, message_id=88)
 
     asyncio.run(scenario())
 
