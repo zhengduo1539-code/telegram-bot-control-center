@@ -1016,21 +1016,16 @@ async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return AUTO_DELETE
 
 async def recv_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw = (update.message.text or "").strip()
-    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw, re.I)
-    if not match:
-        await update.message.reply_text(_flow(_w(context), "delete_invalid"))
-        return AUTO_DELETE
-    amount, unit = int(match.group(1)), match.group(2).lower()
-    minutes = amount if unit in {"m", "min", "mins", "minute", "minutes"} else amount * 60
-    if not 5 <= minutes <= 525600:
-        await update.message.reply_text(_flow(_w(context), "delete_invalid"))
-        return AUTO_DELETE
     w = _w(context)
-    w.update(auto_delete=True, self_destruct=False, ad_hours=minutes / 60)
+    raw = (update.message.text or "").strip()
+    value = _duration_to_hours(raw, max_minutes=525600, language=_lang(w))
+    if value is None:
+        await update.message.reply_text(_flow(w, "delete_invalid"))
+        return AUTO_DELETE
+    w.update(auto_delete=True, self_destruct=False, ad_hours=value)
     w.pop("sd_secs", None)
-    w["ad_duration_label"] = _flow(w, "delete_after", value=minutes / 60)
-    return await _home(context, w, _flow(w, "delete_saved", value=w.get("ad_duration_label")))
+    w["ad_duration_label"] = _duration_label(value, _lang(w))
+    return await _home(context, w, _flow(w, "delete_saved", value=w["ad_duration_label"]))
 
 
 async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
