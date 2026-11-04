@@ -236,7 +236,8 @@ async def handle_reply_keyboard_message(
     if not route:
         return
     from handlers.language import resolve_user_language
-    language = await resolve_user_language(context, user.id)
+    user_data = getattr(context, "user_data", None)
+    language = await resolve_user_language(context, user.id) if isinstance(user_data, dict) else "en"
     if not is_private_chat(chat.id) and route["type"] != "url":
         return
     if not is_private_chat(chat.id):
