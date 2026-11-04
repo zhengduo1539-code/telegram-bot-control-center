@@ -1004,71 +1004,67 @@ async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return WIZARD_TIMEZONE
 async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start interval recurrence and clear values belonging to other modes."""
-    w = _w(context)
-    w["recurrence_type"] = "interval"
-    w.pop("days_of_week", None)
-    w.pop("interval_value", None)
-    w.pop("interval_unit", None)
+    draft = _w(context)
+    draft["recurrence_type"] = "interval"
+    draft.pop("days_of_week", None)
+    draft.pop("interval_value", None)
+    draft.pop("interval_unit", None)
     query = update.callback_query
-    language = context.user_data.get("language", "en")
+    language = _language(context)
     await _edit(
         query,
-        f"{tr(language, 'recurrence_interval')}\n\n"
-        "Enter a whole number from 1 to 525,600. You will choose minutes, hours, or days next.\n"
-        "Examples: 30 minutes, 6 hours, or 1 day.",
-        nav_keyboard(back_data=CB_BACK_RECURRENCE),
+        flow_tr(language, "interval_value_prompt"),
+        _wizard_nav_keyboard(context, CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
+
 async def cb_rec_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start weekly recurrence and clear interval-only values."""
-    w = _w(context)
-    w["recurrence_type"] = "days_of_week"
-    w.pop("interval_value", None)
-    w.pop("interval_unit", None)
-    w["days_of_week"] = set()
+    draft = _w(context)
+    draft["recurrence_type"] = "days_of_week"
+    draft.pop("interval_value", None)
+    draft.pop("interval_unit", None)
+    draft["days_of_week"] = set()
     query = update.callback_query
-    language = context.user_data.get("language", "en")
+    language = _language(context)
     await _edit(
         query,
-        f"{tr(language, 'recurrence_days')}\n\n"
-        "Select every day on which this post should be published. You can select more than one day.\n"
-        "Tap Next when your selection is complete.",
-        _dow_keyboard(w["days_of_week"]),
+        flow_tr(language, "days_prompt"),
+        _dow_keyboard(draft["days_of_week"], language),
     )
     return WIZARD_DOW_SELECT
+
 async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
+    language = _language(context)
     if not raw.isdecimal() or not (1 <= int(raw) <= 525600):
         await update.message.reply_text(
-            "⚠️ Enter a whole number from 1 to 525,600. For example, 6.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_RECURRENCE),
+            flow_tr(language, "interval_invalid"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_RECURRENCE),
         )
         return WIZARD_INTERVAL_VALUE
-    w = _w(context)
-    w["interval_value"] = int(raw)
-    w.pop("interval_unit", None)
+    draft = _w(context)
+    draft["interval_value"] = int(raw)
+    draft.pop("interval_unit", None)
     await update.message.reply_text(
-        f"✅ Interval value: {raw}\n\n"
-        "Choose the unit for this interval.",
-        reply_markup=_interval_unit_keyboard(),
+        flow_tr(language, "interval_unit_prompt"),
+        reply_markup=_interval_unit_keyboard(language),
     )
     return WIZARD_INTERVAL_UNIT
+
 async def cb_back_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await _edit(query,
-        "⏱ *Step 3a — Interval Value*\n\n"
-        "Type a positive whole number (e.g. `6`):",
-        nav_keyboard(back_data=CB_BACK_RECURRENCE),
+    language = _language(context)
+    await _edit(
+        query,
+        flow_tr(language, "interval_value_prompt"),
+        _wizard_nav_keyboard(context, CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
-
-
-# ---------------------------------------------------------------------------
-# Step 3b (interval) — unit
-# ---------------------------------------------------------------------------
 
 async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = _language(context)
     unit_map = {
         CB_IU_MINUTES: "minutes",
         CB_IU_HOURS: "hours",
@@ -1076,200 +1072,191 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     }
     unit = unit_map.get(query.data)
     if unit is None:
-        await query.answer("Choose minutes, hours, or days.", show_alert=True)
+        await query.answer(flow_tr(language, "unit_invalid"), show_alert=True)
         return WIZARD_INTERVAL_UNIT
     value = _w(context).get("interval_value")
     limits = {"minutes": 525600, "hours": 8760, "days": 365}
     if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= limits[unit]:
-        await query.answer(
-            f"Enter an interval from 1 to {limits[unit]} {unit}.",
-            show_alert=True,
-        )
+        await query.answer(flow_tr(language, "interval_invalid"), show_alert=True)
         return WIZARD_INTERVAL_VALUE
-    w = _w(context)
-    w["interval_unit"] = unit
-    language = context.user_data.get("language", "en")
+    _w(context)["interval_unit"] = unit
+    unit_label = flow_tr(language, f"unit_{unit}")
     await _edit(
         query,
-        f"✅ Repeat: every {value} {unit}.\n\n{tr(language, 'timezone_prompt')}",
+        f"{flow_tr(language, 'interval_confirm', value=value, unit=unit_label)}\n\n"
+        f"{tr(language, 'timezone_prompt')}",
         _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
+
 async def cb_dow_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = _language(context)
     day = int(query.data.split(":")[1])
-    w = _w(context)
-    selected: set[int] = w.setdefault("days_of_week", set())
+    draft = _w(context)
+    selected: set[int] = draft.setdefault("days_of_week", set())
     if day in selected:
         selected.discard(day)
     else:
         selected.add(day)
-    await query.answer(f"{'✅' if day in selected else '☐'} {DOW_LABELS[day]}")
-    await query.edit_message_reply_markup(_dow_keyboard(selected))
+    labels = _locale_weekdays(language)
+    await query.answer(f"{'✅' if day in selected else '☐'} {labels[day]}")
+    await query.edit_message_reply_markup(_dow_keyboard(selected, language))
     return WIZARD_DOW_SELECT
-
 
 async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    w = _w(context)
-    selected: set[int] = w.get("days_of_week", set())
+    draft = _w(context)
+    selected: set[int] = draft.get("days_of_week", set())
+    language = _language(context)
     if not selected:
-        await query.answer("⚠️ Please select at least one day.", show_alert=True)
+        await query.answer(flow_tr(language, "day_required"), show_alert=True)
         return WIZARD_DOW_SELECT
-    language = context.user_data.get("language", "en")
+    labels = _locale_weekdays(language)
+    days_label = ", ".join(labels[day] for day in sorted(selected))
     await _edit(
         query,
-        f"✅ Days: `{', '.join(DOW_LABELS[d] for d in sorted(selected))}`\n\n{tr(language, 'timezone_prompt')}",
+        f"✅ {days_label}\n\n{tr(language, 'timezone_prompt')}",
         _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
 
-# ---------------------------------------------------------------------------
-# Step 4 — First run time
-# ---------------------------------------------------------------------------
-
 async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Parse a local future date/time and show only relevant delivery options."""
     raw = (update.message.text or "").strip()
-    w = _w(context)
-    timezone_name = w.get("timezone", "UTC")
+    draft = _w(context)
+    language = _language(context)
+    timezone_name = draft.get("timezone", "UTC")
     dt = _parse_run_time(raw, timezone_name)
     if dt is None:
         await update.message.reply_text(
-            "⚠️ That time could not be validated as a future time or date.\n\n"
-            "Enter a 24-hour time such as 14:30 for the next occurrence, or "
-            "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.",
-            reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
+            flow_tr(language, "invalid_first_time"),
+            reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE, language),
         )
         return WIZARD_FIRST_RUN
 
-    w["first_run"] = dt
-    w["first_run_raw"] = raw
-    w.setdefault("time_window_enabled", False)
+    draft["first_run"] = dt
+    draft["first_run_raw"] = raw
+    draft.setdefault("time_window_enabled", False)
     local_display = dt.astimezone(pytz.timezone(timezone_name)).strftime("%d/%m/%Y %H:%M")
-    one_time = w.get("recurrence_type") == "once"
+    one_time = draft.get("recurrence_type") == "once"
     if one_time:
-        w["max_runs"] = 1
+        draft["max_runs"] = 1
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            "🔢 *One-time delivery*\n"
-            "This post will be sent once at the selected time. No repeat count is needed."
+            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
+            f"{local_display} ({timezone_name})\n\n{flow_tr(language, 'one_time_delivery')}"
         )
     else:
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}"
+            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
+            f"{local_display} ({timezone_name})\n\n{tr(language, 'max_runs_prompt')}"
         )
     await update.message.reply_text(
         prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(one_time=one_time),
+        reply_markup=_max_runs_keyboard(one_time=one_time, language=language),
     )
     return WIZARD_MAX_RUNS
+
 async def cb_back_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Return to the First Run screen."""
+    """Return to the localized First Run screen."""
     query = update.callback_query
-    language = context.user_data.get("language", "en")
-    await _edit(query, tr(language, "first_run_prompt"), _first_run_keyboard(CB_BACK_TIMEZONE))
+    language = _language(context)
+    await _edit(
+        query,
+        tr(language, "first_run_prompt"),
+        _first_run_keyboard(CB_BACK_TIMEZONE, language),
+    )
     return WIZARD_FIRST_RUN
 
-_MEDAL = ["🥇", "🥈", "🥉"]
-
-
 async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show top active hours for the chosen chat as tappable time buttons."""
+    """Show top active hours for the chosen chat as localized tappable suggestions."""
     query = update.callback_query
+    language = _language(context)
     await query.answer()
-
     chat_id = _w(context).get("chat_id")
     results = await get_best_hours(chat_id, top_n=3) if chat_id else []
 
     if not results:
         await query.edit_message_text(
-            "💡 *Smart Scheduling*\n\n"
-            "⚠️ *Not enough data yet.*\n\n"
-            "The bot learns active hours by observing messages in the group. "
-            "Come back after the bot has been active there for a while.\n\n"
-            "For now, type the time manually:\n"
-            "• `HH:MM` — e.g. `09:00`\n"
-            "• `DD/MM/YYYY HH:MM` — e.g. `25/12/2027 09:00`",
+            flow_tr(language, "smart_no_data"),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN)],
-            ]),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_FIRST_RUN)
+            ]]),
         )
         return WIZARD_FIRST_RUN
 
-    total = sum(r["count"] for r in results)
+    total = sum(result["count"] for result in results)
 
-    def _label(count: int) -> str:
-        pct = count / total * 100 if total else 0
-        if pct >= 40:
-            return "high activity"
-        if pct >= 20:
-            return "good activity"
-        return "moderate activity"
+    def activity_label(count: int) -> str:
+        percentage = count / total * 100 if total else 0
+        if percentage >= 40:
+            return flow_tr(language, "activity_high")
+        if percentage >= 20:
+            return flow_tr(language, "activity_good")
+        return flow_tr(language, "activity_moderate")
 
     lines = []
-    btn_rows: list[list[InlineKeyboardButton]] = []
-    for i, r in enumerate(results):
-        h = r["hour"]
-        time_str = f"{h:02d}:00"
-        medal = _MEDAL[i] if i < 3 else "•"
-        lines.append(f"{medal} *{time_str}* — {_label(r['count'])} ({r['count']} msgs)")
-        btn_rows.append([InlineKeyboardButton(
-            f"{medal} {time_str}",
+    button_rows: list[list[InlineKeyboardButton]] = []
+    for index, result in enumerate(results):
+        time_label = f"{result['hour']:02d}:00"
+        medal = _MEDAL[index] if index < 3 else "•"
+        lines.append(f"{medal} *{time_label}* — {activity_label(result['count'])} ({result['count']})")
+        button_rows.append([InlineKeyboardButton(
+            f"{medal} {time_label}",
             style="primary",
-            callback_data=f"{CB_SMART_PICK_PREFIX}{time_str}",
+            callback_data=f"{CB_SMART_PICK_PREFIX}{time_label}",
         )])
-
-    btn_rows.append([InlineKeyboardButton("✏️ Enter custom time", style="primary", callback_data=CB_BACK_FIRST_RUN)])
-
+    button_rows.append([InlineKeyboardButton(
+        flow_tr(language, "smart_custom"), style="primary", callback_data=CB_BACK_FIRST_RUN
+    )])
     await query.edit_message_text(
-        "💡 *Suggested Best Times*\n\n"
-        "Based on message activity in this chat:\n\n" +
-        "\n".join(lines) +
-        "\n\nTap a time to use it, or enter a custom time:",
+        f"{flow_tr(language, 'smart_heading')}\n\n"
+        f"{flow_tr(language, 'smart_context')}\n\n"
+        + "\n".join(lines)
+        + f"\n\n{flow_tr(language, 'smart_custom')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup(btn_rows),
+        reply_markup=InlineKeyboardMarkup(button_rows),
     )
     return WIZARD_FIRST_RUN
-
 
 async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Apply a suggested local time and route to the matching delivery-limit step."""
     query = update.callback_query
+    language = _language(context)
     time_str = (query.data or "").replace(CB_SMART_PICK_PREFIX, "", 1)
-    w = _w(context)
-    timezone_name = w.get("timezone", "UTC")
+    draft = _w(context)
+    timezone_name = draft.get("timezone", "UTC")
     dt = _parse_run_time(time_str, timezone_name)
     if dt is None:
-        await query.answer("That suggested time is no longer available. Enter a future time manually.", show_alert=True)
+        await query.answer(flow_tr(language, "smart_unavailable"), show_alert=True)
         return WIZARD_FIRST_RUN
 
-    w["first_run"] = dt
-    w["first_run_raw"] = time_str
-    w.setdefault("time_window_enabled", False)
-    one_time = w.get("recurrence_type") == "once"
+    draft["first_run"] = dt
+    draft["first_run_raw"] = time_str
+    draft.setdefault("time_window_enabled", False)
+    one_time = draft.get("recurrence_type") == "once"
     local_display = dt.astimezone(pytz.timezone(timezone_name)).strftime("%d/%m/%Y %H:%M")
     if one_time:
-        w["max_runs"] = 1
+        draft["max_runs"] = 1
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            "🔢 *One-time delivery*\nThis post will be sent once at the selected time."
+            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
+            f"{local_display} ({timezone_name})\n\n{flow_tr(language, 'one_time_delivery')}"
         )
     else:
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}"
+            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
+            f"{local_display} ({timezone_name})\n\n{tr(language, 'max_runs_prompt')}"
         )
     await query.answer()
     await query.edit_message_text(
         prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(one_time=one_time),
+        reply_markup=_max_runs_keyboard(one_time=one_time, language=language),
     )
     return WIZARD_MAX_RUNS
+
 async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     page = int(query.data.replace(CB_TZ_PAGE, ""))
@@ -1280,26 +1267,22 @@ async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    tz_name = (query.data or "").replace("tz:", "", 1)
+    timezone_name = (query.data or "").replace("tz:", "", 1)
+    language = _language(context)
     try:
-        pytz.timezone(tz_name)
+        pytz.timezone(timezone_name)
     except (pytz.exceptions.UnknownTimeZoneError, TypeError):
-        await query.answer("Unknown timezone. Please choose one from the list.", show_alert=True)
+        await query.answer(flow_tr(language, "timezone_invalid"), show_alert=True)
         return WIZARD_TIMEZONE
 
-    w = _w(context)
-    w["timezone"] = tz_name
-    language = context.user_data.get("language", "en")
+    _w(context)["timezone"] = timezone_name
     await _edit(
         query,
-        f"✅ Timezone: {escape_markdown(tz_name, version=1)}\n\n"
-        f"{tr(language, 'first_run_prompt')}\n\n"
-        "Enter a 24-hour time such as 14:30 for the next occurrence, or "
-        "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.\n\n"
-        "Or tap Suggest Best Time to choose from the group's recent activity.",
-        _first_run_keyboard(CB_BACK_TIMEZONE),
+        f"✅ {escape_markdown(timezone_name, version=1)}\n\n{tr(language, 'first_run_prompt')}",
+        _first_run_keyboard(CB_BACK_TIMEZONE, language),
     )
     return WIZARD_FIRST_RUN
+
 async def cb_back_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Called from First Run back button — return to Timezone picker."""
     query = update.callback_query
@@ -1311,369 +1294,339 @@ async def cb_back_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Called from Timezone back button — smart-routes to recurrence/interval-unit/DOW."""
+    """Return from Timezone to the correct localized recurrence sub-step."""
     query = update.callback_query
-    w = _w(context)
-    rec_type = w.get("recurrence_type", "once")
-    if rec_type == "days_of_week":
-        await _edit(query,
-            "📆 *Step 3a — Days of Week*\n\nTap days to toggle, then ➡️ Next.",
-            _dow_keyboard(w.get("days_of_week", set())),
-        )
+    draft = _w(context)
+    language = _language(context)
+    recurrence = draft.get("recurrence_type", "once")
+    if recurrence == "days_of_week":
+        await _edit(query, flow_tr(language, "days_prompt"), _dow_keyboard(draft.get("days_of_week", set()), language))
         return WIZARD_DOW_SELECT
-    elif rec_type == "interval":
-        await _edit(query,
-            f"✅ Value: `{w.get('interval_value')}`\n\n"
-            "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
-            _interval_unit_keyboard(),
+    if recurrence == "interval":
+        await _edit(
+            query,
+            f"{flow_tr(language, 'interval_unit_prompt')}\n\n"
+            f"{draft.get('interval_value', '')}",
+            _interval_unit_keyboard(language),
         )
         return WIZARD_INTERVAL_UNIT
-    else:
-        await _edit(query,
-            tr(context.user_data.get("language", "en"), "recurrence_prompt"),
-            _recurrence_keyboard(context.user_data.get("language", "en")),
-        )
-        return WIZARD_RECURRENCE
+    await _edit(query, tr(language, "recurrence_prompt"), _recurrence_keyboard(language))
+    return WIZARD_RECURRENCE
 
-
-# ---------------------------------------------------------------------------
-# Step 6 — Max runs
-# ---------------------------------------------------------------------------
-
-def _max_runs_keyboard(one_time: bool = False) -> InlineKeyboardMarkup:
+def _max_runs_keyboard(one_time: bool = False, language: str = "en") -> InlineKeyboardMarkup:
     """Only show delivery-limit choices that apply to this recurrence."""
     if one_time:
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ One-Time Post — 1 Send", style="success", callback_data=f"{CB_MR_PRESET}1")],
+            [InlineKeyboardButton(
+                flow_tr(language, "one_time_button"), style="success",
+                callback_data=f"{CB_MR_PRESET}1"
+            )],
             [
-                InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN),
-                InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+                InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_FIRST_RUN),
+                InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
             ],
         ])
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("1× One time", style="primary", callback_data=f"{CB_MR_PRESET}1"),
+            InlineKeyboardButton(f"1× {flow_tr(language, 'repeat_once')}", style="primary", callback_data=f"{CB_MR_PRESET}1"),
             InlineKeyboardButton("5×", style="primary", callback_data=f"{CB_MR_PRESET}5"),
             InlineKeyboardButton("10×", style="primary", callback_data=f"{CB_MR_PRESET}10"),
         ],
         [
             InlineKeyboardButton("30×", style="primary", callback_data=f"{CB_MR_PRESET}30"),
-            InlineKeyboardButton("∞ Unlimited", style="primary", callback_data=f"{CB_MR_PRESET}0"),
+            InlineKeyboardButton(f"∞ {flow_tr(language, 'unlimited')}", style="primary", callback_data=f"{CB_MR_PRESET}0"),
         ],
         [
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_FIRST_RUN),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
+
 async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Accept bounded positive custom counts for recurring schedules only."""
     text = (update.message.text or "").strip()
-    w = _w(context)
-    one_time = w.get("recurrence_type") == "once"
+    draft = _w(context)
+    language = _language(context)
+    one_time = draft.get("recurrence_type") == "once"
     if one_time:
-        w["max_runs"] = 1
+        draft["max_runs"] = 1
         await update.message.reply_text(
-            "This is a one-time post, so its delivery limit is already set to one.",
-            reply_markup=_max_runs_keyboard(one_time=True),
+            flow_tr(language, "one_time_already"),
+            reply_markup=_max_runs_keyboard(one_time=True, language=language),
         )
         return WIZARD_MAX_RUNS
     if not text.isdecimal() or not (1 <= int(text) <= 100000):
         await update.message.reply_text(
-            "⚠️ Enter a whole number from 1 to 100,000 (for example, 7). "
-            "Choose Unlimited below for an unlimited schedule.",
-            reply_markup=_max_runs_keyboard(),
+            flow_tr(language, "count_invalid"),
+            reply_markup=_max_runs_keyboard(language=language),
         )
         return WIZARD_MAX_RUNS
 
     value = int(text)
-    w["max_runs"] = value
-    w.setdefault("time_window_enabled", False)
-    w.setdefault("auto_delete", False)
-    w.setdefault("self_destruct", False)
-    w.setdefault("auto_pin", False)
+    draft["max_runs"] = value
+    draft.setdefault("time_window_enabled", False)
+    draft.setdefault("auto_delete", False)
+    draft.setdefault("self_destruct", False)
+    draft.setdefault("auto_pin", False)
     await update.message.reply_text(
-        f"✅ *Delivery limit:* {value} sends\n\n"
-        "⚙️ *Advanced Options*\n"
-        "These settings are optional and OFF by default. Turn on only what you need.",
+        flow_tr(language, "delivery_confirm", value=value),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_advanced_keyboard(
-            w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"]
+            draft["time_window_enabled"], draft["auto_delete"], draft["self_destruct"],
+            draft["auto_pin"], language
         ),
     )
     return WIZARD_TIME_WINDOW
+
 async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Validate the selected preset against the active recurrence."""
     query = update.callback_query
+    language = _language(context)
     raw = (query.data or "").replace(CB_MR_PRESET, "", 1)
     try:
         value = int(raw)
     except ValueError:
-        await query.answer("Invalid delivery limit.", show_alert=True)
+        await query.answer(flow_tr(language, "count_invalid"), show_alert=True)
         return WIZARD_MAX_RUNS
 
-    w = _w(context)
-    one_time = w.get("recurrence_type") == "once"
+    draft = _w(context)
+    one_time = draft.get("recurrence_type") == "once"
     allowed = {1} if one_time else {0, 1, 5, 10, 30}
     if value not in allowed:
-        await query.answer("That delivery limit is not available for this schedule.", show_alert=True)
+        await query.answer(flow_tr(language, "count_invalid"), show_alert=True)
         return WIZARD_MAX_RUNS
-    w["max_runs"] = 1 if one_time else (None if value == 0 else value)
-    w.setdefault("time_window_enabled", False)
-    w.setdefault("auto_delete", False)
-    w.setdefault("self_destruct", False)
-    w.setdefault("auto_pin", False)
-    label = "One send" if one_time else ("Unlimited" if value == 0 else f"{value} sends")
+    draft["max_runs"] = 1 if one_time else (None if value == 0 else value)
+    draft.setdefault("time_window_enabled", False)
+    draft.setdefault("auto_delete", False)
+    draft.setdefault("self_destruct", False)
+    draft.setdefault("auto_pin", False)
+    if one_time:
+        label = flow_tr(language, "one_send")
+    elif value == 0:
+        label = flow_tr(language, "unlimited")
+    else:
+        label = flow_tr(language, "sends", value=value)
     await _edit(
         query,
-        f"✅ *Delivery limit:* {label}\n\n"
-        "⚙️ *Advanced Options*\n"
-        "These settings are optional and OFF by default. Turn on only what you need.",
-        _advanced_keyboard(w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"]),
+        flow_tr(language, "delivery_confirm", value=label),
+        _advanced_keyboard(
+            draft["time_window_enabled"], draft["auto_delete"], draft["self_destruct"],
+            draft["auto_pin"], language
+        ),
     )
     return WIZARD_TIME_WINDOW
+
 async def cb_tw_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Toggle a local-time posting window and refresh the settings."""
+    """Toggle a local-time posting window and refresh the localized settings."""
     query = update.callback_query
-    w = _w(context)
+    draft = _w(context)
+    language = _language(context)
     enabled = query.data == CB_TW_ON
-    w["time_window_enabled"] = enabled
+    draft["time_window_enabled"] = enabled
     if not enabled:
-        w.pop("tw_start", None)
-        w.pop("tw_end", None)
-    await query.answer("Posting Window enabled" if enabled else "Posting Window disabled")
+        draft.pop("tw_start", None)
+        draft.pop("tw_end", None)
+    await query.answer(flow_tr(language, "window_on" if enabled else "window_off"))
     await query.edit_message_reply_markup(
         _advanced_keyboard(
-            enabled,
-            w.get("auto_delete", False),
-            w.get("self_destruct", False),
-            w.get("auto_pin", False),
+            enabled, draft.get("auto_delete", False), draft.get("self_destruct", False),
+            draft.get("auto_pin", False), language
         )
     )
     return WIZARD_TIME_WINDOW
+
 async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Route enabled optional settings through their detail screens."""
+    """Route enabled optional settings through their localized detail screens."""
     query = update.callback_query
-    w = _w(context)
-    if w.get("time_window_enabled"):
-        await _edit(
-            query,
-            "🕐 *Posting Window — Start Time*\n\n"
-            "Enter the earliest local time the bot may publish each day.\n"
-            "Use 24-hour HH:MM format, for example 08:00.\n"
-            "Posts scheduled outside this window will wait until it opens.",
-            nav_keyboard(back_data=CB_BACK_TW),
-        )
+    draft = _w(context)
+    language = _language(context)
+    if draft.get("time_window_enabled"):
+        await _edit(query, flow_tr(language, "window_start"), _wizard_nav_keyboard(context, CB_BACK_TW))
         return WIZARD_TW_START
 
-    w.pop("tw_start", None)
-    w.pop("tw_end", None)
-    if w.get("auto_delete"):
-        await _edit(
-            query,
-            "🗑 *Auto-Delete*\n\n"
-            "How long after each post is published should the bot delete it?\n"
-            "Enter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
-            nav_keyboard(back_data=CB_BACK_TW),
-        )
+    draft.pop("tw_start", None)
+    draft.pop("tw_end", None)
+    if draft.get("auto_delete"):
+        await _edit(query, flow_tr(language, "delete_prompt"), _wizard_nav_keyboard(context, CB_BACK_TW))
         return WIZARD_AD_HOURS
-    if w.get("self_destruct"):
-        await _edit(
-            query,
-            "💣 *Self-Destruct*\n\n"
-            "How many seconds after publishing should the bot delete each post?\n"
-            "Enter a positive whole number, such as 60.",
-            nav_keyboard(back_data=CB_BACK_TW),
-        )
+    if draft.get("self_destruct"):
+        await _edit(query, flow_tr(language, "destruct_prompt"), _wizard_nav_keyboard(context, CB_BACK_TW))
         return WIZARD_SD_SECS
-    if w.get("auto_pin"):
-        await _edit(
-            query,
-            "📌 *Auto-Pin*\n\n"
-            "Choose how long each post should stay pinned, or keep it pinned until you remove it manually.",
-            _auto_pin_keyboard(),
-        )
+    if draft.get("auto_pin"):
+        await _edit(query, flow_tr(language, "pin_prompt"), _auto_pin_keyboard(language))
         return WIZARD_AP_HOURS
     return await _show_summary(update, context)
+
 async def recv_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
+    language = _language(context)
     parsed = _parse_hhmm(raw)
     if parsed is None:
         await update.message.reply_text(
-            "⚠️ Enter a valid 24-hour time in HH:MM format, such as 08:00.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            flow_tr(language, "window_invalid"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW),
         )
         return WIZARD_TW_START
     _w(context)["tw_start"] = parsed
     await update.message.reply_text(
-        f"✅ Posting window opens at {parsed}.\n\n"
-        "🕐 *Posting Window — End Time*\n\n"
-        "Enter the latest local time the bot may publish, using HH:MM (for example, 22:00).\n"
-        "The window may cross midnight, such as 22:00 to 06:00.",
-        reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
+        f"✅ {parsed}\n\n{flow_tr(language, 'window_end')}",
+        reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW_START),
     )
     return WIZARD_TW_END
+
 async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     parsed = _parse_hhmm(raw)
-    w = _w(context)
+    draft = _w(context)
+    language = _language(context)
     if parsed is None:
         await update.message.reply_text(
-            "⚠️ Enter a valid 24-hour time in HH:MM format, such as 22:00.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
+            flow_tr(language, "window_invalid"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW_START),
         )
         return WIZARD_TW_END
 
-    start = w.get("tw_start")
+    start = draft.get("tw_start")
     if not start or parsed == start:
         await update.message.reply_text(
-            "⚠️ Start and end times must be valid and different. For an overnight window, choose an earlier end time.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
+            flow_tr(language, "window_same"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW_START),
         )
         return WIZARD_TW_END
 
-    w["tw_end"] = parsed
-    prefix = f"✅ Posting window: {start}–{parsed}.\n\n"
-    if w.get("auto_delete"):
+    draft["tw_end"] = parsed
+    prefix = flow_tr(language, "window_saved", start=start, end=parsed)
+    if draft.get("auto_delete"):
         await update.message.reply_text(
-            prefix + "🗑 *Auto-Delete*\nEnter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            f"{prefix}\n\n{flow_tr(language, 'delete_prompt')}",
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
-    if w.get("self_destruct"):
+    if draft.get("self_destruct"):
         await update.message.reply_text(
-            prefix + "💣 *Self-Destruct*\nEnter the number of seconds after publishing before each post is deleted.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            f"{prefix}\n\n{flow_tr(language, 'destruct_prompt')}",
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW),
         )
         return WIZARD_SD_SECS
-    if w.get("auto_pin"):
+    if draft.get("auto_pin"):
         await update.message.reply_text(
-            prefix + "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
-            reply_markup=_auto_pin_keyboard(),
+            f"{prefix}\n\n{flow_tr(language, 'pin_prompt')}",
+            reply_markup=_auto_pin_keyboard(language),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
+
 async def cb_lc_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Toggle optional post actions; deletion modes are mutually exclusive."""
+    """Toggle optional post actions; the two deletion modes remain mutually exclusive."""
     query = update.callback_query
-    w = _w(context)
+    draft = _w(context)
+    language = _language(context)
     key_map = {CB_LC_AD: "auto_delete", CB_LC_SD: "self_destruct", CB_LC_AP: "auto_pin"}
     key = key_map.get(query.data)
     if key is None:
-        await query.answer("Unknown option.", show_alert=True)
+        await query.answer(flow_tr(language, "validation_generic"), show_alert=True)
         return WIZARD_TIME_WINDOW
 
-    enabled = not bool(w.get(key, False))
-    w[key] = enabled
+    enabled = not bool(draft.get(key, False))
+    draft[key] = enabled
     if key == "auto_delete":
         if enabled:
-            w["self_destruct"] = False
-            w.pop("sd_secs", None)
+            draft["self_destruct"] = False
+            draft.pop("sd_secs", None)
         else:
-            w.pop("ad_hours", None)
-            w.pop("ad_duration_label", None)
+            draft.pop("ad_hours", None)
+            draft.pop("ad_duration_label", None)
     elif key == "self_destruct":
         if enabled:
-            w["auto_delete"] = False
-            w.pop("ad_hours", None)
-            w.pop("ad_duration_label", None)
+            draft["auto_delete"] = False
+            draft.pop("ad_hours", None)
+            draft.pop("ad_duration_label", None)
         else:
-            w.pop("sd_secs", None)
+            draft.pop("sd_secs", None)
     elif key == "auto_pin" and not enabled:
-        w.pop("ap_hours", None)
+        draft.pop("ap_hours", None)
 
-    await query.answer(
-        f"{'Enabled' if enabled else 'Disabled'}: {key.replace('_', ' ').title()}"
-    )
+    label_key = {
+        "auto_delete": "auto_delete_label",
+        "self_destruct": "self_destruct_label",
+        "auto_pin": "auto_pin_label",
+    }[key]
+    await query.answer(flow_tr(language, label_key))
     await query.edit_message_reply_markup(
         _advanced_keyboard(
-            w.get("time_window_enabled", False),
-            w.get("auto_delete", False),
-            w.get("self_destruct", False),
-            w.get("auto_pin", False),
+            draft.get("time_window_enabled", False), draft.get("auto_delete", False),
+            draft.get("self_destruct", False), draft.get("auto_pin", False), language
         )
     )
     return WIZARD_TIME_WINDOW
+
 async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Route to the first enabled lifecycle detail step, or directly to summary.
-    (Kept for back-compat; primary entry is now cb_adv_next from Advanced Options.)"""
+    """Compatibility route through optional actions using localized prompts."""
     query = update.callback_query
-    w = _w(context)
-    if w.get("auto_delete"):
-        await _edit(query,
-            "🗑 *Auto-Delete — After how many hours?*\n\n"
-            "Type a positive number (decimals OK, e.g. `24` or `0.5`):",
-            nav_keyboard(back_data=CB_BACK_TW),
-        )
+    draft = _w(context)
+    language = _language(context)
+    if draft.get("auto_delete"):
+        await _edit(query, flow_tr(language, "delete_prompt"), _wizard_nav_keyboard(context, CB_BACK_TW))
         return WIZARD_AD_HOURS
-    if w.get("self_destruct"):
-        await _edit(query,
-            "💣 *Self-Destruct — After how many seconds?*\n\n"
-            "Type a positive integer (e.g. `60`):",
-            nav_keyboard(back_data=CB_BACK_TW),
-        )
+    if draft.get("self_destruct"):
+        await _edit(query, flow_tr(language, "destruct_prompt"), _wizard_nav_keyboard(context, CB_BACK_TW))
         return WIZARD_SD_SECS
-    if w.get("auto_pin"):
-        await _edit(query,
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number (e.g. `12`):",
-            nav_keyboard(back_data=CB_BACK_TW),
-        )
+    if draft.get("auto_pin"):
+        await _edit(query, flow_tr(language, "pin_prompt"), _auto_pin_keyboard(language))
         return WIZARD_AP_HOURS
     return await _show_summary(update, context)
 
-
-# ---------------------------------------------------------------------------
-# Step 8a/b/c — Lifecycle detail inputs
-# ---------------------------------------------------------------------------
-
 async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
-    val = _parse_auto_delete_duration(raw)
-    if val is None:
+    language = _language(context)
+    value = _parse_auto_delete_duration(raw)
+    if value is None:
         await update.message.reply_text(
-            "⚠️ Enter a valid duration such as 5 minutes or 2 hours. Minimum: 5 minutes; maximum: 365 days.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            flow_tr(language, "delete_invalid"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
-    w = _w(context)
-    w["ad_hours"] = val
-    w["ad_duration_label"] = raw
-    if w.get("auto_pin"):
+    draft = _w(context)
+    draft["ad_hours"] = value
+    draft["ad_duration_label"] = raw
+    if draft.get("auto_pin"):
         await update.message.reply_text(
-            f"✅ Auto-Delete: {raw}.\n\n"
-            "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
-            reply_markup=_auto_pin_keyboard(),
+            f"{flow_tr(language, 'delete_saved', value=raw)}\n\n{flow_tr(language, 'pin_prompt')}",
+            reply_markup=_auto_pin_keyboard(language),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
+
 async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
+    language = _language(context)
     if not raw.isdecimal() or not (1 <= int(raw) <= 31536000):
         await update.message.reply_text(
-            "⚠️ Enter a whole number from 1 to 31,536,000 seconds (for example, 60).",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            flow_tr(language, "destruct_invalid"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_TW),
         )
         return WIZARD_SD_SECS
-    w = _w(context)
-    w["sd_secs"] = int(raw)
-    if w.get("auto_pin"):
+    draft = _w(context)
+    draft["sd_secs"] = int(raw)
+    if draft.get("auto_pin"):
         await update.message.reply_text(
-            f"✅ Self-Destruct: {raw} seconds.\n\n"
-            "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
-            reply_markup=_auto_pin_keyboard(),
+            f"{flow_tr(language, 'destruct_saved', value=raw)}\n\n{flow_tr(language, 'pin_prompt')}",
+            reply_markup=_auto_pin_keyboard(language),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
-def _auto_pin_keyboard() -> InlineKeyboardMarkup:
+
+def _auto_pin_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     """Choose a timed unpin or leave published posts pinned."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📌 Keep Pinned (No Auto-Unpin)", style="primary", callback_data=CB_AP_FOREVER)],
+        [InlineKeyboardButton(
+            flow_tr(language, "pin_forever"), style="primary", callback_data=CB_AP_FOREVER
+        )],
         [
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_LIFECYCLE),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_LIFECYCLE),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
-
 
 async def cb_ap_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Save permanent pinning and display the full review screen."""
@@ -1682,18 +1635,20 @@ async def cb_ap_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return await _show_summary(update, context)
 async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
+    language = _language(context)
     try:
         value = float(raw)
         if not math.isfinite(value) or value <= 0 or value > 87600:
             raise ValueError
     except (TypeError, ValueError):
         await update.message.reply_text(
-            "⚠️ Enter a finite number greater than 0 and no more than 87,600 hours (for example, 12), or choose Keep Pinned.",
-            reply_markup=_auto_pin_keyboard(),
+            flow_tr(language, "pin_invalid"),
+            reply_markup=_auto_pin_keyboard(language),
         )
         return WIZARD_AP_HOURS
     _w(context)["ap_hours"] = value
     return await _show_summary_from_message(update, context)
+
 def _build_summary(w: dict[str, Any]) -> str:
     """Build a safe final review from the validated draft."""
     recurrence = w.get("recurrence_type", "once")
@@ -2138,7 +2093,7 @@ async def cb_back_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w = _w(context)
     await _edit(query,
         "📆 *Step 3a — Days of Week*\n\nTap days to toggle, then ➡️ Next.",
-        _dow_keyboard(w.get("days_of_week", set())),
+        _dow_keyboard(w.get("days_of_week", set()), _language(context)),
     )
     return WIZARD_DOW_SELECT
 
@@ -2149,7 +2104,7 @@ async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TY
     await _edit(query,
         f"✅ Value: `{w.get('interval_value')}`\n\n"
         "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
-        _interval_unit_keyboard(),
+        _interval_unit_keyboard(_language(context)),
     )
     return WIZARD_INTERVAL_UNIT
 
@@ -2165,7 +2120,7 @@ async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
     else:
         prompt = tr(context.user_data.get("language", "en"), "max_runs_prompt")
-    await _edit(query, prompt, _max_runs_keyboard(one_time=one_time))
+    await _edit(query, prompt, _max_runs_keyboard(one_time=one_time, language=language))
     return WIZARD_MAX_RUNS
 async def cb_back_tw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return to Advanced Options from a posting-window or lifecycle detail."""
@@ -2185,6 +2140,7 @@ async def cb_back_tw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             w.get("auto_delete", False),
             w.get("self_destruct", False),
             w.get("auto_pin", False),
+            _language(context),
         ),
     )
     return WIZARD_TIME_WINDOW
@@ -2216,6 +2172,7 @@ async def cb_back_lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             w.get("auto_delete", False),
             w.get("self_destruct", False),
             w.get("auto_pin", False),
+            _language(context),
         ),
     )
     return WIZARD_TIME_WINDOW
