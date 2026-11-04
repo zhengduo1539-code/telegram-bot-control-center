@@ -712,7 +712,7 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await msg.reply_text(_t(_w(context), "content_unsupported"))
         return CONTENT
     w["content_text"], w["media_file_id"], w["media_type"] = content_text, file_id, media_type
-    return await _home(context, w, "Content updated.")
+    return await _home(context, w, _t(w, "content_updated"))
 
 
 async def cb_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -780,7 +780,7 @@ async def recv_manual_destination(update: Update, context: ContextTypes.DEFAULT_
         return MANUAL_DESTINATION
     w = _w(context)
     w["chat_id"], w["chat_title"] = chat_id, target.title or str(chat_id)
-    return await _home(context, w, "Destination updated and verified.")
+    return await _home(context, w, _t(w, "destination_updated"))
 
 
 async def cb_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -823,12 +823,12 @@ async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE
     w["interval_value"] = int(raw)
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Minutes", style="primary", callback_data=CB_UNIT + "minutes"),
-            InlineKeyboardButton("Hours", style="primary", callback_data=CB_UNIT + "hours"),
-            InlineKeyboardButton("Days", style="primary", callback_data=CB_UNIT + "days"),
+            InlineKeyboardButton(_flow(w, "unit_minutes"), style="primary", callback_data=CB_UNIT + "minutes"),
+            InlineKeyboardButton(_flow(w, "unit_hours"), style="primary", callback_data=CB_UNIT + "hours"),
+            InlineKeyboardButton(_flow(w, "unit_days"), style="primary", callback_data=CB_UNIT + "days"),
         ],
-        [InlineKeyboardButton("⬅️ Schedule", callback_data=CB_SCHEDULE)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton("⬅️ " + _t(w, "schedule_title"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     await _show(context, w, f"🔁 *Repeat every {raw} …*\n\nChoose the interval unit.", keyboard)
     return INTERVAL_UNIT
@@ -844,7 +844,7 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return INTERVAL_UNIT
     w = _w(context)
     w["interval_unit"] = unit
-    await _answer(query, f"Repeat every {value} {unit}.")
+    await _answer(query, _flow(w, "interval_confirm", value=value, unit=_flow(w, f"unit_{unit}")))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
@@ -871,7 +871,7 @@ async def cb_day_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     day, w = int(raw), _w(context)
     selected = w.setdefault("days_of_week", set())
     selected.symmetric_difference_update({day})
-    await _answer(query, f"{DAYS[day]} updated.")
+    await _answer(query, _flow(w, "done"))
     await _show(context, w, _flow(w, "days_prompt"), _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
 
@@ -913,7 +913,7 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return TIMEZONE
     w = _w(context)
     w["timezone"] = zone
-    await _answer(query, f"Timezone set to {zone}.")
+    await _answer(query, f"{_t(_w(context), 'timezone')}: {zone}")
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
@@ -930,10 +930,10 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     raw, w = (update.message.text or "").strip(), _w(context)
     parsed = parse_schedule_datetime(raw, w.get("timezone", "UTC"))
     if parsed is None:
-        await update.message.reply_text("That time is invalid or is not in the future. Enter HH:MM or DD/MM/YYYY HH:MM in the selected timezone.")
+        await update.message.reply_text(_flow(_w(context), "invalid_first_time"))
         return FIRST_RUN
     w["first_run"], w["first_run_raw"] = parsed, raw
-    return await _home(context, w, "Publish time updated.")
+    return await _home(context, w, _t(w, "time_updated"))
 
 
 async def cb_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -941,13 +941,13 @@ async def cb_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Unlimited", style="success" if w.get("max_runs") is None else "primary", callback_data=CB_LIMIT_UNLIMITED),
-            InlineKeyboardButton("10 sends", style="success" if w.get("max_runs") == 10 else "primary", callback_data=CB_LIMIT + "10"),
-            InlineKeyboardButton("30 sends", style="success" if w.get("max_runs") == 30 else "primary", callback_data=CB_LIMIT + "30"),
+            InlineKeyboardButton(_flow(w, "unlimited"), style="success" if w.get("max_runs") is None else "primary", callback_data=CB_LIMIT_UNLIMITED),
+            InlineKeyboardButton(_flow(w, "sends", value=10), style="success" if w.get("max_runs") == 10 else "primary", callback_data=CB_LIMIT + "10"),
+            InlineKeyboardButton(_flow(w, "sends", value=30), style="success" if w.get("max_runs") == 30 else "primary", callback_data=CB_LIMIT + "30"),
         ],
-        [InlineKeyboardButton("Custom Amount", style="primary", callback_data=CB_LIMIT + "custom")],
-        [InlineKeyboardButton("⬅️ Schedule", callback_data=CB_SCHEDULE)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_flow(w, "count_invalid").split(".")[0], style="primary", callback_data=CB_LIMIT + "custom")],
+        [InlineKeyboardButton("⬅️ " + _t(w, "schedule_title"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     await _show(context, w, "🔢 *Delivery Limit*\n\nChoose how many times this recurring post may be sent. Unlimited is the default.", keyboard)
     return RUN_LIMIT
@@ -964,7 +964,7 @@ async def cb_limit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _answer(query, _flow(_w(context), "count_invalid"), alert=True)
         return RUN_LIMIT
     w["max_runs"] = int(value)
-    await _answer(query, f"Limit set to {value}.")
+    await _answer(query, _flow(w, "delivery_confirm", value=value))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
@@ -972,7 +972,7 @@ async def cb_limit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cb_limit_unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     w["max_runs"] = None
-    await _answer(query, "Unlimited selected.")
+    await _answer(query, _flow(w, "unlimited"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
@@ -984,7 +984,7 @@ async def recv_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return RUN_LIMIT
     w = _w(context)
     w["max_runs"] = int(raw)
-    return await _home(context, w, "Delivery limit updated.")
+    return await _home(context, w, _flow(w, "delivery_confirm", value=w.get("max_runs")))
 
 
 async def cb_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1000,7 +1000,7 @@ async def cb_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w["time_window_enabled"] = False
         w.pop("tw_start", None)
         w.pop("tw_end", None)
-        await _answer(query, "Posting Window disabled.")
+        await _answer(query, _flow(w, "window_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     await _answer(query)
@@ -1014,11 +1014,11 @@ async def recv_posting_window(update: Update, context: ContextTypes.DEFAULT_TYPE
     start = parse_hhmm(match.group(1)) if match else None
     end = parse_hhmm(match.group(2)) if match else None
     if not start or not end or start == end:
-        await update.message.reply_text("Enter two different valid times, for example 09:00-21:00.")
+        await update.message.reply_text(_flow(_w(context), "window_invalid"))
         return POSTING_WINDOW
     w = _w(context)
     w.update(time_window_enabled=True, tw_start=start, tw_end=end)
-    return await _home(context, w, "Posting Window updated.")
+    return await _home(context, w, _t(w, "window_updated"))
 
 
 async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1027,7 +1027,7 @@ async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w["auto_delete"] = False
         w.pop("ad_hours", None)
         w.pop("ad_duration_label", None)
-        await _answer(query, "Auto-Delete disabled.")
+        await _answer(query, _flow(w, "review_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     w["self_destruct"] = False
@@ -1041,18 +1041,18 @@ async def recv_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     raw = (update.message.text or "").strip()
     match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw, re.I)
     if not match:
-        await update.message.reply_text("Use a duration such as 5 minutes, 30m, 2 hours or 12h.")
+        await update.message.reply_text(_flow(_w(context), "delete_invalid"))
         return AUTO_DELETE
     amount, unit = int(match.group(1)), match.group(2).lower()
     minutes = amount if unit in {"m", "min", "mins", "minute", "minutes"} else amount * 60
     if not 5 <= minutes <= 525600:
-        await update.message.reply_text("Auto-Delete must be between 5 minutes and 365 days.")
+        await update.message.reply_text(_flow(_w(context), "delete_invalid"))
         return AUTO_DELETE
     w = _w(context)
     w.update(auto_delete=True, self_destruct=False, ad_hours=minutes / 60)
     w.pop("sd_secs", None)
-    w["ad_duration_label"] = f"{minutes} minutes" if minutes < 60 else f"{minutes // 60} hours"
-    return await _home(context, w, "Auto-Delete updated.")
+    w["ad_duration_label"] = _flow(w, "delete_after", value=minutes / 60)
+    return await _home(context, w, _flow(w, "delete_saved", value=w.get("ad_duration_label")))
 
 
 async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1060,7 +1060,7 @@ async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w.get("self_destruct"):
         w["self_destruct"] = False
         w.pop("sd_secs", None)
-        await _answer(query, "Self-Destruct disabled.")
+        await _answer(query, _flow(w, "review_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     w["auto_delete"] = False
@@ -1074,13 +1074,13 @@ async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def recv_self_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not 1 <= int(raw) <= 31536000:
-        await update.message.reply_text("Enter a whole number from 1 to 31,536,000 seconds.")
+        await update.message.reply_text(_flow(_w(context), "destruct_invalid"))
         return SELF_DESTRUCT
     w = _w(context)
     w.update(self_destruct=True, auto_delete=False, sd_secs=int(raw))
     w.pop("ad_hours", None)
     w.pop("ad_duration_label", None)
-    return await _home(context, w, "Self-Destruct updated.")
+    return await _home(context, w, _flow(w, "destruct_saved", value=w.get("sd_secs")))
 
 
 async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1089,15 +1089,15 @@ async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w["auto_pin"] = False
         w.pop("ap_hours", None)
         w.pop("ap_duration_label", None)
-        await _answer(query, "Auto-Pin disabled.")
+        await _answer(query, _flow(w, "review_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Keep Pinned", style="success", callback_data=CB_PIN_FOREVER)],
-        [InlineKeyboardButton("Set Unpin Time", style="primary", callback_data=CB_PIN_DURATION)],
-        [InlineKeyboardButton("⬅️ Delivery Rules", callback_data=CB_OPTIONS)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_t(w, "keep_pinned"), style="success", callback_data=CB_PIN_FOREVER)],
+        [InlineKeyboardButton(_flow(w, "pin_prompt").splitlines()[0], style="primary", callback_data=CB_PIN_DURATION)],
+        [InlineKeyboardButton("⬅️ " + _t(w, "options_title"), callback_data=CB_OPTIONS)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     await _show(context, w, "📌 *Auto-Pin*\n\nChoose a duration or keep the post pinned until someone manually unpins it.", keyboard)
     return AUTO_PIN
@@ -1146,14 +1146,14 @@ async def recv_auto_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return AUTO_PIN
     w = _w(context)
     w.update(auto_pin=True, ap_hours=value, ap_duration_label=_duration_label(value))
-    return await _home(context, w, "Auto-Pin updated.")
+    return await _home(context, w, _flow(w, "pin_invalid"))
 
 
 async def cb_pin_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
-    w.update(auto_pin=True, ap_hours=None, ap_duration_label="Keep pinned")
-    await _answer(query, "The post will remain pinned until manually unpinned.")
-    return await _home(context, w, "Auto-Pin updated.")
+    w.update(auto_pin=True, ap_hours=None, ap_duration_label=_t(w, "keep_pinned"))
+    await _answer(query, _t(w, "keep_pinned"))
+    return await _home(context, w, _flow(w, "pin_invalid"))
 
 
 async def cb_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1188,7 +1188,7 @@ async def cb_button_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if buttons:
         buttons.pop()
     w["inline_buttons"] = buttons
-    await _answer(query, "Last button removed.")
+    await _answer(query, _t(w, "buttons_removed"))
     await _show(context, w, _buttons_text(w), _buttons_keyboard(len(buttons), _lang(w)))
     return BUTTONS
 
@@ -1196,7 +1196,7 @@ async def cb_button_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def cb_button_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     w["inline_buttons"] = []
-    await _answer(query, "All buttons removed.")
+    await _answer(query, _t(w, "buttons_cleared"))
     await _show(context, w, _buttons_text(w), _buttons_keyboard(0, _lang(w)))
     return BUTTONS
 
@@ -1209,7 +1209,7 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         detail = "\n".join("• " + escape_markdown(error, version=1) for error in errors)
         await _show(context, w, "⚠️ *A few details need attention*\n\n" + detail + "\n\nReturn to the workspace and open the relevant section.", InlineKeyboardMarkup([
             [InlineKeyboardButton(_t(w, "review_open_workspace"), style="primary", callback_data=CB_HOME)],
-            [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
         ]))
         return HOME
     await _answer(query)
@@ -1219,7 +1219,7 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         [InlineKeyboardButton("🕒 " + _t(w, "section_schedule"), callback_data=CB_SCHEDULE), InlineKeyboardButton("⚙️ " + _t(w, "section_rules"), callback_data=CB_OPTIONS)],
         [InlineKeyboardButton("🔘 " + _t(w, "section_buttons"), callback_data=CB_BUTTONS)],
         [InlineKeyboardButton("⬅️ " + _t(w, "review_open_workspace"), callback_data=CB_HOME)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     await _show(context, w, _preview_text(w), keyboard)
     return REVIEW
@@ -1260,15 +1260,15 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     except ChatAccessError as exc:
         w.pop("_saving", None)
         await _show(context, w, f"⚠️ {escape_markdown(str(exc), version=1)}\n\nChoose another destination or restore the required permissions.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("Choose Destination", style="primary", callback_data=CB_DESTINATION)],
+            [InlineKeyboardButton(_t(w, "section_destination"), style="primary", callback_data=CB_DESTINATION)],
             [InlineKeyboardButton("⬅️ " + _t(w, "review_open_workspace"), callback_data=CB_HOME)],
-            [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
         ]))
         return DESTINATION
     except Exception:
         w.pop("_saving", None)
         logger.exception("Destination revalidation failed for user_id=%s", user_id)
-        await _show(context, w, "⚠️ I couldn't verify destination access right now. Your setup is still available. Check permissions and try again.", _nav(language=_lang(_w(context))))
+        await _show(context, w, f"⚠️ {_flow(w, 'access_failed')}", _nav(language=_lang(w)))
         return HOME
 
     try:
