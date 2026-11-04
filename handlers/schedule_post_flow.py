@@ -233,7 +233,7 @@ async def _home(context, w: dict, notice: str | None = None) -> int:
 
 def _nav(back: str = CB_HOME, language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(_t({"language": language}, "review_open_workspace"), callback_data=back),
+        InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=back),
         InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ]])
 
@@ -326,7 +326,7 @@ def _timezone_keyboard(page: int, language: str = "en") -> InlineKeyboardMarkup:
     if nav:
         rows.append(nav)
     rows.extend([
-        [InlineKeyboardButton("⬅️ " + _t({"language": language}, "schedule_title"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_SCHEDULE)],
         [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     return InlineKeyboardMarkup(rows)
@@ -796,7 +796,7 @@ async def cb_mode_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w["recurrence_type"], w["max_runs"] = "once", 1
     for key in ("interval_value", "interval_unit", "days_of_week"):
         w.pop(key, None)
-    await _answer(query, _t(w, "mode_once"))
+    await _answer(query, _flow(w, "repeat_once"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
@@ -945,7 +945,7 @@ async def cb_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             InlineKeyboardButton(_flow(w, "sends", value=10), style="success" if w.get("max_runs") == 10 else "primary", callback_data=CB_LIMIT + "10"),
             InlineKeyboardButton(_flow(w, "sends", value=30), style="success" if w.get("max_runs") == 30 else "primary", callback_data=CB_LIMIT + "30"),
         ],
-        [InlineKeyboardButton(_flow(w, "count_invalid").split(".")[0], style="primary", callback_data=CB_LIMIT + "custom")],
+        [InlineKeyboardButton("✏️ " + _t(w, "delivery_limit"), style="primary", callback_data=CB_LIMIT + "custom")],
         [InlineKeyboardButton("⬅️ " + _t(w, "schedule_title"), callback_data=CB_SCHEDULE)],
         [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
@@ -1095,7 +1095,7 @@ async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(_t(w, "keep_pinned"), style="success", callback_data=CB_PIN_FOREVER)],
-        [InlineKeyboardButton(_flow(w, "pin_prompt").splitlines()[0], style="primary", callback_data=CB_PIN_DURATION)],
+        [InlineKeyboardButton(_t(w, "first_publish"), style="primary", callback_data=CB_PIN_DURATION)],
         [InlineKeyboardButton("⬅️ " + _t(w, "options_title"), callback_data=CB_OPTIONS)],
         [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
@@ -1153,7 +1153,7 @@ async def cb_pin_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query, w = update.callback_query, _w(context)
     w.update(auto_pin=True, ap_hours=None, ap_duration_label=_t(w, "keep_pinned"))
     await _answer(query, _t(w, "keep_pinned"))
-    return await _home(context, w, _flow(w, "pin_invalid"))
+    return await _home(context, w, _t(w, "pin_updated"))
 
 
 async def cb_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
