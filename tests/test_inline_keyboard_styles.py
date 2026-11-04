@@ -115,13 +115,13 @@ def test_group_selection_and_manual_group_id_buttons_have_requested_styles():
         "en",
     )
     assert _button(group_picker, "👥 Example Group").style == "primary"
-    assert _button(group_picker, "Enter Group ID").style == "success"
-    assert _button(group_picker, "Cancel").style == "danger"
+    assert _button(group_picker, "✏️ Enter Chat ID manually").style == "success"
+    assert _button(group_picker, "❌ Cancel").style == "danger"
 
     no_groups = _no_groups_keyboard("ScheduleBot", "en")
     assert _button(no_groups, "➕ Add Bot to a Group").style == "primary"
-    assert _button(no_groups, "Enter Group ID").style == "success"
-    assert _button(no_groups, "Cancel").style == "danger"
+    assert _button(no_groups, "✏️ Enter Chat ID manually").style == "success"
+    assert _button(no_groups, "❌ Cancel").style == "danger"
 
 
 def test_schedule_choice_buttons_use_primary_and_selected_options_use_success():
@@ -152,8 +152,10 @@ def test_schedule_choice_buttons_use_primary_and_selected_options_use_success():
     ]
 
     timezone = _buttons(_timezone_keyboard(0, "en"))
-    assert all(button.style == "primary" for button in timezone[:-1])
-    assert timezone[-1].style is None
+    assert all(button.style == "primary" for button in timezone[:-3])
+    assert timezone[-3].style == "primary"  # Next page
+    assert timezone[-2].style is None       # Back
+    assert timezone[-1].style == "danger"    # Cancel
 
 
 def test_owner_panel_and_my_posts_actions_are_semantically_styled():
