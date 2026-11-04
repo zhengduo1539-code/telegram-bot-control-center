@@ -194,7 +194,7 @@ def _clear(context: ContextTypes.DEFAULT_TYPE) -> None:
 def _locale_weekdays(language: str) -> list[str]:
     # Weekday separators differ by script: comma, Arabic comma, Burmese comma,
     # and ideographic comma are all used by the supported locales.
-    labels = re.split(r"\\s*[,،、]\\s*|၊\\s*", flow_tr(language, "weekdays"))
+    labels = re.split(r"\s*[,،、]\s*|၊\s*", flow_tr(language, "weekdays"))
     return labels if len(labels) == 7 else ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
