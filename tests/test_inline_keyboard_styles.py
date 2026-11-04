@@ -187,3 +187,16 @@ def test_welcome_and_completed_schedule_actions_use_primary_style():
     welcome = _buttons(start_keyboard(type("Bot", (), {"username": "ScheduleBot"})(), "en"))
     assert [button.style for button in welcome] == ["primary", "primary"]
 
+
+def test_one_time_max_runs_preset_is_visible_and_success_styled():
+    buttons = _buttons(_max_runs_keyboard())
+    one_time = _button(_max_runs_keyboard(), "1× One time")
+    assert one_time.callback_data == "mr:preset:1"
+    assert one_time.style == "success"
+    assert any(button.text == "∞ Unlimited" for button in buttons)
+
+
+def test_inline_button_limit_keeps_done_and_cancel_only():
+    buttons = _buttons(__import__("handlers.schedule_wizard", fromlist=["_inline_btns_keyboard"])._inline_btns_keyboard(10))
+    assert [button.text for button in buttons] == ["✅ Done", "❌ Cancel"]
+    assert [button.style for button in buttons] == ["success", "danger"]
