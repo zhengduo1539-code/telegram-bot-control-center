@@ -99,9 +99,16 @@ def test_schedule_conversation_registers_intro_state():
 
 
 
-def test_schedule_content_step_is_manual_only():
+def test_schedule_content_step_has_clear_back_and_keep_actions():
     labels = [button.text for button in _buttons(wizard._content_step_keyboard())]
-    assert labels == ["❌ Cancel"]
+    assert labels == ["⬅️ Back to Destination", "❌ Cancel"]
+
+    saved_labels = [button.text for button in _buttons(wizard._content_step_keyboard(True))]
+    assert saved_labels == [
+        "✅ Keep Current Content",
+        "⬅️ Back to Destination",
+        "❌ Cancel",
+    ]
     assert not hasattr(wizard, "WIZARD_TMPL_PICK")
 
     conversation = wizard.build_schedule_wizard()
@@ -156,13 +163,19 @@ def test_confirm_post_requires_first_run_still_in_future():
         )
         context = SimpleNamespace(user_data={
             "language": "en",
-            "wizard": {"first_run": datetime.now(timezone.utc) - timedelta(minutes=1)},
+            "wizard": {
+                "chat_id": -1001234567890,
+                "content_text": "A scheduled post",
+                "recurrence_type": "once",
+                "timezone": "UTC",
+                "first_run": datetime.now(timezone.utc) - timedelta(minutes=1),
+            },
         })
 
         state = await wizard.cb_confirm_post(SimpleNamespace(callback_query=query), context)
 
         assert state == wizard.WIZARD_FIRST_RUN
-        assert "time has passed" in query.edit_message_text.await_args.args[0].lower()
+        assert "first-post time" in query.edit_message_text.await_args.args[0].lower()
         assert "reply_markup" in query.edit_message_text.await_args.kwargs
 
     asyncio.run(scenario())
@@ -243,14 +256,14 @@ def test_max_runs_custom_count_accepts_positive_integer_and_rejects_zero():
 
         assert state == wizard.WIZARD_MAX_RUNS
         assert "max_runs" not in context.user_data["wizard"]
-        assert "starting from" in invalid_message.reply_text.await_args.args[0].lower()
+        assert "whole number" in invalid_message.reply_text.await_args.args[0].lower()
 
         valid_message = SimpleNamespace(text="27", reply_text=AsyncMock())
         state = await wizard.recv_max_runs(SimpleNamespace(message=valid_message), context)
 
         assert state == wizard.WIZARD_TIME_WINDOW
         assert context.user_data["wizard"]["max_runs"] == 27
-        assert "Max runs: *27*" in valid_message.reply_text.await_args.args[0]
+        assert "Delivery limit: 27 sends" in valid_message.reply_text.await_args.args[0]
 
     asyncio.run(scenario())
 
@@ -262,13 +275,13 @@ def test_one_time_preset_stores_a_single_run():
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
         )
-        context = SimpleNamespace(user_data={"wizard": {}})
+        context = SimpleNamespace(user_data={"wizard": {"recurrence_type": "once"}})
 
         state = await wizard.cb_mr_preset(SimpleNamespace(callback_query=query), context)
 
         assert state == wizard.WIZARD_TIME_WINDOW
         assert context.user_data["wizard"]["max_runs"] == 1
-        assert "One time" in query.edit_message_text.await_args.args[0]
+        assert "One send" in query.edit_message_text.await_args.args[0]
 
     asyncio.run(scenario())
 
