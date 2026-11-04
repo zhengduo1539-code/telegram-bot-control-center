@@ -425,7 +425,7 @@ def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool, language: str = "en") -> I
         )],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_TW),
-            InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(flow_tr(language, "wizard_next"), style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
