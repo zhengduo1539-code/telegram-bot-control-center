@@ -42,7 +42,7 @@ from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from welcome_localization import welcome_text
-from reply_keyboard import publish_reply_keyboard, register_reply_keyboard_routes, split_inline_keyboard
+from reply_keyboard import publish_reply_keyboard, split_inline_keyboard
 
 logger = logging.getLogger(__name__)
 
