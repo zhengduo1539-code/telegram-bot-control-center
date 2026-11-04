@@ -703,9 +703,14 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     await msg.reply_text(
         "✅ Content saved.\n\n"
-        "🔘 *Step 2.5 — Inline Buttons (optional)*\n\n"
-        "Add clickable buttons below your post?\n"
-        "_(e.g. \"Visit Website\", \"Join Channel\")_",
+        "🔘 *Step 2.5 — Post Buttons (optional)*\n\n"
+        "Add clickable buttons that will appear underneath your published post. "
+        "People can tap them to open your website or Telegram channel.\n\n"
+        "*How to add a button:*\n"
+        "1. Tap *➕ Add Button* or simply type the button text here.\n"
+        "2. Send the short label people should see (e.g. `Visit Website` or `Join Channel`).\n"
+        "3. Send its destination link (a full URL such as `https://example.com` or a Telegram `@username`).\n\n"
+        "You can add up to 10 buttons. Tap *⏭ Skip* to continue without buttons.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_inline_btns_keyboard(0),
     )
@@ -1074,8 +1079,7 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await query.edit_message_text(
         f"✅ First run: `{local_display}` ({tz_str})\n\n"
         "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
-        "How many times should this post be sent?\n\n"
-        "Tap a preset or type a custom number:",
+        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
     )
@@ -1164,16 +1168,19 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ---------------------------------------------------------------------------
 
 def _max_runs_keyboard() -> InlineKeyboardMarkup:
-    """Quick-tap presets + text-input fallback for max runs."""
+    """Quick-tap presets, including one-time, plus a custom number input."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("5×",           style="primary", callback_data=f"{CB_MR_PRESET}5"),
-            InlineKeyboardButton("10×",          style="primary", callback_data=f"{CB_MR_PRESET}10"),
-            InlineKeyboardButton("30×",          style="primary", callback_data=f"{CB_MR_PRESET}30"),
-            InlineKeyboardButton("∞ Unlimited",  style="primary", callback_data=f"{CB_MR_PRESET}0"),
+            InlineKeyboardButton("1× One time", style="success", callback_data=f"{CB_MR_PRESET}1"),
+            InlineKeyboardButton("5×", style="primary", callback_data=f"{CB_MR_PRESET}5"),
+            InlineKeyboardButton("10×", style="primary", callback_data=f"{CB_MR_PRESET}10"),
         ],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_FIRST_RUN),
+            InlineKeyboardButton("30×", style="primary", callback_data=f"{CB_MR_PRESET}30"),
+            InlineKeyboardButton("∞ Unlimited", style="primary", callback_data=f"{CB_MR_PRESET}0"),
+        ],
+        [
+            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
@@ -1182,10 +1189,10 @@ def _max_runs_keyboard() -> InlineKeyboardMarkup:
 async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Accept a typed custom max-runs number."""
     text = (update.message.text or "").strip()
-    if not text.isdigit():
+    if not text.isdigit() or int(text) < 1:
         await update.message.reply_text(
-            "⚠️ Please enter a whole number ≥ 0, or tap a preset above.\n"
-            "Type `0` for unlimited.",
+            "⚠️ Enter a whole number starting from *1* (for example, `7`).\n"
+            "For a single send, tap *1× One time*. For unlimited sends, tap *∞ Unlimited*.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_max_runs_keyboard(),
         )
@@ -1193,10 +1200,10 @@ async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     val = int(text)
     w = _w(context)
-    w["max_runs"] = None if val == 0 else val
+    w["max_runs"] = val
     w.setdefault("time_window_enabled", False)
 
-    label = "Unlimited" if val == 0 else str(val)
+    label = "Unlimited" if val == 0 else "One time" if val == 1 else str(val)
     w.setdefault("auto_delete",   False)
     w.setdefault("self_destruct", False)
     w.setdefault("auto_pin",      False)
@@ -1212,7 +1219,7 @@ async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 
 async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle quick-tap max-runs preset buttons (5, 10, 30, or unlimited)."""
+    """Handle quick-tap max-runs presets, including one-time and unlimited sends."""
     query = update.callback_query
     raw = (query.data or "").replace(CB_MR_PRESET, "", 1)
     try:
@@ -1225,7 +1232,7 @@ async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w["max_runs"] = None if val == 0 else val
     w.setdefault("time_window_enabled", False)
 
-    label = "Unlimited" if val == 0 else str(val)
+    label = "Unlimited" if val == 0 else "One time" if val == 1 else str(val)
     w = _w(context)
     w.setdefault("auto_delete",   False)
     w.setdefault("self_destruct", False)
