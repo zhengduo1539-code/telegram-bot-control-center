@@ -659,7 +659,7 @@ async def enter_schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE
     if isinstance(linked, dict):
         try:
             target_id = int(linked.get("chat_id"))
-            target = await ensure_chat_access(context.bot, target_id, user_id)
+            target = await ensure_chat_access(context.bot, target_id, user_id, language)
             w["chat_id"], w["chat_title"] = target_id, target.title or str(target_id)
         except (TypeError, ValueError, ChatAccessError):
             notice = "The linked group could not be verified. Choose a destination."
@@ -742,7 +742,7 @@ async def cb_choose_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return DESTINATION
     user_id = query.from_user.id if query.from_user else None
     try:
-        target = await ensure_chat_access(query.get_bot(), chat_id, user_id)
+        target = await ensure_chat_access(query.get_bot(), chat_id, user_id, _lang(w))
     except ChatAccessError:
         await _answer(query, _flow(w, "access_failed"), alert=True)
         return DESTINATION
@@ -769,7 +769,7 @@ async def recv_manual_destination(update: Update, context: ContextTypes.DEFAULT_
         await msg.reply_text(_flow(w, "negative_chat_id"))
         return MANUAL_DESTINATION
     try:
-        target = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
+        target = await ensure_chat_access(context.bot, chat_id, update.effective_user.id, _lang(w))
     except ChatAccessError:
         await msg.reply_text(_flow(w, "access_failed"))
         return MANUAL_DESTINATION
