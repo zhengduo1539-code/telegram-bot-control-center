@@ -41,6 +41,7 @@ from handlers.owner_panel import CB_OWNER_PANEL
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.language import resolve_user_language
 from localization import translate as tr
+from my_posts_localization import translate_my_posts as mp_tr
 from welcome_localization import welcome_text
 from reply_keyboard import publish_reply_keyboard, split_inline_keyboard
 
@@ -257,16 +258,34 @@ def confirm_keyboard(
 _STATUS_ICON: dict[str, str] = {
     "pending": "⏳", "paused": "⏸", "posted": "✅", "failed": "❌",
 }
-_STATUS_LABEL = {"pending": "Active", "paused": "Paused", "posted": "Completed", "failed": "Failed"}
 _MP_FILTERS = ("all", "pending", "paused", "posted", "failed")
-_MP_FILTER_LABELS = {
-    "en": {"all": "All", "pending": "Active", "paused": "Paused", "posted": "Completed", "failed": "Failed"},
-    "my": {"all": "အားလုံး", "pending": "လုပ်ဆောင်နေ", "paused": "ခေတ္တရပ်", "posted": "ပြီးဆုံး", "failed": "မအောင်မြင်"},
+_MP_LABEL_KEYS = {
+    "all": "all", "pending": "active", "paused": "paused",
+    "posted": "completed", "failed": "failed",
 }
 
 
 def _mp_label(language: str, key: str) -> str:
-    return _MP_FILTER_LABELS.get(language, _MP_FILTER_LABELS["en"]).get(key, key.title())
+    return mp_tr(language, _MP_LABEL_KEYS.get(key, key))
+
+
+def _mp_recurrence_label(language: str, recurrence: str) -> str:
+    key = {
+        "once": "rec_once",
+        "interval": "rec_interval",
+        "days_of_week": "rec_weekly",
+    }.get(recurrence, None)
+    return mp_tr(language, key) if key else recurrence.replace("_", " ")
+
+
+def _mp_content_label(language: str, media_type: str | None, has_text: bool) -> str:
+    if not media_type:
+        return mp_tr(language, "text_type")
+    key = {
+        "photo": "photo_type", "video": "video_type", "document": "document_type",
+        "audio": "audio_type", "animation": "animation_type", "voice": "voice_type",
+    }.get(str(media_type).lower())
+    return mp_tr(language, key) if key else mp_tr(language, "text_type")
 
 
 def _format_next_run(next_run, tz_str: str) -> str:
@@ -300,7 +319,7 @@ def _posts_rich_message(
     all_posts: list[dict] | None = None,
     filter_key: str = "all",
 ) -> dict[str, Any]:
-    """Build a Telegram Bot API Rich Message containing a native compact table."""
+    """Build a localized Telegram Rich Message containing the scheduled-post table."""
     source_posts = all_posts if all_posts is not None else posts
     counts = {
         status: sum(1 for post in source_posts if post.get("status", "pending") == status)
@@ -310,12 +329,13 @@ def _posts_rich_message(
     start = page * POSTS_PER_PAGE
     end = min(start + POSTS_PER_PAGE, total)
     n_pages = max(1, (total + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
+    t = lambda key, **values: mp_tr(language, key, **values)
 
     cells: list[list[dict[str, Any]]] = [[
-        {"text": "Post", "is_header": True},
-        {"text": "Content", "is_header": True},
-        {"text": "Status", "is_header": True},
-        {"text": "Next run", "is_header": True},
+        {"text": t("post"), "is_header": True},
+        {"text": t("content"), "is_header": True},
+        {"text": t("status"), "is_header": True},
+        {"text": t("next_run"), "is_header": True},
     ]]
     for idx, post in enumerate(posts[start:end], start=start + 1):
         status = post.get("status", "pending")
@@ -328,19 +348,16 @@ def _posts_rich_message(
             group = group[:27].rstrip() + "…"
 
         recurrence = post.get("recurrence") or {}
-        rec_type = str(recurrence.get("type", "once")).replace("_", " ").title()
+        rec_type = _mp_recurrence_label(language, str(recurrence.get("type", "once")))
         content = post.get("content") or {}
         media_type = content.get("media_type")
-        content_type = (
-            "Text" if content.get("text") and not media_type
-            else str(media_type or "Text").replace("_", " ").title()
-        )
+        content_type = _mp_content_label(language, media_type, bool(content.get("text")))
         next_run = recurrence.get("next_run_at") or post.get("next_run_at")
         next_label = _format_next_run(next_run, post.get("timezone", "UTC"))
         if status == "posted":
-            next_label = "Published"
+            next_label = t("published")
         elif status == "failed":
-            next_label = "Needs attention"
+            next_label = t("attention")
 
         cells.append([
             {"text": f"#{idx}\n{group}"},
@@ -349,42 +366,34 @@ def _posts_rich_message(
             {"text": next_label},
         ])
 
-    summary = (
-        f"{len(source_posts)} total · ⏳ {counts['pending']} active · "
-        f"⏸ {counts['paused']} paused · ✅ {counts['posted']} completed · "
-        f"❌ {counts['failed']} failed"
+    summary = t(
+        "total_summary", total=len(source_posts),
+        active=counts["pending"], paused=counts["paused"],
+        completed=counts["posted"], failed=counts["failed"],
     )
     return {
         "blocks": [
-            {"type": "heading", "size": 2, "text": "📋 My Posts"},
-            {
-                "type": "paragraph",
-                "text": f"{_mp_label(language, filter_key)} · {total} posts · Page {page + 1}/{n_pages}",
-            },
+            {"type": "heading", "size": 2, "text": f"📋 {tr(language, 'posts_title')}"},
+            {"type": "paragraph", "text": f"{_mp_label(language, filter_key)} · {total} · {t('page', page=page + 1, pages=n_pages)}"},
             {"type": "paragraph", "text": summary},
             {
-                "type": "table",
-                "cells": cells,
-                "is_bordered": True,
-                "is_striped": True,
-                "is_compact": True,
-                "caption": "Scheduled post overview",
+                "type": "table", "cells": cells, "is_bordered": True,
+                "is_striped": True, "is_compact": True, "caption": t("caption"),
             },
-            {
-                "type": "footer",
-                "text": "Use the Reply Keyboard below to filter posts or choose a numbered action.",
-            },
+            {"type": "footer", "text": t("footer")},
         ]
     }
 
-def _posts_list_text(posts: list[dict], page: int, language: str = "en") -> str:
+
+def _posts_list_text(posts: list[dict], page: int, language: str = "en", filter_key: str = "all") -> str:
     total = len(posts)
     n_pages = max(1, (total + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
     start = page * POSTS_PER_PAGE
     end = min(start + POSTS_PER_PAGE, total)
+    t = lambda key, **values: mp_tr(language, key, **values)
     lines = [
         f"📋 *{tr(language, 'posts_title')}*",
-        f"{_mp_label(language, 'all')} · {total} posts · Page {page + 1}/{n_pages}",
+        f"{_mp_label(language, filter_key)} · {total} · {t('page', page=page + 1, pages=n_pages)}",
         "",
     ]
     for idx, post in enumerate(posts[start:end], start=start + 1):
@@ -395,164 +404,25 @@ def _posts_list_text(posts: list[dict], page: int, language: str = "en") -> str:
         chat_title = post.get("chat_title") or post.get("group_title") or post.get("chat_name")
         group = escape_markdown(str(chat_title or chat_id), version=1)
         recurrence = post.get("recurrence") or {}
-        rec_type = recurrence.get("type", "once")
+        rec_type = _mp_recurrence_label(language, str(recurrence.get("type", "once")))
         content = post.get("content") or {}
-        media_type = content.get("media_type")
-        content_type = "Text" if content.get("text") and not media_type else str(media_type or "Text").replace("_", " ").title()
+        content_type = _mp_content_label(language, content.get("media_type"), bool(content.get("text")))
         next_run = recurrence.get("next_run_at") or post.get("next_run_at")
         next_str = _format_next_run(next_run, post.get("timezone", "UTC"))
-        next_label = "Next run"
+        next_label = t("next_run")
         if status == "posted":
-            next_label, next_str = "Status", "Published"
+            next_label, next_str = t("status"), t("published")
         elif status == "failed":
-            next_label, next_str = "Status", "Needs attention"
+            next_label, next_str = t("status"), t("attention")
         lines.extend([
             f"*{idx}. {icon} {status_label}*",
             f"🗂 {group}",
-            f"🧩 {content_type} · 🔁 {str(rec_type).replace('_', ' ').title()}",
+            f"🧩 {content_type} · 🔁 {rec_type}",
             f"🕒 {next_label}: {next_str}",
             "",
         ])
-    lines.append("Choose an action below to manage a post. Use the status filters to narrow the list.")
+    lines.append(t("action_help"))
     return "\n".join(lines)
-
-
-def _posts_keyboard(
-    posts: list[dict], page: int, language: str = "en", filter_key: str = "all"
-) -> InlineKeyboardMarkup:
-    total = len(posts)
-    start = page * POSTS_PER_PAGE
-    end = min(start + POSTS_PER_PAGE, total)
-    buttons: list[list[InlineKeyboardButton]] = []
-    buttons.append([
-        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", style="success" if filter_key == key else "primary", callback_data=f"{CB_MPP_FILTER}{key}")
-        for key in ("all", "pending", "paused")
-    ])
-    buttons.append([
-        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", style="success" if filter_key == key else "primary", callback_data=f"{CB_MPP_FILTER}{key}")
-        for key in ("posted", "failed")
-    ])
-    for idx, post in enumerate(posts[start:end], start=start + 1):
-        pid = str(post["_id"])
-        status = post.get("status", "pending")
-        controls: list[InlineKeyboardButton] = []
-        if status == "pending":
-            controls.append(InlineKeyboardButton(f"{tr(language, 'pause')} #{idx}", style="primary", callback_data=f"{CB_MPP_PAUSE}{pid}"))
-        elif status == "paused":
-            controls.append(InlineKeyboardButton(f"{tr(language, 'resume')} #{idx}", style="success", callback_data=f"{CB_MPP_RESUME}{pid}"))
-        controls.append(InlineKeyboardButton(f"{tr(language, 'delete')} #{idx}", style="danger", callback_data=f"{CB_MPP_DEL}{pid}"))
-        buttons.append(controls)
-        buttons.append([
-            InlineKeyboardButton(f"{tr(language, 'clone')} #{idx}", style="primary", callback_data=f"{CB_MPP_CLONE}{pid}"),
-        ])
-    nav_row: list[InlineKeyboardButton] = []
-    if page > 0:
-        nav_row.append(InlineKeyboardButton(tr(language, "previous"), style="primary", callback_data=f"{CB_MPP_PAGE}{page - 1}"))
-    if end < total:
-        nav_row.append(InlineKeyboardButton(tr(language, "next"), style="primary", callback_data=f"{CB_MPP_PAGE}{page + 1}"))
-    if nav_row:
-        buttons.append(nav_row)
-    buttons.append([
-        InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU),
-    ])
-    return InlineKeyboardMarkup(buttons)
-
-
-async def _render_my_posts(query: Any, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Fetch, filter, and render the user's post-management dashboard."""
-    from database import get_user_posts
-    language = await resolve_user_language(context, user_id)
-    try:
-        posts = await get_user_posts(user_id)
-    except Exception as exc:
-        logger.exception("get_user_posts failed: %s", exc)
-        await query.edit_message_text(
-            f"❌ Error loading posts: `{str(exc).replace(chr(96), chr(39))}`",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU)]]),
-        )
-        return MY_POSTS
-
-    filter_key = context.user_data.get("_mp_filter", "all")
-    if filter_key not in _MP_FILTERS:
-        filter_key = "all"
-        context.user_data["_mp_filter"] = filter_key
-    filtered_posts = _filter_posts(posts, filter_key)
-
-    if not posts:
-        await query.edit_message_text(
-            f"{tr(language, 'posts_empty')}\n\nUse *Schedule New Post* to create your first scheduled post. "
-            "Return here anytime to pause, resume, duplicate, or remove posts.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tr(language, "schedule_new"), style="primary", callback_data=CB_SCHEDULE_NEW)],
-                [InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU)],
-            ]),
-        )
-        return MY_POSTS
-
-    if not filtered_posts:
-        await query.edit_message_text(
-            f"📋 *{tr(language, 'posts_title')}*\n\nNo {_mp_label(language, filter_key)} posts found. Choose another filter below.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_posts_keyboard([], 0, language, filter_key),
-        )
-        context.user_data["_mp_page"] = 0
-        return MY_POSTS
-
-    max_page = max(0, (len(filtered_posts) + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE - 1)
-    page = max(0, min(page, max_page))
-    context.user_data["_mp_page"] = page
-    keyboard = _posts_keyboard(filtered_posts, page, language, filter_key)
-    rich_message = _posts_rich_message(
-        filtered_posts, page, language, all_posts=posts, filter_key=filter_key
-    )
-    try:
-        # PTB 22.8 exposes do_api_request for Bot API methods added after the
-        # library release. Edit in place to preserve the dashboard message.
-        inline_markup, reply_keyboard, keyboard_routes = split_inline_keyboard(keyboard)
-        api_kwargs: dict[str, Any] = {"rich_message": rich_message}
-        if inline_markup is not None:
-            api_kwargs["reply_markup"] = inline_markup
-        inline_message_id = getattr(query, "inline_message_id", None)
-        message = getattr(query, "message", None)
-        if inline_message_id:
-            api_kwargs["inline_message_id"] = inline_message_id
-        elif message:
-            api_kwargs["chat_id"] = message.chat_id
-            api_kwargs["message_id"] = message.message_id
-        else:
-            raise ValueError("Cannot edit My Posts: callback message is unavailable.")
-
-        await context.bot.do_api_request("editMessageText", api_kwargs=api_kwargs)
-        if reply_keyboard is not None and message is not None:
-            await publish_reply_keyboard(
-                context.bot,
-                getattr(context, "bot_data", {}),
-                message.chat_id,
-                reply_keyboard,
-                keyboard_routes,
-                message,
-            )
-    except Exception as exc:
-        logger.warning("Native My Posts Rich Message unavailable; using text fallback: %s", exc)
-        rendered = _posts_list_text(filtered_posts, page, language)
-        rendered = rendered.replace(
-            "\n\n",
-            f"\n\n{len(posts)} total · "
-            f"⏳ {sum(1 for post in posts if post.get('status', 'pending') == 'pending')} active · "
-            f"⏸ {sum(1 for post in posts if post.get('status') == 'paused')} paused · "
-            f"✅ {sum(1 for post in posts if post.get('status') == 'posted')} completed · "
-            f"❌ {sum(1 for post in posts if post.get('status') == 'failed')} failed\n",
-            1,
-        )
-        rendered = rendered.replace(
-            f"{_mp_label(language, 'all')} ·", f"{_mp_label(language, filter_key)} ·", 1
-        )
-        await query.edit_message_text(
-            rendered, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
-        )
-    return MY_POSTS
 
 
 # ---------------------------------------------------------------------------
