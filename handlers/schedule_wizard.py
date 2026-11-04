@@ -1,23 +1,20 @@
 """
-handlers/schedule_wizard.py — Multi-step scheduling wizard.
+handlers/schedule_wizard.py — Guided Schedule New Post conversation.
 
-Wizard flow:
-  1.  WIZARD_CHAT_ID        — pick target chat from group picker (or enter ID manually)
-  2.  WIZARD_CONTENT        — send post content (text / media)
-  3.  WIZARD_RECURRENCE     — choose recurrence type
-        ├─ interval  → WIZARD_INTERVAL_VALUE → WIZARD_INTERVAL_UNIT
-        ├─ days_of_week → WIZARD_DOW_SELECT  (multi-toggle)
-        └─ once      → (skip interval steps)
-  4.  WIZARD_FIRST_RUN      — enter first-run datetime (HH:MM or DD/MM/YYYY HH:MM)
-  5.  WIZARD_TIMEZONE       — pick timezone (inline keyboard)
-  6.  WIZARD_MAX_RUNS       — max runs or "unlimited"
-  7.  WIZARD_TIME_WINDOW    — silent-hours ON/OFF toggle
-        └─ ON → WIZARD_TW_START → WIZARD_TW_END
-  8.  WIZARD_LIFECYCLE      — toggle auto-delete / self-destruct / auto-pin
-        ├─ auto-delete ON  → WIZARD_AD_HOURS
-        ├─ self-destruct ON → WIZARD_SD_SECS
-        └─ auto-pin ON     → WIZARD_AP_HOURS
-  9.  WIZARD_SUMMARY        — full review, ✅ Confirm saves to DB
+User journey:
+  1. Destination — select a saved group/channel or enter its Chat ID.
+  2. Content — send text or one supported media message.
+  2a. Optional post buttons — add up to 10 buttons using a guided label/link flow.
+  3. Recurrence — one-time, interval, or selected weekdays.
+  4. Timezone — choose the timezone used for every posting time.
+  5. First post — enter a future HH:MM time or exact DD/MM/YYYY HH:MM date.
+  6. Delivery limit — one-time, preset/custom count, or unlimited.
+  7. Advanced options — posting window, one delete mode, and optional pinning.
+  8. Final review — revalidate the draft and destination before saving.
+
+The wizard keeps the draft while navigating backwards. Nothing is saved until
+the final confirmation has passed validation and the destination permission
+check.
 """
 
 from __future__ import annotations
@@ -577,10 +574,10 @@ def _inline_buttons_prompt(w: dict[str, Any]) -> str:
     kind = "Media with caption" if media and w.get("content_text") else ("Media" if media else "Text")
     return (
         f"✅ Content saved ({kind}).\n\n"
-        "🔘 *Step 2.5 — Post Buttons (Optional)*\n\n"
-        "Add clickable buttons below your post. Each button needs a label and a destination.\n\n"
+        "🔘 *Optional — Post Buttons*\n\n"
+        "Add clickable buttons below your post. Each button needs a short label and a destination link.\n\n"
         "1. Tap Add Button.\n"
-        "2. Send a short label, such as Visit Website.\n"
+        "2. Send the label people will see, such as Visit Website.\n"
         "3. Send a full URL, such as https://example.com, or a Telegram @username.\n\n"
         f"Added: *{count}/10*. Choose Skip or Done when you are ready."
     )
@@ -666,12 +663,15 @@ async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Offer manual destination entry without leaving the destination step."""
     query = update.callback_query
+    user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
     await query.answer()
     await query.edit_message_text(
-        "▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n"
+        f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — {tr(language, 'manual_chat_id')}*\n\n"
         "Enter the numeric Telegram ID of the group or channel where the bot can publish.\n\n"
         "Example: -1001234567890\n\n"
-        "To find an ID, forward a message from the chat to a trusted ID helper.",
+        "To find an ID, forward a message from that chat to a trusted ID helper.",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
     )
     return WIZARD_CHAT_ID
@@ -953,12 +953,12 @@ async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     w.pop("interval_value", None)
     w.pop("interval_unit", None)
     query = update.callback_query
+    language = context.user_data.get("language", "en")
     await _edit(
         query,
-        "🔁 *Step 3/8 — Repeat Schedule*\n\n"
-        "How often should the bot publish this post?\n\n"
+        f"{tr(language, 'recurrence_interval')}\n\n"
         "Enter a whole number from 1 to 525,600. You will choose minutes, hours, or days next.\n"
-        "Examples: 30 (minutes), 6 (hours), or 1 (day).",
+        "Examples: 30 minutes, 6 hours, or 1 day.",
         nav_keyboard(back_data=CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
@@ -970,11 +970,12 @@ async def cb_rec_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     w.pop("interval_unit", None)
     w["days_of_week"] = set()
     query = update.callback_query
+    language = context.user_data.get("language", "en")
     await _edit(
         query,
-        "📆 *Step 3/8 — Repeat Days*\n\n"
-        "Select every day on which this post should be published. "
-        "You can choose more than one day.\n\nTap Next when your selection is complete.",
+        f"{tr(language, 'recurrence_days')}\n\n"
+        "Select every day on which this post should be published. You can select more than one day.\n"
+        "Tap Next when your selection is complete.",
         _dow_keyboard(w["days_of_week"]),
     )
     return WIZARD_DOW_SELECT
