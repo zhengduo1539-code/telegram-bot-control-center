@@ -432,3 +432,118 @@ def test_schedule_save_failure_keeps_draft_for_recovery(monkeypatch):
         assert "check *My Posts*" in query.edit_message_text.await_args.args[0]
 
     asyncio.run(scenario())
+
+
+
+def test_confirm_post_success_uses_message_fallback_and_ignores_delayed_duplicate(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(wizard, "ensure_chat_access", AsyncMock())
+        monkeypatch.setattr(wizard, "build_scheduled_post", lambda **kwargs: kwargs)
+        insert = AsyncMock(return_value=123)
+        monkeypatch.setattr(wizard, "insert_post", insert)
+        monkeypatch.setattr(wizard.chat_cleanup, "cleanup", AsyncMock())
+
+        message = SimpleNamespace(
+            chat_id=42,
+            message_id=101,
+            reply_text=AsyncMock(),
+        )
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            message=message,
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(side_effect=Exception("Message can't be edited")),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(send_message=AsyncMock()),
+            user_data={"wizard": _valid_schedule_draft()},
+        )
+        update = SimpleNamespace(callback_query=query)
+
+        state = await wizard.cb_confirm_post(update, context)
+
+        assert state == wizard.ConversationHandler.END
+        insert.assert_awaited_once()
+        message.reply_text.assert_awaited_once()
+        assert "Post scheduled successfully" in message.reply_text.await_args.args[0]
+        assert "wizard" not in context.user_data
+        assert context.user_data["_completed_schedule_confirmations"] == {"101": "123"}
+
+        # A delayed click on the same old Confirm button must not recreate the
+        # cleared draft, run validation against it, or insert another schedule.
+        duplicate_state = await wizard.cb_confirm_post(update, context)
+        assert duplicate_state == wizard.ConversationHandler.END
+        insert.assert_awaited_once()
+        assert query.answer.await_args.kwargs["show_alert"] is True
+
+    asyncio.run(scenario())
+
+
+def test_confirm_post_lock_is_acquired_before_async_permission_check(monkeypatch):
+    async def scenario():
+        entered_access_check = asyncio.Event()
+        release_access_check = asyncio.Event()
+
+        async def delayed_access_check(*_args):
+            entered_access_check.set()
+            await release_access_check.wait()
+
+        monkeypatch.setattr(wizard, "ensure_chat_access", delayed_access_check)
+        monkeypatch.setattr(wizard, "build_scheduled_post", lambda **kwargs: kwargs)
+        insert = AsyncMock(return_value=456)
+        monkeypatch.setattr(wizard, "insert_post", insert)
+        monkeypatch.setattr(wizard.chat_cleanup, "cleanup", AsyncMock())
+
+        message = SimpleNamespace(
+            chat_id=42,
+            message_id=102,
+            reply_text=AsyncMock(),
+        )
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            message=message,
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(callback_query=query)
+        context = SimpleNamespace(
+            bot=SimpleNamespace(send_message=AsyncMock()),
+            user_data={"wizard": _valid_schedule_draft()},
+        )
+
+        first = asyncio.create_task(wizard.cb_confirm_post(update, context))
+        await entered_access_check.wait()
+
+        duplicate_state = await wizard.cb_confirm_post(update, context)
+        assert duplicate_state == wizard.WIZARD_SUMMARY
+        assert insert.await_count == 0
+        assert context.user_data["wizard"]["_saving"] is True
+
+        release_access_check.set()
+        first_state = await first
+
+        assert first_state == wizard.ConversationHandler.END
+        insert.assert_awaited_once()
+
+    asyncio.run(scenario())
+
+
+def test_confirm_post_with_missing_draft_acknowledges_stale_callback_without_edit():
+    async def scenario():
+        query = SimpleNamespace(
+            message=SimpleNamespace(chat_id=42, message_id=103),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={})
+
+        state = await wizard.cb_confirm_post(
+            SimpleNamespace(callback_query=query), context
+        )
+
+        assert state == wizard.ConversationHandler.END
+        query.answer.assert_awaited_once()
+        assert query.answer.await_args.kwargs["show_alert"] is True
+        query.edit_message_text.assert_not_awaited()
+
+    asyncio.run(scenario())
