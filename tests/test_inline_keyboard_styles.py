@@ -1,7 +1,7 @@
 """Regression tests for semantic inline keyboard button styles."""
 
-from handlers.base import confirm_keyboard, nav_keyboard
-from handlers.owner_panel import _cancel_only_keyboard
+from handlers.base import confirm_keyboard, nav_keyboard, _posts_keyboard, start_keyboard
+from handlers.owner_panel import _cancel_only_keyboard, _owner_menu_keyboard
 from handlers.schedule_wizard import (
     _advanced_keyboard,
     _chat_list_keyboard,
@@ -106,3 +106,97 @@ def test_reply_keyboard_bridge_preserves_success_and_danger_styles():
     assert reply is not None
     buttons = [button for row in reply.keyboard for button in row]
     assert [button.style for button in buttons] == ["danger", "success"]
+
+def test_group_selection_and_manual_group_id_buttons_have_requested_styles():
+    group_picker = _chat_list_keyboard(
+        [{"chat_id": -1001234567890, "title": "Example Group", "chat_type": "supergroup"}],
+        0,
+        "ScheduleBot",
+        "en",
+    )
+    assert _button(group_picker, "👥 Example Group").style == "primary"
+    assert _button(group_picker, "✏️ Enter Chat ID manually").style == "success"
+    assert _button(group_picker, "❌ Cancel").style == "danger"
+
+    no_groups = _no_groups_keyboard("ScheduleBot", "en")
+    assert _button(no_groups, "➕ Add Bot to a Group").style == "primary"
+    assert _button(no_groups, "✏️ Enter Chat ID manually").style == "success"
+    assert _button(no_groups, "❌ Cancel").style == "danger"
+
+
+def test_schedule_choice_buttons_use_primary_and_selected_options_use_success():
+    assert all(
+        button.style == "primary"
+        for button in _buttons(_recurrence_keyboard("en"))[:3]
+    )
+    assert all(
+        button.style == "primary"
+        for button in _buttons(_interval_unit_keyboard())[:3]
+    )
+
+    days = _buttons(_dow_keyboard({0, 2}))
+    assert [button.style for button in days[:7]] == [
+        "success", "primary", "success", "primary", "primary", "primary", "primary"
+    ]
+
+    time_window_on = _buttons(_time_window_keyboard(True))
+    time_window_off = _buttons(_time_window_keyboard(False))
+    assert [button.style for button in time_window_on[:2]] == ["success", "primary"]
+    assert [button.style for button in time_window_off[:2]] == ["primary", "success"]
+
+    lifecycle = _buttons(_lifecycle_keyboard(True, False, True))
+    assert [button.style for button in lifecycle[:3]] == ["success", "primary", "success"]
+    advanced = _buttons(_advanced_keyboard(True, False, True, False))
+    assert [button.style for button in advanced[:4]] == [
+        "success", "primary", "success", "primary"
+    ]
+
+    timezone = _buttons(_timezone_keyboard(0, "en"))
+    assert all(button.style == "primary" for button in timezone[:-3])
+    assert timezone[-3].style == "primary"  # Next page
+    assert timezone[-2].style is None       # Back
+    assert timezone[-1].style == "danger"    # Cancel
+
+
+def test_owner_panel_and_my_posts_actions_are_semantically_styled():
+    owner_buttons = _buttons(_owner_menu_keyboard())
+    assert all(button.style == "primary" for button in owner_buttons[:5])
+    assert owner_buttons[5].style == "danger"
+    assert owner_buttons[6].style == "primary"
+
+    posts = [
+        {"_id": "post-1", "status": "pending"},
+        {"_id": "post-2", "status": "paused"},
+        {"_id": "post-3", "status": "posted"},
+        {"_id": "post-4", "status": "failed"},
+        {"_id": "post-5", "status": "pending"},
+        {"_id": "post-6", "status": "pending"},
+    ]
+    keyboard = _posts_keyboard(posts, 0, "en", "all")
+    buttons = _buttons(keyboard)
+    assert buttons[0].style == "success"  # selected "All" filter
+    assert buttons[1].style == "primary"  # unselected status filters
+    assert buttons[5].style == "primary"  # Pause
+    assert buttons[6].style == "danger"   # Delete
+    assert buttons[7].style == "primary"  # Clone entry action
+    assert buttons[8].style == "success"  # Resume
+    assert buttons[-1].style == "primary" # Main Menu
+
+
+def test_welcome_and_completed_schedule_actions_use_primary_style():
+    welcome = _buttons(start_keyboard(type("Bot", (), {"username": "ScheduleBot"})(), "en"))
+    assert [button.style for button in welcome] == ["primary", "primary"]
+
+
+def test_one_time_max_runs_preset_is_visible_and_success_styled():
+    buttons = _buttons(_max_runs_keyboard())
+    one_time = _button(_max_runs_keyboard(), "1× One time")
+    assert one_time.callback_data == "mr:preset:1"
+    assert one_time.style == "success"
+    assert any(button.text == "∞ Unlimited" for button in buttons)
+
+
+def test_inline_button_limit_keeps_done_and_cancel_only():
+    buttons = _buttons(_inline_btns_keyboard(10))
+    assert [button.text for button in buttons] == ["✅ Done", "❌ Cancel"]
+    assert [button.style for button in buttons] == ["success", "danger"]

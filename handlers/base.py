@@ -129,10 +129,12 @@ def start_keyboard(bot: Bot | None, language: str = "en") -> InlineKeyboardMarku
     return InlineKeyboardMarkup([[
         InlineKeyboardButton(
             tr(language, "add_group"),
+            style="primary",
             url=f"https://t.me/{username}?startgroup=true",
         ),
         InlineKeyboardButton(
             tr(language, "share_bot"),
+            style="primary",
             url=share_url,
         ),
     ]])
@@ -420,11 +422,11 @@ def _posts_keyboard(
     end = min(start + POSTS_PER_PAGE, total)
     buttons: list[list[InlineKeyboardButton]] = []
     buttons.append([
-        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", callback_data=f"{CB_MPP_FILTER}{key}")
+        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", style="success" if filter_key == key else "primary", callback_data=f"{CB_MPP_FILTER}{key}")
         for key in ("all", "pending", "paused")
     ])
     buttons.append([
-        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", callback_data=f"{CB_MPP_FILTER}{key}")
+        InlineKeyboardButton(f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}", style="success" if filter_key == key else "primary", callback_data=f"{CB_MPP_FILTER}{key}")
         for key in ("posted", "failed")
     ])
     for idx, post in enumerate(posts[start:end], start=start + 1):
@@ -438,17 +440,17 @@ def _posts_keyboard(
         controls.append(InlineKeyboardButton(f"{tr(language, 'delete')} #{idx}", style="danger", callback_data=f"{CB_MPP_DEL}{pid}"))
         buttons.append(controls)
         buttons.append([
-            InlineKeyboardButton(f"{tr(language, 'clone')} #{idx}", callback_data=f"{CB_MPP_CLONE}{pid}"),
+            InlineKeyboardButton(f"{tr(language, 'clone')} #{idx}", style="primary", callback_data=f"{CB_MPP_CLONE}{pid}"),
         ])
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{CB_MPP_PAGE}{page - 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "previous"), style="primary", callback_data=f"{CB_MPP_PAGE}{page - 1}"))
     if end < total:
-        nav_row.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{CB_MPP_PAGE}{page + 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "next"), style="primary", callback_data=f"{CB_MPP_PAGE}{page + 1}"))
     if nav_row:
         buttons.append(nav_row)
     buttons.append([
-        InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU),
+        InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU),
     ])
     return InlineKeyboardMarkup(buttons)
 
@@ -464,7 +466,7 @@ async def _render_my_posts(query: Any, user_id: int, page: int, context: Context
         await query.edit_message_text(
             f"❌ Error loading posts: `{str(exc).replace(chr(96), chr(39))}`",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU)]]),
         )
         return MY_POSTS
 
@@ -480,8 +482,8 @@ async def _render_my_posts(query: Any, user_id: int, page: int, context: Context
             "Return here anytime to pause, resume, duplicate, or remove posts.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tr(language, "schedule_new"), callback_data=CB_SCHEDULE_NEW)],
-                [InlineKeyboardButton(tr(language, "menu_title"), callback_data=CB_MAIN_MENU)],
+                [InlineKeyboardButton(tr(language, "schedule_new"), style="primary", callback_data=CB_SCHEDULE_NEW)],
+                [InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU)],
             ]),
         )
         return MY_POSTS
@@ -584,7 +586,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # as a normal clickable Telegram link and provide a Reply Keyboard
         # action that re-sends it when the user needs it.
         keyboard = ReplyKeyboardMarkup(
-            [[KeyboardButton(open_private_label)]],
+            [[KeyboardButton(open_private_label, style="primary")]],
             resize_keyboard=True,
             one_time_keyboard=False,
             is_persistent=True,

@@ -80,12 +80,12 @@ def _owner_menu_keyboard() -> InlineKeyboardMarkup:
             ),
         ],
         [
-            InlineKeyboardButton("👤 User Directory", callback_data=CB_OWNER_USERS),
-            InlineKeyboardButton("👥 Group Directory", callback_data=CB_OWNER_GROUPS),
+            InlineKeyboardButton("👤 User Directory", style="primary", callback_data=CB_OWNER_USERS),
+            InlineKeyboardButton("👥 Group Directory", style="primary", callback_data=CB_OWNER_GROUPS),
         ],
         [
-            InlineKeyboardButton("📣 Broadcast All", callback_data=CB_OWNER_BCAST_ALL),
-            InlineKeyboardButton("🎯 Message One", callback_data=CB_OWNER_BCAST_ONE),
+            InlineKeyboardButton("📣 Broadcast All", style="primary", callback_data=CB_OWNER_BCAST_ALL),
+            InlineKeyboardButton("🎯 Message One", style="primary", callback_data=CB_OWNER_BCAST_ONE),
         ],
         [
             InlineKeyboardButton(
@@ -95,7 +95,7 @@ def _owner_menu_keyboard() -> InlineKeyboardMarkup:
             ),
         ],
         [
-            InlineKeyboardButton("🏠 Main Menu", callback_data="nav:main_menu"),
+            InlineKeyboardButton("🏠 Main Menu", style="primary", callback_data="nav:main_menu"),
         ],
     ])
 
@@ -226,9 +226,9 @@ async def _render_id_list(query, items: list[dict], page: int, label: str, page_
 
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{page_cb_prefix}{page - 1}"))
+        nav_row.append(InlineKeyboardButton("◀️ Prev", style="primary", callback_data=f"{page_cb_prefix}{page - 1}"))
     if end < total:
-        nav_row.append(InlineKeyboardButton("Next ▶️", callback_data=f"{page_cb_prefix}{page + 1}"))
+        nav_row.append(InlineKeyboardButton("Next ▶️", style="primary", callback_data=f"{page_cb_prefix}{page + 1}"))
     buttons = [nav_row] if nav_row else []
     buttons.append([InlineKeyboardButton("⬅️ Back to Owner Panel", callback_data=CB_OWNER_BACK)])
 

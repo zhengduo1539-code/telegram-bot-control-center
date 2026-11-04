@@ -166,3 +166,116 @@ def test_confirm_post_requires_first_run_still_in_future():
         assert "reply_markup" in query.edit_message_text.await_args.kwargs
 
     asyncio.run(scenario())
+
+
+def test_inline_button_plain_label_then_link_flow_is_easy_to_follow():
+    async def scenario():
+        context = SimpleNamespace(user_data={"wizard": {"inline_buttons": []}})
+        label_message = SimpleNamespace(text="Join Channel", reply_text=AsyncMock())
+
+        state = await wizard.recv_ib_entry(SimpleNamespace(message=label_message), context)
+
+        assert state == wizard.WIZARD_INLINE_BTNS
+        assert context.user_data["wizard"]["pending_inline_button_label"] == "Join Channel"
+        label_prompt = label_message.reply_text.await_args.args[0]
+        assert "Step 2 of 2" in label_prompt
+        assert "@mychannel" in label_prompt
+
+        link_message = SimpleNamespace(text="https://t.me/mychannel", reply_text=AsyncMock())
+        state = await wizard.recv_ib_entry(SimpleNamespace(message=link_message), context)
+
+        assert state == wizard.WIZARD_INLINE_BTNS
+        assert context.user_data["wizard"]["inline_buttons"] == [[
+            {"text": "Join Channel", "url": "https://t.me/mychannel"}
+        ]]
+        result_text = link_message.reply_text.await_args.args[0]
+        assert "Button added" in result_text
+        assert "Join Channel" in result_text
+        assert "Add Another" in result_text
+        assert "Done" in result_text
+        assert "pending_inline_button_label" not in context.user_data["wizard"]
+
+    asyncio.run(scenario())
+
+
+def test_inline_button_invalid_link_keeps_the_label_and_retries():
+    async def scenario():
+        context = SimpleNamespace(user_data={"wizard": {
+            "inline_buttons": [],
+            "pending_inline_button_label": "Visit Website",
+        }})
+        message = SimpleNamespace(text="not a valid link", reply_text=AsyncMock())
+
+        state = await wizard.recv_ib_entry(SimpleNamespace(message=message), context)
+
+        assert state == wizard.WIZARD_INLINE_BTNS
+        assert context.user_data["wizard"]["pending_inline_button_label"] == "Visit Website"
+        assert not context.user_data["wizard"]["inline_buttons"]
+        assert "couldn't recognize" in message.reply_text.await_args.args[0].lower()
+
+    asyncio.run(scenario())
+
+
+def test_inline_button_legacy_label_pipe_url_entry_remains_supported():
+    async def scenario():
+        context = SimpleNamespace(user_data={"wizard": {"inline_buttons": []}})
+        message = SimpleNamespace(
+            text="Visit Website | https://example.com",
+            reply_text=AsyncMock(),
+        )
+
+        state = await wizard.recv_ib_entry(SimpleNamespace(message=message), context)
+
+        assert state == wizard.WIZARD_INLINE_BTNS
+        assert context.user_data["wizard"]["inline_buttons"] == [[
+            {"text": "Visit Website", "url": "https://example.com"}
+        ]]
+
+    asyncio.run(scenario())
+
+
+def test_max_runs_custom_count_accepts_positive_integer_and_rejects_zero():
+    async def scenario():
+        invalid_message = SimpleNamespace(text="0", reply_text=AsyncMock())
+        context = SimpleNamespace(user_data={"wizard": {}})
+
+        state = await wizard.recv_max_runs(SimpleNamespace(message=invalid_message), context)
+
+        assert state == wizard.WIZARD_MAX_RUNS
+        assert "max_runs" not in context.user_data["wizard"]
+        assert "starting from" in invalid_message.reply_text.await_args.args[0].lower()
+
+        valid_message = SimpleNamespace(text="27", reply_text=AsyncMock())
+        state = await wizard.recv_max_runs(SimpleNamespace(message=valid_message), context)
+
+        assert state == wizard.WIZARD_TIME_WINDOW
+        assert context.user_data["wizard"]["max_runs"] == 27
+        assert "Max runs: *27*" in valid_message.reply_text.await_args.args[0]
+
+    asyncio.run(scenario())
+
+
+def test_one_time_preset_stores_a_single_run():
+    async def scenario():
+        query = SimpleNamespace(
+            data="mr:preset:1",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={"wizard": {}})
+
+        state = await wizard.cb_mr_preset(SimpleNamespace(callback_query=query), context)
+
+        assert state == wizard.WIZARD_TIME_WINDOW
+        assert context.user_data["wizard"]["max_runs"] == 1
+        assert "One time" in query.edit_message_text.await_args.args[0]
+
+    asyncio.run(scenario())
+
+
+def test_max_runs_guidance_explains_all_three_choices_in_every_locale():
+    for language in LANGUAGES:
+        prompt = wizard.tr(language, "max_runs_prompt")
+        assert "One time" in prompt
+        assert "Unlimited" in prompt
+        assert "1" in prompt
