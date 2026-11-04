@@ -804,78 +804,68 @@ async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     return WIZARD_INLINE_BTNS
 async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Receive one or more 'Label | URL' lines from the user."""
+    """Accept a guided label/link pair or the legacy Label | URL shortcut."""
     text = (update.message.text or "").strip()
     w = _w(context)
     w.setdefault("inline_buttons", [])
-
-    # Guided input: first accept a plain button label, then ask for its URL.
-    # The old "Label | URL" shortcut below remains supported.
     pending_label = w.get("pending_inline_button_label")
+
     if "|" not in text:
         if pending_label is None:
             if not text or "\n" in text or "\r" in text:
                 await update.message.reply_text(
-                    "Please send one short button label at a time, such as Join Channel.",
-                    reply_markup=nav_keyboard(),
+                    "Send one short button label at a time, such as Join Channel.",
+                    reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
                 )
                 return WIZARD_INLINE_BTNS
             if len(text) > 64:
                 await update.message.reply_text(
-                    "Button text must be 64 characters or fewer. Please send a shorter label.",
-                    reply_markup=nav_keyboard(),
+                    "Button labels must be 64 characters or fewer. Please send a shorter label.",
+                    reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
                 )
                 return WIZARD_INLINE_BTNS
             w["pending_inline_button_label"] = text
             await update.message.reply_text(
-                f"✅ Button text saved: *{escape_markdown(text, version=1)}*\n\n"
+                f"✅ Button label saved: *{escape_markdown(text, version=1)}*\n\n"
                 "🔗 *Step 2 of 2 — Destination link*\n"
-                "Now send the full website/channel link, or a Telegram @username.\n\n"
-                "Examples:\n"
-                "• https://example.com\n"
-                "• https://t.me/mychannel\n"
-                "• @mychannel",
+                "Send a full website URL or a Telegram @username.\n\n"
+                "Examples:\n• https://example.com\n• https://t.me/mychannel\n• @mychannel",
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=nav_keyboard(),
+                reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
             )
             return WIZARD_INLINE_BTNS
 
-        url = text.strip()
+        url = text
         if url.startswith("@"):
             username = url[1:]
-            if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
-                url = ""
-            else:
-                url = "https://t.me/" + username
-        elif not url.startswith(("http://", "https://", "tg://")):
-            if "." in url and " " not in url:
-                url = "https://" + url
+            url = "https://t.me/" + username if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username) else ""
+        elif not url.startswith(("http://", "https://", "tg://")) and "." in url and " " not in url:
+            url = "https://" + url
         if not url or " " in url or not url.startswith(("http://", "https://", "tg://")):
             await update.message.reply_text(
-                "⚠️ I couldn't recognize that link. Send a full URL or a Telegram @username. Please try again.",
-                reply_markup=nav_keyboard(),
+                "⚠️ I couldn't recognize that link. Send a full URL or a Telegram @username, then try again. Your label is saved.",
+                reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
             )
             return WIZARD_INLINE_BTNS
         if len(w["inline_buttons"]) >= 10:
+            w.pop("pending_inline_button_label", None)
             await update.message.reply_text(
-                "You already have 10 buttons. Tap Done to continue.",
+                "You have reached the 10-button limit. Tap Done to continue.",
                 reply_markup=_inline_btns_keyboard(10),
             )
-            w.pop("pending_inline_button_label", None)
             return WIZARD_INLINE_BTNS
 
         w["inline_buttons"].append([{"text": pending_label, "url": url}])
         w.pop("pending_inline_button_label", None)
-        existing = _inline_btns_list_text(w["inline_buttons"])
         count = len(w["inline_buttons"])
         next_step = (
-            "You've reached the 10-button limit. Tap *✅ Done* to continue."
-            if count >= 10 else
-            "Tap *➕ Add Another* to add one more, or *✅ Done* to continue."
+            "You have reached the 10-button limit. Tap Done to continue."
+            if count == 10 else
+            "Add another button or tap Done to continue."
         )
         await update.message.reply_text(
-            f"✅ *Button added! ({count}/10)*\n\n"
-            f"*Buttons so far:*\n{existing}\n\n{next_step}",
+            f"✅ *Button added ({count}/10).*\n\n"
+            f"*Buttons saved:*\n{_inline_btns_list_text(w['inline_buttons'])}\n\n{next_step}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_inline_btns_keyboard(count),
         )
@@ -888,19 +878,20 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not line:
             continue
         if "|" not in line:
-            errors.append(f"• `{line[:40]}` — missing `|`")
+            errors.append("A line is missing the Label | URL separator.")
             continue
         label, _, url = line.partition("|")
-        label = label.strip()
-        url   = url.strip()
-        if not label:
-            errors.append(f"• _(empty label)_ `{url[:40]}`")
+        label, url = label.strip(), url.strip()
+        if not label or len(label) > 64:
+            errors.append("Each button label must contain 1–64 characters.")
             continue
-        # Allow @username shorthand → convert to t.me link
         if url.startswith("@"):
-            url = "https://t.me/" + url[1:]
-        if not (url.startswith("http://") or url.startswith("https://") or url.startswith("tg://")):
-            errors.append(f"• `{label}` — link must be a URL (http/https/tg://) or @username")
+            username = url[1:]
+            url = "https://t.me/" + username if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username) else ""
+        elif not url.startswith(("http://", "https://", "tg://")) and "." in url and " " not in url:
+            url = "https://" + url
+        if not url or " " in url or not url.startswith(("http://", "https://", "tg://")):
+            errors.append(f"Invalid destination for button: {escape_markdown(label, version=1)}.")
             continue
         if len(w["inline_buttons"]) >= 10:
             errors.append("Maximum 10 buttons reached.")
@@ -908,18 +899,16 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         w["inline_buttons"].append([{"text": label, "url": url}])
         added += 1
 
-    existing = _inline_btns_list_text(w["inline_buttons"])
-    err_block = ("\n\n⚠️ *Skipped:*\n" + "\n".join(errors)) if errors else ""
+    error_block = "\n\n⚠️ Skipped:\n" + "\n".join(errors) if errors else ""
     await update.message.reply_text(
-        f"✅ *{added} button(s) added.*{err_block}\n\n"
-        f"*Buttons so far ({len(w['inline_buttons'])}/10):*\n{existing}\n\n"
-        "Add another or tap *✅ Done*:",
+        f"✅ Added {added} button(s).{error_block}\n\n"
+        f"Buttons saved: {len(w['inline_buttons'])}/10\n"
+        f"{_inline_btns_list_text(w['inline_buttons'])}\n\n"
+        "Add another or tap Done.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
     )
     return WIZARD_INLINE_BTNS
-
-
 async def cb_back_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return from recurrence selection to the optional post-button step."""
     query = update.callback_query
