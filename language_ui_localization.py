@@ -2,7 +2,7 @@
 from localization import DEFAULT_LANGUAGE, LANGUAGES, normalize_language
 
 _ROWS = {
-"en": ("🌐 Language preferences can only be changed in the bot's private chat.", "📩 Open the bot in private chat, then send /lang.", "⚠️ Your language preference could not be saved. Please try again."),
+"en": ("🌐 Language settings are available in the bot's private chat.", "Open the bot privately and send /lang.", "⚠️ Your language preference could not be saved. Please try again."),
 "my": ("🌐 ဘာသာစကားဆက်တင်ကို Bot Private Chat တွင်သာ ပြောင်းလဲနိုင်ပါသည်။", "📩 Bot Private Chat ကိုဖွင့်ပြီး /lang ပေးပို့ပါ။", "⚠️ ဘာသာစကားဆက်တင်ကို သိမ်းဆည်းမရပါ။ ထပ်မံကြိုးစားပါ။"),
 "zh": ("🌐 只能在机器人的私聊中更改语言设置。", "📩 打开机器人的私聊，然后发送 /lang。", "⚠️ 无法保存语言设置，请重试。"),
 "es": ("🌐 El idioma solo se puede cambiar en el chat privado del bot.", "📩 Abre el chat privado del bot y envía /lang.", "⚠️ No se pudo guardar el idioma. Inténtalo de nuevo."),
