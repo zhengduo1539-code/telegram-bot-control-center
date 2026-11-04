@@ -462,7 +462,7 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except (TypeError, ValueError, ChatAccessError) as exc:
             logger.info("Deep-linked group is unavailable for user %s: %s", user_id, exc)
             await query.answer(
-                "The linked group is unavailable or your admin permissions changed. Please select a group manually.",
+                sw_tr(language, "deep_link_unavailable"),
                 show_alert=True,
             )
             answered = True
@@ -484,15 +484,15 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer()
     if groups:
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
-            f"_(Showing {min(_CHAT_PAGE_SIZE, len(groups))} of {len(groups)} saved chats)_",
+            f"▰▱▱▱▱▱▱▱ 1/8\n*{sw_tr(language, 'destination_label')}*\n\n{tr(language, 'choose_group')}\n\n"
+            f"{min(_CHAT_PAGE_SIZE, len(groups))} / {len(groups)}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
         )
     else:
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
-            "No saved groups were found. Add the bot to a group or enter a Chat ID manually.",
+            f"▰▱▱▱▱▱▱▱ 1/8\n*{sw_tr(language, 'destination_label')}*\n\n{tr(language, 'choose_group')}\n\n"
+            f"{sw_tr(language, 'no_groups')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_no_groups_keyboard(bot_username, language),
         )
@@ -504,7 +504,7 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     try:
         chat_id = int(raw)
     except ValueError:
-        await query.answer("Invalid destination selection.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "deep_link_unavailable"), show_alert=True)
         return WIZARD_CHAT_ID
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
@@ -513,7 +513,7 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     try:
         target_chat = await ensure_chat_access(query.get_bot(), chat_id, user_id)
     except ChatAccessError as exc:
-        await query.answer(str(exc), show_alert=True)
+        await query.answer(sw_tr(language, "deep_link_unavailable"), show_alert=True)
         return WIZARD_CHAT_ID
     w = _w(context)
     w["chat_id"] = chat_id
@@ -565,7 +565,7 @@ async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await query.answer()
     if groups:
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}",
+            f"▰▱▱▱▱▱▱▱ 1/8\n*{sw_tr(language, 'destination_label')}*\n\n{tr(language, 'choose_group')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
         )
@@ -586,7 +586,7 @@ async def cb_back_content(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
     prompt = _content_prompt_text(w, language)
     if has_content:
-        prompt += "\n\nYour content is saved. Choose Keep Current Content to continue, or send a new message to replace it."
+        prompt += "\n\n" + sw_tr(language, "saved_content_notice")
     await query.answer()
     await query.edit_message_text(
         prompt,
@@ -601,12 +601,12 @@ async def cb_content_keep(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     w = _w(context)
     if not (w.get("content_text") or w.get("media_file_id")):
-        await query.answer("Send the post content first.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "unsupported_content"), show_alert=True)
         return WIZARD_CONTENT
     w.setdefault("inline_buttons", [])
     await query.answer()
     await query.edit_message_text(
-        _inline_buttons_prompt(w),
+        _inline_buttons_prompt(w, _language(context)),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_inline_btns_keyboard(len(w["inline_buttons"]), _language(context)),
     )
@@ -625,9 +625,9 @@ async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     shown  = min(_CHAT_PAGE_SIZE, total - start)
     await query.answer()
     await query.edit_message_text(
-        f"▰▱▱▱▱▱▱▱ 1/8\n*Chat* › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📅 *Step 1/8 — Target Chat*\n\n"
-        f"🗂 Choose the group or channel to post to:\n"
-        f"_(Showing {shown} of {total} known chats)_",
+        f"▰▱▱▱▱▱▱▱ 1/8\n*{sw_tr(_language(context), 'destination_label')}*\n\n"
+        f"{tr(_language(context), 'choose_group')}\n"
+        f"{shown} / {total}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_chat_list_keyboard(groups, page, bot_username, _language(context)),
     )
@@ -641,10 +641,8 @@ async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     language = await resolve_user_language(context, user_id)
     await query.answer()
     await query.edit_message_text(
-        f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — {tr(language, 'manual_chat_id')}*\n\n"
-        "Enter the numeric Telegram ID of the group or channel where the bot can publish.\n\n"
-        "Example: -1001234567890\n\n"
-        "To find an ID, forward a message from that chat to a trusted ID helper.",
+        f"▰▱▱▱▱▱▱▱ 1/8\n*{sw_tr(language, 'destination_label')} — {tr(language, 'manual_chat_id')}*\n\n"
+        f"{sw_tr(language, 'manual_id_prompt', example='-1001234567890')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_nav(context, back_data=CB_BACK_CHAT),
     )
@@ -655,13 +653,13 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         chat_id = int(raw)
     except ValueError:
         await update.message.reply_text(
-            "⚠️ Enter a valid Telegram group or channel ID, for example -1001234567890.",
+            "⚠️ " + sw_tr(_language(context), "invalid_chat_id", example="-1001234567890"),
             reply_markup=_nav(context, back_data=CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
     if chat_id >= 0:
         await update.message.reply_text(
-            "⚠️ Group and channel IDs must be negative. Check the ID and try again.",
+            "⚠️ " + sw_tr(_language(context), "negative_chat_id"),
             reply_markup=_nav(context, back_data=CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
@@ -669,7 +667,7 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         target_chat = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
     except ChatAccessError as exc:
         await update.message.reply_text(
-            f"⚠️ {exc}",
+            "⚠️ " + sw_tr(_language(context), "deep_link_unavailable"),
             reply_markup=_nav(context, back_data=CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
@@ -704,7 +702,7 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         content_text = msg.text
     else:
         await msg.reply_text(
-            "⚠️ This message type cannot be scheduled. Send text, photo, video, document, audio, animation, or voice message.",
+            "⚠️ " + sw_tr(_language(context), "unsupported_content"),
             reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id")), _language(context)),
         )
         return WIZARD_CONTENT
