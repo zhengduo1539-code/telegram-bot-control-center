@@ -1619,16 +1619,26 @@ async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return WIZARD_AP_HOURS
     _w(context)["ap_hours"] = value
     return await _show_summary_from_message(update, context)
-def _build_summary(w: dict[str, Any]) -> str:
-    """Build a safe final review from the validated draft."""
+def _build_summary(w: dict[str, Any], language: str = "en") -> str:
+    """Build a safe final review with every interface label localized."""
     recurrence = w.get("recurrence_type", "once")
     if recurrence == "interval":
-        recurrence_line = f"Every {w.get('interval_value')} {w.get('interval_unit')}"
+        unit_key = f"unit_{w.get('interval_unit')}_button"
+        unit_label = sw_tr(language, unit_key).split(" ", 1)[-1]
+        recurrence_line = sw_tr(
+            language,
+            "interval_repeat_format",
+            value=w.get("interval_value"),
+            unit=unit_label,
+        )
     elif recurrence == "days_of_week":
         days = sorted(w.get("days_of_week", set()))
-        recurrence_line = "Weekly on " + ", ".join(DOW_LABELS[d] for d in days if d in range(7))
+        day_names = ", ".join(
+            schedule_wizard_weekdays(language)[day] for day in days if day in range(7)
+        )
+        recurrence_line = sw_tr(language, "weekly_repeat_format", days=day_names)
     else:
-        recurrence_line = "One-time"
+        recurrence_line = sw_tr(language, "one_time_button")
 
     timezone_name = str(w.get("timezone", "UTC"))
     try:
@@ -1641,70 +1651,84 @@ def _build_summary(w: dict[str, Any]) -> str:
     if isinstance(first_run, datetime) and first_run.tzinfo is not None and first_run.utcoffset() is not None:
         first_run_line = first_run.astimezone(zone).strftime("%d/%m/%Y %H:%M")
     else:
-        first_run_line = "Not set"
+        first_run_line = sw_tr(language, "not_set")
 
     if w.get("time_window_enabled"):
-        window_line = f"{w.get('tw_start')} to {w.get('tw_end')} ({timezone_name})"
+        window_line = sw_tr(
+            language,
+            "window_range",
+            start=w.get("tw_start"),
+            end=w.get("tw_end"),
+            timezone=timezone_name,
+        )
     else:
-        window_line = "Off"
+        window_line = sw_tr(language, "off_label")
 
     auto_delete_line = (
         str(w.get("ad_duration_label") or f"{w.get('ad_hours')} hours")
-        if w.get("auto_delete") else "Off"
+        if w.get("auto_delete") else sw_tr(language, "off_label")
     )
     self_destruct_line = (
-        f"{w.get('sd_secs')} seconds after publishing"
-        if w.get("self_destruct") else "Off"
+        sw_tr(language, "self_destruct_summary", seconds=w.get("sd_secs"))
+        if w.get("self_destruct") else sw_tr(language, "off_label")
     )
     if not w.get("auto_pin"):
-        auto_pin_line = "Off"
+        auto_pin_line = sw_tr(language, "off_label")
     elif "ap_hours" not in w:
-        auto_pin_line = "Not configured"
+        auto_pin_line = sw_tr(language, "not_configured")
     elif w.get("ap_hours") is None:
-        auto_pin_line = "Keep pinned until manually unpinned"
+        auto_pin_line = sw_tr(language, "keep_pinned_summary")
     else:
-        auto_pin_line = f"Unpin after {w.get('ap_hours')} hours"
+        auto_pin_line = sw_tr(language, "pin_after_hours", hours=w.get("ap_hours"))
 
     if recurrence == "once":
-        delivery_line = "1 send"
+        delivery_line = sw_tr(language, "one_send")
     elif w.get("max_runs") is None:
-        delivery_line = "Unlimited"
+        delivery_line = sw_tr(language, "unlimited_label")
     else:
-        delivery_line = f"{w.get('max_runs')} sends"
+        delivery_line = f"{w.get('max_runs')}×"
 
     raw_text = " ".join(str(w.get("content_text") or "").split())
     preview = escape_markdown(raw_text[:100], version=1) if raw_text else ""
     if w.get("media_type"):
-        preview = f"[{str(w['media_type']).replace('_', ' ').title()}] {preview}".strip()
+        preview = f"[{sw_tr(language, 'media_post')}] {preview}".strip()
     if len(raw_text) > 100:
         preview += "…"
     if not preview:
-        preview = "Media post" if w.get("media_file_id") else "Not set"
+        preview = (
+            sw_tr(language, "media_post")
+            if w.get("media_file_id") else sw_tr(language, "not_set")
+        )
 
-    title = escape_markdown(str(w.get("chat_title") or "Selected destination"), version=1)
+    title = escape_markdown(
+        str(w.get("chat_title") or sw_tr(language, "destination_label")), version=1
+    )
     chat_id = escape_markdown(str(w.get("chat_id") or "—"), version=1)
     tz_display = escape_markdown(timezone_name, version=1)
 
     return (
         "▰▰▰▰▰▰▰▰ 8/8\n"
-        "*Final Review — Schedule New Post*\n\n"
-        f"🗂 *Destination:* {title} ({chat_id})\n"
-        f"📝 *Content:* {preview}\n"
-        f"🔁 *Repeat:* {escape_markdown(recurrence_line, version=1)}\n"
-        f"🕐 *First Post:* {first_run_line} ({tz_display})\n"
-        f"🔢 *Delivery Limit:* {delivery_line}\n"
-        f"🕑 *Posting Window:* {escape_markdown(window_line, version=1)}\n"
-        f"🗑 *Auto-Delete:* {escape_markdown(auto_delete_line, version=1)}\n"
-        f"💣 *Self-Destruct:* {escape_markdown(self_destruct_line, version=1)}\n"
-        f"📌 *Auto-Pin:* {escape_markdown(auto_pin_line, version=1)}\n"
-        f"🔘 *Post Buttons:*\n{_inline_btns_list_text(w.get('inline_buttons', []))}\n\n"
-        "Review every detail. Nothing is scheduled until you tap Confirm."
+        f"*{sw_tr(language, 'final_review_heading')}*\n\n"
+        f"🗂 *{sw_tr(language, 'destination_label')}:* {title} ({chat_id})\n"
+        f"📝 *{sw_tr(language, 'content_label')}:* {preview}\n"
+        f"🔁 *{sw_tr(language, 'repeat_label')}:* {escape_markdown(recurrence_line, version=1)}\n"
+        f"🕐 *{sw_tr(language, 'first_post_summary_label')}:* {first_run_line} ({tz_display})\n"
+        f"🔢 *{sw_tr(language, 'delivery_limit_label')}:* {delivery_line}\n"
+        f"🕑 *{sw_tr(language, 'posting_window_label')}:* {escape_markdown(window_line, version=1)}\n"
+        f"🗑 *{sw_tr(language, 'auto_delete_label')}:* {escape_markdown(auto_delete_line, version=1)}\n"
+        f"💣 *{sw_tr(language, 'self_destruct_label')}:* {escape_markdown(self_destruct_line, version=1)}\n"
+        f"📌 *{sw_tr(language, 'auto_pin_label')}:* {escape_markdown(auto_pin_line, version=1)}\n"
+        f"🔘 *{sw_tr(language, 'post_buttons_label')}:*\n"
+        f"{_inline_btns_list_text(w.get('inline_buttons', []), language)}\n\n"
+        f"{sw_tr(language, 'review_confirm')}"
     )
+
+
 async def _show_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        _build_summary(_w(context)),
+        _build_summary(_w(context), _language(context)),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_confirm_keyboard(context),
     )
