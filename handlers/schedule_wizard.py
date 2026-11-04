@@ -1083,7 +1083,7 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     dt = _parse_run_time(raw, timezone_name)
     if dt is None:
         await update.message.reply_text(
-            "⚠️ That time could not be validated as a future date.\n\n"
+            "⚠️ That time could not be validated as a future time or date.\n\n"
             "Enter a 24-hour time such as 14:30 for the next occurrence, or "
             "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.",
             reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
