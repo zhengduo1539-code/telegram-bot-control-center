@@ -2097,7 +2097,7 @@ _MORE_KEYS = [
 _MORE_ROWS = {
     "en": [
         "Choose whether this interval is measured in minutes, hours, or days.",
-        "🔢 *One-time delivery*\nThis post will be sent once at the selected time. No repeat count is needed.",
+        "🔢 *One-time delivery — One send*\nThis post will be sent once at the selected time. No repeat count is needed.",
         "💡 *Suggested Best Times*",
         "⚠️ *Not enough activity data yet.*",
         "✏️ Enter a custom time",
@@ -2624,6 +2624,121 @@ for _locale, _values in _STATUS_ROWS.items():
     if len(_values) != len(_STATUS_KEYS) or any(not value for value in _values):
         raise RuntimeError(f"Incomplete Schedule wizard status messages for {_locale}.")
     _MESSAGES[_locale].update(dict(zip(_STATUS_KEYS, _values, strict=True)))
+
+
+_FINAL_KEYS = [
+    "delivery_count",
+    "add_button_heading",
+    "button_label_saved"
+]
+_FINAL_ROWS = {
+    "en": [
+        "{count} sends",
+        "Add a Post Button",
+        "✅ Button label saved: *{label}*"
+],
+    "my": [
+        "{count} ကြိမ်ပို့မည်",
+        "Post Button ထည့်ရန်",
+        "✅ Button အမည်ကို သိမ်းဆည်းပြီးပါပြီ: *{label}*"
+],
+    "zh": [
+        "发送 {count} 次",
+        "添加帖子按钮",
+        "✅ 按钮标签已保存：*{label}*"
+],
+    "es": [
+        "{count} envíos",
+        "Añadir un botón a la publicación",
+        "✅ Etiqueta del botón guardada: *{label}*"
+],
+    "hi": [
+        "{count} बार भेजें",
+        "पोस्ट बटन जोड़ें",
+        "✅ बटन लेबल सहेजा गया: *{label}*"
+],
+    "ar": [
+        "{count} عملية إرسال",
+        "إضافة زر للمنشور",
+        "✅ تم حفظ تسمية الزر: *{label}*"
+],
+    "pt": [
+        "{count} envios",
+        "Adicionar botão à publicação",
+        "✅ Rótulo do botão salvo: *{label}*"
+],
+    "fr": [
+        "{count} envois",
+        "Ajouter un bouton à la publication",
+        "✅ Libellé du bouton enregistré : *{label}*"
+],
+    "ru": [
+        "{count} отправок",
+        "Добавить кнопку публикации",
+        "✅ Название кнопки сохранено: *{label}*"
+],
+    "bn": [
+        "{count} বার পাঠান",
+        "পোস্ট বাটন যোগ করুন",
+        "✅ বাটনের লেবেল সংরক্ষিত হয়েছে: *{label}*"
+],
+    "id": [
+        "{count} kiriman",
+        "Tambah Tombol Postingan",
+        "✅ Label tombol disimpan: *{label}*"
+],
+    "ja": [
+        "{count}回送信",
+        "投稿ボタンを追加",
+        "✅ ボタンのラベルを保存しました：*{label}*"
+],
+    "ko": [
+        "{count}회 전송",
+        "게시물 버튼 추가",
+        "✅ 버튼 라벨 저장됨: *{label}*"
+],
+    "th": [
+        "ส่ง {count} ครั้ง",
+        "เพิ่มปุ่มโพสต์",
+        "✅ บันทึกชื่อปุ่มแล้ว: *{label}*"
+],
+    "vi": [
+        "{count} lượt gửi",
+        "Thêm nút bài đăng",
+        "✅ Đã lưu nhãn nút: *{label}*"
+],
+    "tr": [
+        "{count} gönderim",
+        "Gönderi Düğmesi Ekle",
+        "✅ Düğme etiketi kaydedildi: *{label}*"
+],
+    "de": [
+        "{count} Sendungen",
+        "Beitragsbutton hinzufügen",
+        "✅ Button-Beschriftung gespeichert: *{label}*"
+],
+    "it": [
+        "{count} invii",
+        "Aggiungi pulsante al post",
+        "✅ Etichetta del pulsante salvata: *{label}*"
+],
+    "ur": [
+        "{count} مرتبہ بھیجیں",
+        "پوسٹ بٹن شامل کریں",
+        "✅ بٹن کا لیبل محفوظ ہو گیا: *{label}*"
+],
+    "sw": [
+        "Utumaji {count}",
+        "Ongeza Kitufe cha Chapisho",
+        "✅ Lebo ya kitufe imehifadhiwa: *{label}*"
+],
+}
+if set(_FINAL_ROWS) != set(LANGUAGES):
+    raise RuntimeError("Final Schedule wizard text must cover every supported language.")
+for _locale, _values in _FINAL_ROWS.items():
+    if len(_values) != len(_FINAL_KEYS) or any(not value for value in _values):
+        raise RuntimeError(f"Incomplete final Schedule wizard text for {_locale}.")
+    _MESSAGES[_locale].update(dict(zip(_FINAL_KEYS, _values, strict=True)))
 
 _WEEKDAY_LABELS = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
