@@ -949,8 +949,7 @@ async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _edit(
         query,
         f"{tr(language, 'recurrence_interval')}\n\n"
-        "Enter a whole number from 1 to 525,600. You will choose minutes, hours, or days next.\n"
-        "Examples: 30 minutes, 6 hours, or 1 day.",
+        + sw_tr(language, "interval_value_prompt"),
         _nav(context, back_data=CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
@@ -975,7 +974,7 @@ async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not (1 <= int(raw) <= 525600):
         await update.message.reply_text(
-            "⚠️ Enter a whole number from 1 to 525,600. For example, 6.",
+            "⚠️ " + sw_tr(_language(context), "interval_invalid"),
             reply_markup=_nav(context, back_data=CB_BACK_RECURRENCE),
         )
         return WIZARD_INTERVAL_VALUE
@@ -983,16 +982,14 @@ async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE
     w["interval_value"] = int(raw)
     w.pop("interval_unit", None)
     await update.message.reply_text(
-        f"✅ Interval value: {raw}\n\n"
-        "Choose the unit for this interval.",
+        f"✅ {raw}\n\n" + sw_tr(_language(context), "interval_unit_prompt"),
         reply_markup=_interval_unit_keyboard(_language(context)),
     )
     return WIZARD_INTERVAL_UNIT
 async def cb_back_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
-        "⏱ *Step 3a — Interval Value*\n\n"
-        "Type a positive whole number (e.g. `6`):",
+        sw_tr(_language(context), "interval_value_prompt"),
         _nav(context, back_data=CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
@@ -1011,13 +1008,13 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     }
     unit = unit_map.get(query.data)
     if unit is None:
-        await query.answer("Choose minutes, hours, or days.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "interval_unit_prompt"), show_alert=True)
         return WIZARD_INTERVAL_UNIT
     value = _w(context).get("interval_value")
     limits = {"minutes": 525600, "hours": 8760, "days": 365}
     if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= limits[unit]:
         await query.answer(
-            f"Enter an interval from 1 to {limits[unit]} {unit}.",
+            sw_tr(_language(context), "interval_invalid"),
             show_alert=True,
         )
         return WIZARD_INTERVAL_VALUE
@@ -1026,7 +1023,7 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     language = context.user_data.get("language", "en")
     await _edit(
         query,
-        f"✅ Repeat: every {value} {unit}.\n\n{tr(language, 'timezone_prompt')}",
+        f"✅ {sw_tr(language, 'interval_repeat_format', value=value, unit=sw_tr(language, 'unit_' + unit + '_button').split(' ', 1)[-1])}.\n\n{tr(language, 'timezone_prompt')}",
         _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
@@ -1039,7 +1036,7 @@ async def cb_dow_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         selected.discard(day)
     else:
         selected.add(day)
-    await query.answer(f"{'✅' if day in selected else '☐'} {DOW_LABELS[day]}")
+    await query.answer(f"{'✅' if day in selected else '☐'} {schedule_wizard_weekdays(_language(context))[day]}")
     await query.edit_message_reply_markup(_dow_keyboard(selected, _language(context)))
     return WIZARD_DOW_SELECT
 
@@ -1049,12 +1046,12 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w = _w(context)
     selected: set[int] = w.get("days_of_week", set())
     if not selected:
-        await query.answer("⚠️ Please select at least one day.", show_alert=True)
+        await query.answer("⚠️ " + sw_tr(_language(context), "days_required"), show_alert=True)
         return WIZARD_DOW_SELECT
     language = context.user_data.get("language", "en")
     await _edit(
         query,
-        f"✅ Days: `{', '.join(DOW_LABELS[d] for d in sorted(selected))}`\n\n{tr(language, 'timezone_prompt')}",
+        f"✅ {sw_tr(language, 'weekly_repeat_format', days=', '.join(schedule_wizard_weekdays(language)[d] for d in sorted(selected)))}\n\n{tr(language, 'timezone_prompt')}",
         _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
@@ -1071,9 +1068,8 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     dt = _parse_run_time(raw, timezone_name)
     if dt is None:
         await update.message.reply_text(
-            "⚠️ That time could not be validated as a future time or date.\n\n"
-            "Enter a 24-hour time such as 14:30 for the next occurrence, or "
-            "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.",
+            "⚠️ " + sw_tr(_language(context), "first_time_invalid") + "\n\n"
+            + sw_tr(_language(context), "first_time_format"),
             reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE, _language(context)),
         )
         return WIZARD_FIRST_RUN
@@ -1086,14 +1082,13 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if one_time:
         w["max_runs"] = 1
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            "🔢 *One-time delivery*\n"
-            "This post will be sent once at the selected time. No repeat count is needed."
+            sw_tr(_language(context), "one_time_delivery") + "\n\n"
+            + sw_tr(_language(context), "first_post_selected", time=local_display, timezone=timezone_name)
         )
     else:
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}"
+            sw_tr(_language(context), "first_post_selected", time=local_display, timezone=timezone_name)
+            + "\n\n" + tr(_language(context), "max_runs_prompt")
         )
     await update.message.reply_text(
         prompt,
@@ -1121,29 +1116,19 @@ async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if not results:
         await query.edit_message_text(
-            "💡 *Smart Scheduling*\n\n"
-            "⚠️ *Not enough data yet.*\n\n"
-            "The bot learns active hours by observing messages in the group. "
-            "Come back after the bot has been active there for a while.\n\n"
-            "For now, type the time manually:\n"
-            "• `HH:MM` — e.g. `09:00`\n"
-            "• `DD/MM/YYYY HH:MM` — e.g. `25/12/2027 09:00`",
+            sw_tr(_language(context), "smart_title") + "\n\n"
+            + sw_tr(_language(context), "smart_no_data_heading") + "\n\n"
+            + sw_tr(_language(context), "smart_no_data") + "\n\n"
+            + sw_tr(_language(context), "first_time_format"),
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN)],
+                [InlineKeyboardButton(tr(_language(context), "back"), callback_data=CB_BACK_FIRST_RUN)],
             ]),
         )
         return WIZARD_FIRST_RUN
 
+    language = _language(context)
     total = sum(r["count"] for r in results)
-
-    def _label(count: int) -> str:
-        pct = count / total * 100 if total else 0
-        if pct >= 40:
-            return "high activity"
-        if pct >= 20:
-            return "good activity"
-        return "moderate activity"
 
     lines = []
     btn_rows: list[list[InlineKeyboardButton]] = []
@@ -1151,20 +1136,20 @@ async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         h = r["hour"]
         time_str = f"{h:02d}:00"
         medal = _MEDAL[i] if i < 3 else "•"
-        lines.append(f"{medal} *{time_str}* — {_label(r['count'])} ({r['count']} msgs)")
+        lines.append(f"{medal} *{time_str}* — {r['count']}")
         btn_rows.append([InlineKeyboardButton(
             f"{medal} {time_str}",
             style="primary",
             callback_data=f"{CB_SMART_PICK_PREFIX}{time_str}",
         )])
 
-    btn_rows.append([InlineKeyboardButton("✏️ Enter custom time", style="primary", callback_data=CB_BACK_FIRST_RUN)])
+    btn_rows.append([InlineKeyboardButton(sw_tr(language, "smart_custom_time"), style="primary", callback_data=CB_BACK_FIRST_RUN)])
 
     await query.edit_message_text(
-        "💡 *Suggested Best Times*\n\n"
-        "Based on message activity in this chat:\n\n" +
-        "\n".join(lines) +
-        "\n\nTap a time to use it, or enter a custom time:",
+        sw_tr(language, "smart_title") + "\n\n"
+        + sw_tr(language, "smart_activity_intro") + "\n\n"
+        + "\n".join(lines) +
+        "\n\n" + sw_tr(language, "smart_custom_time"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup(btn_rows),
     )
@@ -1179,7 +1164,7 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     timezone_name = w.get("timezone", "UTC")
     dt = _parse_run_time(time_str, timezone_name)
     if dt is None:
-        await query.answer("That suggested time is no longer available. Enter a future time manually.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "suggested_time_unavailable"), show_alert=True)
         return WIZARD_FIRST_RUN
 
     w["first_run"] = dt
@@ -1190,13 +1175,13 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if one_time:
         w["max_runs"] = 1
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            "🔢 *One-time delivery*\nThis post will be sent once at the selected time."
+            sw_tr(_language(context), "one_time_delivery") + "\n\n"
+            + sw_tr(_language(context), "first_post_selected", time=local_display, timezone=timezone_name)
         )
     else:
         prompt = (
-            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
-            f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}"
+            sw_tr(_language(context), "first_post_selected", time=local_display, timezone=timezone_name)
+            + "\n\n" + tr(_language(context), "max_runs_prompt")
         )
     await query.answer()
     await query.edit_message_text(
@@ -1219,7 +1204,7 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         pytz.timezone(tz_name)
     except (pytz.exceptions.UnknownTimeZoneError, TypeError):
-        await query.answer("Unknown timezone. Please choose one from the list.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "timezone_unknown"), show_alert=True)
         return WIZARD_TIMEZONE
 
     w = _w(context)
@@ -1227,11 +1212,9 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     language = context.user_data.get("language", "en")
     await _edit(
         query,
-        f"✅ Timezone: {escape_markdown(tz_name, version=1)}\n\n"
-        f"{tr(language, 'first_run_prompt')}\n\n"
-        "Enter a 24-hour time such as 14:30 for the next occurrence, or "
-        "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.\n\n"
-        "Or tap Suggest Best Time to choose from the group's recent activity.",
+        sw_tr(language, "timezone_selected", timezone=escape_markdown(tz_name, version=1))
+        + "\n\n" + tr(language, "first_run_prompt")
+        + "\n\n" + sw_tr(language, "timezone_time_prompt"),
         _first_run_keyboard(CB_BACK_TIMEZONE, _language(context)),
     )
     return WIZARD_FIRST_RUN
@@ -1252,14 +1235,13 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     rec_type = w.get("recurrence_type", "once")
     if rec_type == "days_of_week":
         await _edit(query,
-            "📆 *Step 3a — Days of Week*\n\nTap days to toggle, then ➡️ Next.",
+            sw_tr(_language(context), "days_prompt"),
             _dow_keyboard(w.get("days_of_week", set()), _language(context)),
         )
         return WIZARD_DOW_SELECT
     elif rec_type == "interval":
         await _edit(query,
-            f"✅ Value: `{w.get('interval_value')}`\n\n"
-            "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
+            f"✅ {w.get('interval_value')}\n\n" + sw_tr(_language(context), "interval_unit_prompt"),
             _interval_unit_keyboard(_language(context)),
         )
         return WIZARD_INTERVAL_UNIT
@@ -2099,8 +2081,7 @@ async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     one_time = w.get("recurrence_type") == "once"
     if one_time:
         prompt = (
-            "🔢 *One-time delivery*\n"
-            "This post will be sent once. Confirm the one-send setting to continue."
+            sw_tr(_language(context), "one_time_delivery")
         )
     else:
         prompt = tr(context.user_data.get("language", "en"), "max_runs_prompt")
