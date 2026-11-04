@@ -726,13 +726,17 @@ def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if count == 0:
         rows.append([
-            InlineKeyboardButton("➕ Add Button",  style="primary", callback_data=CB_IB_ADD),
-            InlineKeyboardButton("⏭ Skip",         style="primary", callback_data=CB_IB_SKIP),
+            InlineKeyboardButton("➕ Add Button", style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton("⏭ Skip", style="primary", callback_data=CB_IB_SKIP),
+        ])
+    elif count >= 10:
+        rows.append([
+            InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
         ])
     else:
         rows.append([
-            InlineKeyboardButton("➕ Add Another",  style="primary", callback_data=CB_IB_ADD),
-            InlineKeyboardButton("✅ Done",          style="success", callback_data=CB_IB_DONE),
+            InlineKeyboardButton("➕ Add Another", style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
         ])
     rows.append([InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
@@ -741,6 +745,7 @@ def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
 async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User skips inline buttons — go straight to recurrence."""
     query = update.callback_query
+    _w(context).pop("pending_inline_button_label", None)
     _w(context).setdefault("inline_buttons", [])
     await _edit(query,
         tr(context.user_data.get("language", "en"), "recurrence_prompt"),
@@ -750,20 +755,21 @@ async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Prompt for one 'Label | URL' entry."""
+    """Start the simple two-step button entry flow."""
     query = update.callback_query
-    await query.answer()
-    count = len(_w(context).get("inline_buttons", []))
-    existing = _inline_btns_list_text(_w(context).get("inline_buttons", []))
-    await query.edit_message_text(
-        (f"✅ *Buttons so far:*\n{existing}\n\n" if existing else "") +
-        "📝 *Send the button in this format:*\n"
-        "`Label | URL` or `Label | @username`\n\n"
-        "_Examples:_\n"
-        "`Visit Website | https://example.com`\n"
-        "`Join Channel | https://t.me/mychannel`\n"
-        "`Contact Admin | @adminusername`",
-        parse_mode=ParseMode.MARKDOWN,
+    w = _w(context)
+    if len(w.get("inline_buttons", [])) >= 10:
+        await query.answer("You can add up to 10 buttons.", show_alert=True)
+        return WIZARD_INLINE_BTNS
+    w.pop("pending_inline_button_label", None)
+    await _edit(
+        query,
+        "➕ *Add a Post Button*\n\n"
+        "📝 *Step 1 of 2 — Button text*\n"
+        "Send the short text people will see on the button.\n\n"
+        "Examples: Visit Website or Join Channel.\n"
+        "Next, I'll ask you for the destination link.",
+        nav_keyboard(),
     )
     return WIZARD_INLINE_BTNS
 
@@ -773,6 +779,79 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     text = (update.message.text or "").strip()
     w = _w(context)
     w.setdefault("inline_buttons", [])
+
+    # Guided input: first accept a plain button label, then ask for its URL.
+    # The old "Label | URL" shortcut below remains supported.
+    pending_label = w.get("pending_inline_button_label")
+    if "|" not in text:
+        if pending_label is None:
+            if not text or "\n" in text or "\r" in text:
+                await update.message.reply_text(
+                    "Please send one short button label at a time, such as Join Channel.",
+                    reply_markup=nav_keyboard(),
+                )
+                return WIZARD_INLINE_BTNS
+            if len(text) > 64:
+                await update.message.reply_text(
+                    "Button text must be 64 characters or fewer. Please send a shorter label.",
+                    reply_markup=nav_keyboard(),
+                )
+                return WIZARD_INLINE_BTNS
+            w["pending_inline_button_label"] = text
+            await update.message.reply_text(
+                f"✅ Button text saved: *{escape_markdown(text, version=1)}*\\n\\n"
+                "🔗 *Step 2 of 2 — Destination link*\\n"
+                "Now send the full website/channel link, or a Telegram @username.\\n\\n"
+                "Examples:\\n"
+                "• https://example.com\\n"
+                "• https://t.me/mychannel\\n"
+                "• @mychannel",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=nav_keyboard(),
+            )
+            return WIZARD_INLINE_BTNS
+
+        url = text.strip()
+        if url.startswith("@"):
+            username = url[1:]
+            if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+                url = ""
+            else:
+                url = "https://t.me/" + username
+        elif not url.startswith(("http://", "https://", "tg://")):
+            if "." in url and " " not in url:
+                url = "https://" + url
+        if not url or " " in url or not url.startswith(("http://", "https://", "tg://")):
+            await update.message.reply_text(
+                "⚠️ I couldn't recognize that link. Send a full URL or a Telegram @username. Please try again.",
+                reply_markup=nav_keyboard(),
+            )
+            return WIZARD_INLINE_BTNS
+        if len(w["inline_buttons"]) >= 10:
+            await update.message.reply_text(
+                "You already have 10 buttons. Tap Done to continue.",
+                reply_markup=_inline_btns_keyboard(10),
+            )
+            w.pop("pending_inline_button_label", None)
+            return WIZARD_INLINE_BTNS
+
+        w["inline_buttons"].append([{"text": pending_label, "url": url}])
+        w.pop("pending_inline_button_label", None)
+        existing = _inline_btns_list_text(w["inline_buttons"])
+        count = len(w["inline_buttons"])
+        next_step = (
+            "You've reached the 10-button limit. Tap *✅ Done* to continue."
+            if count >= 10 else
+            "Tap *➕ Add Another* to add one more, or *✅ Done* to continue."
+        )
+        await update.message.reply_text(
+            f"✅ *Button added! ({count}/10)*\\n\\n"
+            f"*Buttons so far:*\\n{existing}\\n\\n{next_step}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_inline_btns_keyboard(count),
+        )
+        return WIZARD_INLINE_BTNS
+
     added = 0
     errors: list[str] = []
     for line in text.splitlines():
@@ -815,6 +894,7 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Finished adding buttons — move to recurrence."""
     query = update.callback_query
+    _w(context).pop("pending_inline_button_label", None)
     await _edit(query,
         tr(context.user_data.get("language", "en"), "recurrence_prompt"),
         _recurrence_keyboard(context.user_data.get("language", "en")),
