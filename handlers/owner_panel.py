@@ -275,204 +275,178 @@ async def cb_owner_bcast_all_start(update: Update, context: ContextTypes.DEFAULT
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     await query.edit_message_text(
-        "📣 *Broadcast to All Users*\n\n"
-        "Send the message you want delivered to every tracked user "
-        "(text only). Send `/cancel_owner` to abort.",
+        ot(language, "broadcast_all_prompt"),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_cancel_only_keyboard(),
+        reply_markup=_cancel_only_keyboard(language),
     )
     return OWNER_BCAST_ALL_WAIT
 
-
 async def msg_owner_bcast_all_send(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from database import list_user_ids
-
     if not update.message or not update.effective_user:
         return OWNER_BCAST_ALL_WAIT
+    language = await resolve_user_language(context, update.effective_user.id)
     if not _is_owner(update.effective_user.id):
         return ConversationHandler.END
-    text = update.message.text
-    if not text:
-        await update.message.reply_text("Please send text only.")
+    message_text = update.message.text
+    if not message_text:
+        await update.message.reply_text(ot(language, "text_only"))
         return OWNER_BCAST_ALL_WAIT
-
     ids = await list_user_ids()
-    sent, failed = 0, 0
-    status_msg = await update.message.reply_text(f"Sending to {len(ids)} users…")
+    sent = failed = 0
+    status_msg = await update.message.reply_text(ot(language, "sending", count=len(ids)))
     for uid in ids:
         try:
-            await context.bot.send_message(chat_id=uid, text=text)
+            await context.bot.send_message(chat_id=uid, text=message_text)
             sent += 1
         except Forbidden:
             failed += 1
         except TelegramError:
             failed += 1
     await status_msg.edit_text(
-        f"📣 *Broadcast complete.*\n\n✅ Delivered: `{sent}`\n❌ Failed/blocked: `{failed}`",
+        f"{ot(language, 'broadcast_done')}\n\n"
+        f"{ot(language, 'delivered', count=sent)}\n"
+        f"{ot(language, 'failed_count', count=failed)}",
         parse_mode=ParseMode.MARKDOWN,
     )
     await update.message.reply_text(
-        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
+        f"{ot(language, 'title')}\n\n{ot(language, 'intro')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_owner_menu_keyboard(),
+        reply_markup=_owner_menu_keyboard(language),
     )
     return OWNER_MENU
-
-
-# ---------------------------------------------------------------------------
-# Broadcast — single user ("broadcast signal")
-# ---------------------------------------------------------------------------
 
 async def cb_owner_bcast_one_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     await query.edit_message_text(
-        "🎯 *Broadcast to One User*\n\n"
-        "Send the numeric *user ID* to message. Send `/cancel_owner` to abort.",
+        ot(language, "broadcast_one_prompt"),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_cancel_only_keyboard(),
+        reply_markup=_cancel_only_keyboard(language),
     )
     return OWNER_BCAST_ONE_WAIT_ID
-
 
 async def msg_owner_bcast_one_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message or not update.effective_user:
         return OWNER_BCAST_ONE_WAIT_ID
+    language = await resolve_user_language(context, update.effective_user.id)
     if not _is_owner(update.effective_user.id):
         return ConversationHandler.END
-    text = (update.message.text or "").strip()
-    if not text.isdigit():
-        await update.message.reply_text("That doesn't look like a numeric user ID. Try again, or /cancel_owner.")
+    raw = (update.message.text or "").strip()
+    if not raw.isdigit():
+        await update.message.reply_text(ot(language, "invalid_user_id"))
         return OWNER_BCAST_ONE_WAIT_ID
-    context.user_data["_owner_bcast_target"] = int(text)
+    context.user_data["_owner_bcast_target"] = int(raw)
     await update.message.reply_text(
-        f"Target set to `{text}`.\n\nNow send the message text to deliver.",
+        ot(language, "target_set", target=raw),
         parse_mode=ParseMode.MARKDOWN,
     )
     return OWNER_BCAST_ONE_WAIT_MSG
 
-
 async def msg_owner_bcast_one_send(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message or not update.effective_user:
         return OWNER_BCAST_ONE_WAIT_MSG
+    language = await resolve_user_language(context, update.effective_user.id)
     if not _is_owner(update.effective_user.id):
         return ConversationHandler.END
     target = context.user_data.get("_owner_bcast_target")
-    text = update.message.text
+    message_text = update.message.text
     if target is None:
-        await update.message.reply_text("No target set — starting over. Use the Owner Panel again.")
+        await update.message.reply_text(ot(language, "target_missing"))
         return ConversationHandler.END
-    if not text:
-        await update.message.reply_text("Please send text only.")
+    if not message_text:
+        await update.message.reply_text(ot(language, "text_only"))
         return OWNER_BCAST_ONE_WAIT_MSG
-
     try:
-        await context.bot.send_message(chat_id=target, text=text)
-        result = f"✅ Delivered to `{target}`."
+        await context.bot.send_message(chat_id=target, text=message_text)
+        result = ot(language, "delivered", count=1)
     except Forbidden:
-        result = f"❌ `{target}` has blocked the bot or never started it."
-    except TelegramError as exc:
-        result = f"❌ Failed to deliver to `{target}`: `{_safe_exc(exc)}`"
-
+        result = ot(language, "target_blocked")
+    except TelegramError:
+        logger.exception("Single-user broadcast failed for target=%s", target)
+        result = ot(language, "delivery_failed")
     context.user_data.pop("_owner_bcast_target", None)
     await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
     await update.message.reply_text(
-        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
+        f"{ot(language, 'title')}\n\n{ot(language, 'intro')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_owner_menu_keyboard(),
+        reply_markup=_owner_menu_keyboard(language),
     )
     return OWNER_MENU
 
-
 async def cmd_cancel_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """/cancel_owner — abort any in-progress owner-panel broadcast flow."""
+    """Abort an in-progress owner-panel broadcast flow."""
     if not update.effective_user or not _is_owner(update.effective_user.id):
         return ConversationHandler.END
+    language = await resolve_user_language(context, update.effective_user.id)
     context.user_data.pop("_owner_bcast_target", None)
     if update.message:
         await update.message.reply_text(
-            "❌ Cancelled.",
-            reply_markup=_owner_menu_keyboard(),
+            ot(language, "cancelled"),
+            reply_markup=_owner_menu_keyboard(language),
         )
     return OWNER_MENU
-
-
-# ---------------------------------------------------------------------------
-# Clear Data (double-confirm — destructive)
-# ---------------------------------------------------------------------------
 
 async def cb_owner_cleardata_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     await query.edit_message_text(
-        "⚠️ *Clear All Scheduled Data*\n\n"
-        "This permanently deletes:\n"
-        "• All scheduled posts (pending, paused, posted, failed)\n"
-        "• Any retained data from retired posting tools\n"
-        "• Pending message lifecycle tasks\n\n"
-        "Tracked user/group lists are kept so broadcasting keeps working.\n\n"
-        "*This cannot be undone.* Proceed?",
+        f"{ot(language, 'clear_confirm')}\n\n{ot(language, 'clear_scope')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Yes, wipe it all", style="danger", callback_data=CB_OWNER_CLEAR_YES),
-                InlineKeyboardButton("⬅️ Back", callback_data=CB_OWNER_BACK),
-            ],
-        ]),
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton(ot(language, "clear_yes"), style="danger", callback_data=CB_OWNER_CLEAR_YES),
+            InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_OWNER_BACK),
+        ]]),
     )
     return OWNER_CLEARDATA_CONFIRM
 
-
 async def cb_owner_cleardata_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from database import clear_all_bot_data
-
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
-    await query.answer("Wiping…")
+    await query.answer(ot(language, "wiping"))
     try:
         result = await clear_all_bot_data()
-    except Exception as exc:
-        logger.exception("clear_all_bot_data failed: %s", exc)
+    except Exception:
+        logger.exception("clear_all_bot_data failed")
         await query.edit_message_text(
-            f"❌ Clear failed: `{_safe_exc(exc)}`",
+            ot(language, "clear_failed"),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_back_only_keyboard(),
+            reply_markup=_back_only_keyboard(language),
         )
         return OWNER_MENU
-
     await query.edit_message_text(
-        "🧹 *Data cleared.*\n\n"
-        f"Posts removed: `{result['posts']}`\n"
-        f"Legacy records removed: `{result['queues'] + result['pools']}`\n"
-        f"Lifecycle tasks removed: `{result.get('lifecycle_tasks', 0)}`",
+        f"{ot(language, 'cleared')}\n\n"
+        f"{ot(language, 'posts_removed')}: `{result['posts']}`\n"
+        f"{ot(language, 'legacy_removed')}: `{result['queues'] + result['pools']}`\n"
+        f"{ot(language, 'lifecycle_removed')}: `{result.get('lifecycle_tasks', 0)}`",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_back_only_keyboard(),
+        reply_markup=_back_only_keyboard(language),
     )
     return OWNER_MENU
-
-
-# ---------------------------------------------------------------------------
-# ConversationHandler factory
-# ---------------------------------------------------------------------------
 
 def build_owner_panel() -> ConversationHandler:
     """
