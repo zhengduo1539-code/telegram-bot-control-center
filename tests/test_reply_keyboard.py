@@ -83,26 +83,25 @@ def test_welcome_actions_stay_inline_while_feature_actions_use_reply_keyboard():
     }
 
 
-def test_non_welcome_url_button_becomes_a_reply_choice():
-    markup = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "📩 Open Bot in Private Chat",
-                    url="https://t.me/Scheduler?start=setup_-100123",
-                )
-            ]
-        ]
-    )
+def test_group_to_private_setup_deep_link_stays_a_native_inline_button():
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "📩 Open Bot in Private Chat",
+            style="primary",
+            url="https://t.me/Scheduler?start=setup_-100123",
+        )]
+    ])
     inline, reply, routes = split_inline_keyboard(markup)
 
-    assert inline is None
-    assert isinstance(reply, ReplyKeyboardMarkup)
-    assert _labels(reply) == ["📩 Open Bot in Private Chat"]
-    assert routes["📩 Open Bot in Private Chat"] == {
-        "type": "url",
-        "url": "https://t.me/Scheduler?start=setup_-100123",
-    }
+    assert isinstance(inline, InlineKeyboardMarkup)
+    assert [[button.text for button in row] for row in inline.inline_keyboard] == [
+        ["📩 Open Bot in Private Chat"]
+    ]
+    button = inline.inline_keyboard[0][0]
+    assert button.url == "https://t.me/Scheduler?start=setup_-100123"
+    assert button.style == "primary"
+    assert reply is None
+    assert routes == {}
 
 
 def test_conflicting_duplicate_button_labels_are_disambiguated():
@@ -397,44 +396,4 @@ def test_unmatched_text_is_left_for_the_active_conversation():
     asyncio.run(scenario())
 
 
-def test_group_start_reply_keyboard_url_choice_returns_deep_link():
-    async def scenario():
-        chat_id = -1001234567890
-        chat = SimpleNamespace(id=chat_id)
-        message = SimpleNamespace(
-            text="📩 Open Bot in Private Chat",
-            message_id=702,
-            reply_text=AsyncMock(),
-        )
-        bot_data = {}
-        register_reply_keyboard_routes(
-            bot_data,
-            chat_id,
-            {
-                "📩 Open Bot in Private Chat": {
-                    "type": "url",
-                    "url": "https://t.me/Scheduler?start=setup_-1001234567890",
-                }
-            },
-            SimpleNamespace(chat_id=chat_id, message_id=600),
-        )
-        context = SimpleNamespace(
-            bot_data=bot_data,
-            application=SimpleNamespace(bot_data=bot_data),
-        )
-        update = SimpleNamespace(
-            update_id=703,
-            message=message,
-            effective_chat=chat,
-            effective_user=SimpleNamespace(id=321),
-        )
 
-        with pytest.raises(ApplicationHandlerStop):
-            await handle_reply_keyboard_message(update, context)
-
-        message.reply_text.assert_awaited_once_with(
-            "🔗 Open this link:\nhttps://t.me/Scheduler?start=setup_-1001234567890"
-        )
-        assert bot_data["chat_cleanup"][chat_id] == [702]
-
-    asyncio.run(scenario())
