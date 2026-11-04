@@ -4,11 +4,17 @@ from handlers.base import confirm_keyboard, nav_keyboard
 from handlers.owner_panel import _cancel_only_keyboard
 from handlers.schedule_wizard import (
     _advanced_keyboard,
+    _chat_list_keyboard,
+    _content_step_keyboard,
     _dow_keyboard,
     _first_run_keyboard,
     _inline_btns_keyboard,
+    _interval_unit_keyboard,
     _lifecycle_keyboard,
+    _max_runs_keyboard,
+    _no_groups_keyboard,
     _recurrence_keyboard,
+    _timezone_keyboard,
     _time_window_keyboard,
     _wizard_intro_keyboard,
 )
@@ -59,10 +65,20 @@ def test_wizard_continue_and_next_actions_use_success_style():
 def test_cancel_actions_use_danger_style_across_wizard_and_owner_flows():
     for markup in (
         nav_keyboard("nav:back"),
+        _chat_list_keyboard([], 0, "ScheduleBot", "en"),
+        _no_groups_keyboard("ScheduleBot", "en"),
         _wizard_intro_keyboard("en"),
         _first_run_keyboard("wizard:back"),
         _recurrence_keyboard("en"),
+        _interval_unit_keyboard(),
+        _dow_keyboard(set()),
+        _timezone_keyboard(0, "en"),
+        _time_window_keyboard(False),
+        _lifecycle_keyboard(False, False, False),
+        _advanced_keyboard(False, False, False, False),
+        _content_step_keyboard(),
         _inline_btns_keyboard(0),
+        _max_runs_keyboard(),
         _cancel_only_keyboard(),
     ):
         cancel_buttons = [
