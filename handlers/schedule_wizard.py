@@ -1316,7 +1316,7 @@ async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         + sw_tr(_language(context), "advanced_intro"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_advanced_keyboard(
-            w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"]
+            w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"], _language(context)
         ),
     )
     return WIZARD_TIME_WINDOW
@@ -2146,25 +2146,20 @@ async def cb_back_tw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _edit(
         query,
         "▰▰▰▰▰▰▰▱ 7/8\n"
-        "*Step 7/8 — Advanced Options*\n\n"
-        "Choose any optional settings. Everything is OFF unless you enable it.\n\n"
-        "🕑 *Posting Window:* Publish only during your selected local hours; posts wait outside the window.\n"
-        "🗑 *Auto-Delete:* Remove a post after a duration (minimum 5 minutes).\n"
-        "💣 *Self-Destruct:* Remove a post after a number of seconds. This cannot be combined with Auto-Delete.\n"
-        "📌 *Auto-Pin:* Pin each post after publishing, with an optional automatic unpin.",
+        + sw_tr(_language(context), "advanced_intro"),
         _advanced_keyboard(
             w.get("time_window_enabled", False),
             w.get("auto_delete", False),
             w.get("self_destruct", False),
             w.get("auto_pin", False),
+            _language(context),
         ),
     )
     return WIZARD_TIME_WINDOW
 async def cb_back_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
-        "🕐 *Step 7a — Window Start Time*\n\n"
-        "Type the earliest time posts should fire (e.g. `08:00`):",
+        sw_tr(_language(context), "window_start"),
         _nav(context, back_data=CB_BACK_TW),
     )
     return WIZARD_TW_START
@@ -2193,11 +2188,11 @@ async def cb_back_lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return WIZARD_TIME_WINDOW
 async def cb_cancel_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer(sw_tr(language if "language" in locals() else _language(context), "cancelled"))
-    _clear(context)
-    chat_id = query.message.chat_id
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
+    await query.answer(sw_tr(language, "cancelled"))
+    _clear(context)
+    chat_id = query.message.chat_id
     await chat_cleanup.cleanup(context, chat_id, keep_message_id=query.message.message_id)
     await replace_with_main_menu_message(
         query,
