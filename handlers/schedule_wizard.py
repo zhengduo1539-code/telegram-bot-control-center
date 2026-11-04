@@ -23,6 +23,7 @@ Wizard flow:
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -116,6 +117,9 @@ CB_IB_SKIP       = "ib:skip"
 CB_IB_ADD        = "ib:add"
 CB_IB_DONE       = "ib:done"
 CB_BACK_INLINE_BTNS = "back:inline_btns"
+CB_BACK_CHAT = "back:chat"
+CB_CONTENT_KEEP = "content:keep"
+CB_AP_FOREVER = "ap:forever"
 
 # Day-of-week toggle: "dow:0" … "dow:6"
 def _dow_cb(day: int) -> str:
@@ -580,11 +584,52 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return WIZARD_CONTENT
 
 
-def _content_step_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard shown at the WIZARD_CONTENT step."""
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel",        style="danger", callback_data=CB_CANCEL)],
+def _content_step_keyboard(has_content: bool = False) -> InlineKeyboardMarkup:
+    """Navigation for the content step; allow keeping an existing draft."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if has_content:
+        rows.append([
+            InlineKeyboardButton(
+                "✅ Keep Current Content",
+                style="success",
+                callback_data=CB_CONTENT_KEEP,
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton("⬅️ Back to Destination", callback_data=CB_BACK_CHAT),
+        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
     ])
+    return InlineKeyboardMarkup(rows)
+
+
+def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
+    title = escape_markdown(str(w.get("chat_title") or w.get("chat_id") or "Selected chat"), version=1)
+    return (
+        "▰▰▱▱▱▱▱▱ 2/8\n"
+        "📝 *Step 2/8 — Post Content*\n\n"
+        f"📍 *Destination:* {title}\n\n"
+        "Send *one message* that you want the bot to publish.\n\n"
+        "Supported: text, photo, video, document, audio, animation, or voice message.\n"
+        "To publish text with media, send the media with a caption.\n\n"
+        "Each Telegram message becomes one scheduled post. Albums and forwarded message bundles are not combined."
+    )
+
+
+def _inline_buttons_prompt(w: dict[str, Any]) -> str:
+    count = len(w.get("inline_buttons", []))
+    content_kind = (
+        "Media with caption" if w.get("media_type") and w.get("content_text")
+        else "Media" if w.get("media_type") else "Text"
+    )
+    return (
+        f"✅ Content saved. ({content_kind})\n\n"
+        "🔘 *Step 2.5 — Post Buttons (Optional)*\n\n"
+        "Add clickable buttons that will appear below the published post. Each button needs a short label and a destination link.\n\n"
+        "1. Tap *➕ Add Button*.\n"
+        "2. Send the button label, such as Visit Website.\n"
+        "3. Send its full URL, such as https://example.com, or a Telegram @username.\n\n"
+        f"Buttons added: *{count}/10*. You can skip this step or return to the post content."
+    )
 
 
 async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
