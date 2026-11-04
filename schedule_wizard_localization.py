@@ -2807,3 +2807,34 @@ def translate_schedule_wizard(language: str | None, key: str, **values: object) 
         return template.format(**values)
     except (KeyError, ValueError):
         return template
+
+
+_EXTRA_BUTTON_LABELS = {
+    "en": ("✅ Done", "1× One time", "➡️ Next"),
+    "my": ("✅ ပြီးပါပြီ", "1️⃣ တစ်ကြိမ်တည်း", "➡️ နောက်တစ်ခု"),
+    "zh": ("✅ 完成", "1️⃣ 仅发送一次", "➡️ 下一步"),
+    "es": ("✅ Listo", "1️⃣ Una sola vez", "➡️ Siguiente"),
+    "hi": ("✅ हो गया", "1️⃣ केवल एक बार", "➡️ अगला"),
+    "ar": ("✅ تم", "1️⃣ مرة واحدة", "➡️ التالي"),
+    "pt": ("✅ Concluído", "1️⃣ Apenas uma vez", "➡️ Próximo"),
+    "fr": ("✅ Terminé", "1️⃣ Une seule fois", "➡️ Suivant"),
+    "ru": ("✅ Готово", "1️⃣ Один раз", "➡️ Далее"),
+    "bn": ("✅ সম্পন্ন", "1️⃣ একবারই", "➡️ পরবর্তী"),
+    "id": ("✅ Selesai", "1️⃣ Sekali saja", "➡️ Berikutnya"),
+    "ja": ("✅ 完了", "1️⃣ 1回のみ", "➡️ 次へ"),
+    "ko": ("✅ 완료", "1️⃣ 한 번만", "➡️ 다음"),
+    "th": ("✅ เสร็จแล้ว", "1️⃣ ครั้งเดียว", "➡️ ถัดไป"),
+    "vi": ("✅ Hoàn tất", "1️⃣ Chỉ một lần", "➡️ Tiếp theo"),
+    "tr": ("✅ Tamam", "1️⃣ Yalnızca bir kez", "➡️ Sonraki"),
+    "de": ("✅ Fertig", "1️⃣ Einmalig", "➡️ Weiter"),
+    "it": ("✅ Fatto", "1️⃣ Una sola volta", "➡️ Avanti"),
+    "ur": ("✅ مکمل", "1️⃣ صرف ایک بار", "➡️ اگلا"),
+    "sw": ("✅ Imekamilika", "1️⃣ Mara moja tu", "➡️ Inayofuata"),
+}
+_EXTRA_BUTTON_KEYS = ("done_button", "one_time_choice_button", "next_step_button")
+if set(_EXTRA_BUTTON_LABELS) != set(LANGUAGES):
+    raise RuntimeError("Schedule Post action labels must cover every supported language.")
+for _locale, _values in _EXTRA_BUTTON_LABELS.items():
+    if len(_values) != len(_EXTRA_BUTTON_KEYS) or any(not _value for _value in _values):
+        raise RuntimeError(f"Incomplete Schedule Post action labels for {_locale}.")
+    _MESSAGES[_locale].update(dict(zip(_EXTRA_BUTTON_KEYS, _values, strict=True)))
