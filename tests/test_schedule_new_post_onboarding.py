@@ -15,8 +15,10 @@ def _buttons(markup):
 
 def test_schedule_wizard_onboarding_catalog_covers_all_supported_languages():
     assert set(_MESSAGES) == set(LANGUAGES)
+    expected_keys = set(_MESSAGES["en"])
     for language, catalog in _MESSAGES.items():
-        assert set(catalog) == {"intro", "continue"}, language
+        assert set(catalog) == expected_keys, language
+        assert {"intro", "continue"} <= set(catalog), language
         assert all(isinstance(value, str) and value.strip() for value in catalog.values())
         assert "template" not in catalog["intro"].lower(), language
     assert "confirm" in translate_schedule_wizard("en", "intro").lower()
