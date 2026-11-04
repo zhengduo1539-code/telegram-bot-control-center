@@ -1293,14 +1293,13 @@ async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if one_time:
         w["max_runs"] = 1
         await update.message.reply_text(
-            "This is a one-time post, so its delivery limit is already set to one.",
+            sw_tr(_language(context), "one_time_delivery"),
             reply_markup=_max_runs_keyboard(one_time=True, language=_language(context)),
         )
         return WIZARD_MAX_RUNS
     if not text.isdecimal() or not (1 <= int(text) <= 100000):
         await update.message.reply_text(
-            "⚠️ Enter a whole number from 1 to 100,000 (for example, 7). "
-            "Choose Unlimited below for an unlimited schedule.",
+            "⚠️ " + sw_tr(_language(context), "delivery_invalid"),
             reply_markup=_max_runs_keyboard(language=_language(context)),
         )
         return WIZARD_MAX_RUNS
@@ -1312,9 +1311,9 @@ async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     w.setdefault("self_destruct", False)
     w.setdefault("auto_pin", False)
     await update.message.reply_text(
-        f"✅ *Delivery limit:* {value} sends\n\n"
-        "⚙️ *Advanced Options*\n"
-        "These settings are optional and OFF by default. Turn on only what you need.",
+        f"✅ *{sw_tr(_language(context), 'delivery_limit_label')}:* {value}\n\n"
+        + "⚙️ *" + sw_tr(_language(context), "review_options_button") + "*\n"
+        + sw_tr(_language(context), "advanced_intro"),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_advanced_keyboard(
             w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"]
@@ -1328,27 +1327,35 @@ async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     try:
         value = int(raw)
     except ValueError:
-        await query.answer("Invalid delivery limit.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "delivery_invalid"), show_alert=True)
         return WIZARD_MAX_RUNS
 
     w = _w(context)
     one_time = w.get("recurrence_type") == "once"
     allowed = {1} if one_time else {0, 1, 5, 10, 30}
     if value not in allowed:
-        await query.answer("That delivery limit is not available for this schedule.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "delivery_invalid"), show_alert=True)
         return WIZARD_MAX_RUNS
     w["max_runs"] = 1 if one_time else (None if value == 0 else value)
     w.setdefault("time_window_enabled", False)
     w.setdefault("auto_delete", False)
     w.setdefault("self_destruct", False)
     w.setdefault("auto_pin", False)
-    label = "One send" if one_time else ("Unlimited" if value == 0 else f"{value} sends")
+    label = (
+        sw_tr(_language(context), "one_send")
+        if one_time else
+        sw_tr(_language(context), "unlimited_label")
+        if value == 0 else
+        f"{value}×"
+    )
     await _edit(
         query,
-        f"✅ *Delivery limit:* {label}\n\n"
-        "⚙️ *Advanced Options*\n"
-        "These settings are optional and OFF by default. Turn on only what you need.",
-        _advanced_keyboard(w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"]),
+        f"✅ *{sw_tr(_language(context), 'delivery_limit_label')}:* {label}\n\n"
+        + "⚙️ *" + sw_tr(_language(context), "review_options_button") + "*\n"
+        + sw_tr(_language(context), "advanced_intro"),
+        _advanced_keyboard(
+            w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"], _language(context)
+        ),
     )
     return WIZARD_TIME_WINDOW
 async def cb_tw_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1360,13 +1367,17 @@ async def cb_tw_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if not enabled:
         w.pop("tw_start", None)
         w.pop("tw_end", None)
-    await query.answer("Posting Window enabled" if enabled else "Posting Window disabled")
+    await query.answer(
+        f"{sw_tr(_language(context), 'posting_window_toggle')}: "
+        f"{sw_tr(_language(context), 'on_status' if enabled else 'off_status')}"
+    )
     await query.edit_message_reply_markup(
         _advanced_keyboard(
             enabled,
             w.get("auto_delete", False),
             w.get("self_destruct", False),
             w.get("auto_pin", False),
+            _language(context),
         )
     )
     return WIZARD_TIME_WINDOW
@@ -1377,10 +1388,7 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w.get("time_window_enabled"):
         await _edit(
             query,
-            "🕐 *Posting Window — Start Time*\n\n"
-            "Enter the earliest local time the bot may publish each day.\n"
-            "Use 24-hour HH:MM format, for example 08:00.\n"
-            "Posts scheduled outside this window will wait until it opens.",
+            sw_tr(_language(context), "window_start"),
             _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_TW_START
@@ -1390,26 +1398,21 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w.get("auto_delete"):
         await _edit(
             query,
-            "🗑 *Auto-Delete*\n\n"
-            "How long after each post is published should the bot delete it?\n"
-            "Enter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
+            sw_tr(_language(context), "auto_delete_prompt"),
             _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     if w.get("self_destruct"):
         await _edit(
             query,
-            "💣 *Self-Destruct*\n\n"
-            "How many seconds after publishing should the bot delete each post?\n"
-            "Enter a positive whole number, such as 60.",
+            sw_tr(_language(context), "self_destruct_prompt"),
             _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
         await _edit(
             query,
-            "📌 *Auto-Pin*\n\n"
-            "Choose how long each post should stay pinned, or keep it pinned until you remove it manually.",
+            sw_tr(_language(context), "auto_pin_prompt"),
             _auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
@@ -1419,16 +1422,13 @@ async def recv_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     parsed = _parse_hhmm(raw)
     if parsed is None:
         await update.message.reply_text(
-            "⚠️ Enter a valid 24-hour time in HH:MM format, such as 08:00.",
+            "⚠️ " + sw_tr(_language(context), "invalid_hhmm", example="08:00"),
             reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_TW_START
     _w(context)["tw_start"] = parsed
     await update.message.reply_text(
-        f"✅ Posting window opens at {parsed}.\n\n"
-        "🕐 *Posting Window — End Time*\n\n"
-        "Enter the latest local time the bot may publish, using HH:MM (for example, 22:00).\n"
-        "The window may cross midnight, such as 22:00 to 06:00.",
+        f"✅ {parsed}\n\n" + sw_tr(_language(context), "window_end"),
         reply_markup=_nav(context, back_data=CB_BACK_TW_START),
     )
     return WIZARD_TW_END
@@ -1438,7 +1438,7 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w = _w(context)
     if parsed is None:
         await update.message.reply_text(
-            "⚠️ Enter a valid 24-hour time in HH:MM format, such as 22:00.",
+            "⚠️ " + sw_tr(_language(context), "invalid_hhmm", example="22:00"),
             reply_markup=_nav(context, back_data=CB_BACK_TW_START),
         )
         return WIZARD_TW_END
@@ -1446,28 +1446,28 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     start = w.get("tw_start")
     if not start or parsed == start:
         await update.message.reply_text(
-            "⚠️ Start and end times must be valid and different. For an overnight window, choose an earlier end time.",
+            "⚠️ " + sw_tr(_language(context), "invalid_window"),
             reply_markup=_nav(context, back_data=CB_BACK_TW_START),
         )
         return WIZARD_TW_END
 
     w["tw_end"] = parsed
-    prefix = f"✅ Posting window: {start}–{parsed}.\n\n"
+    prefix = f"✅ {sw_tr(_language(context), 'window_range', start=start, end=parsed)}\n\n"
     if w.get("auto_delete"):
         await update.message.reply_text(
-            prefix + "🗑 *Auto-Delete*\nEnter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
+            prefix + sw_tr(_language(context), "auto_delete_prompt"),
             reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     if w.get("self_destruct"):
         await update.message.reply_text(
-            prefix + "💣 *Self-Destruct*\nEnter the number of seconds after publishing before each post is deleted.",
+            prefix + sw_tr(_language(context), "self_destruct_prompt"),
             reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
         await update.message.reply_text(
-            prefix + "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
+            prefix + sw_tr(_language(context), "auto_pin_prompt"),
             reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
@@ -1479,7 +1479,7 @@ async def cb_lc_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     key_map = {CB_LC_AD: "auto_delete", CB_LC_SD: "self_destruct", CB_LC_AP: "auto_pin"}
     key = key_map.get(query.data)
     if key is None:
-        await query.answer("Unknown option.", show_alert=True)
+        await query.answer(sw_tr(_language(context), "validation_generic"), show_alert=True)
         return WIZARD_TIME_WINDOW
 
     enabled = not bool(w.get(key, False))
@@ -1501,8 +1501,14 @@ async def cb_lc_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     elif key == "auto_pin" and not enabled:
         w.pop("ap_hours", None)
 
+    toggle_key = {
+        "auto_delete": "auto_delete_toggle",
+        "self_destruct": "self_destruct_toggle",
+        "auto_pin": "auto_pin_toggle",
+    }[key]
     await query.answer(
-        f"{'Enabled' if enabled else 'Disabled'}: {key.replace('_', ' ').title()}"
+        f"{sw_tr(_language(context), toggle_key)}: "
+        f"{sw_tr(_language(context), 'on_status' if enabled else 'off_status')}"
     )
     await query.edit_message_reply_markup(
         _advanced_keyboard(
@@ -1510,6 +1516,7 @@ async def cb_lc_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             w.get("auto_delete", False),
             w.get("self_destruct", False),
             w.get("auto_pin", False),
+            _language(context),
         )
     )
     return WIZARD_TIME_WINDOW
@@ -1520,22 +1527,19 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     w = _w(context)
     if w.get("auto_delete"):
         await _edit(query,
-            "🗑 *Auto-Delete — After how many hours?*\n\n"
-            "Type a positive number (decimals OK, e.g. `24` or `0.5`):",
+            sw_tr(_language(context), "auto_delete_prompt"),
             _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     if w.get("self_destruct"):
         await _edit(query,
-            "💣 *Self-Destruct — After how many seconds?*\n\n"
-            "Type a positive integer (e.g. `60`):",
+            sw_tr(_language(context), "self_destruct_prompt"),
             _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
         await _edit(query,
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number (e.g. `12`):",
+            sw_tr(_language(context), "auto_pin_prompt"),
             _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AP_HOURS
@@ -1551,7 +1555,7 @@ async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     val = _parse_auto_delete_duration(raw)
     if val is None:
         await update.message.reply_text(
-            "⚠️ Enter a valid duration such as 5 minutes or 2 hours. Minimum: 5 minutes; maximum: 365 days.",
+            "⚠️ " + sw_tr(_language(context), "invalid_auto_delete"),
             reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
@@ -1560,8 +1564,8 @@ async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     w["ad_duration_label"] = raw
     if w.get("auto_pin"):
         await update.message.reply_text(
-            f"✅ Auto-Delete: {raw}.\n\n"
-            "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
+            f"✅ {sw_tr(_language(context), 'auto_delete_label')}: {raw}.\n\n"
+            + sw_tr(_language(context), "auto_pin_prompt"),
             reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
@@ -1570,7 +1574,7 @@ async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not (1 <= int(raw) <= 31536000):
         await update.message.reply_text(
-            "⚠️ Enter a whole number from 1 to 31,536,000 seconds (for example, 60).",
+            "⚠️ " + sw_tr(_language(context), "invalid_self_destruct"),
             reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
@@ -1578,8 +1582,8 @@ async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w["sd_secs"] = int(raw)
     if w.get("auto_pin"):
         await update.message.reply_text(
-            f"✅ Self-Destruct: {raw} seconds.\n\n"
-            "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
+            f"✅ {sw_tr(_language(context), 'self_destruct_label')}: {raw}\n\n"
+            + sw_tr(_language(context), "auto_pin_prompt"),
             reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
@@ -1609,7 +1613,7 @@ async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             raise ValueError
     except (TypeError, ValueError):
         await update.message.reply_text(
-            "⚠️ Enter a finite number greater than 0 and no more than 87,600 hours (for example, 12), or choose Keep Pinned.",
+            "⚠️ " + sw_tr(_language(context), "invalid_auto_pin"),
             reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
