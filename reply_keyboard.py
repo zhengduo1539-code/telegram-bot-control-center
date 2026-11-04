@@ -14,6 +14,7 @@ from telegram import CallbackQuery, InlineKeyboardMarkup, KeyboardButton, ReplyK
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from handlers import chat_cleanup
+from system_localization import translate_system as st
 
 logger = logging.getLogger(__name__)
 ROUTE_REGISTRY_KEY = "_reply_keyboard_route_registry"
@@ -224,7 +225,7 @@ async def _delete_private_keyboard_tap(message: Any, context: Any, chat_id: Any)
 async def handle_reply_keyboard_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Dispatch exact Reply Keyboard choices through the existing callback flows."""
+    """Dispatch exact Reply Keyboard choices through existing localized flows."""
     message = update.message
     chat = update.effective_chat
     user = update.effective_user
@@ -233,38 +234,27 @@ async def handle_reply_keyboard_message(
     entry = get_reply_keyboard_entry(context.bot_data, chat.id)
     route = entry.get("routes", {}).get(message.text) if entry else None
     if not route:
-        # Normal wizard text/media input continues to the existing handlers.
         return
-    # Group /start exposes only the deep link as a Reply Keyboard URL choice.
+    from handlers.language import resolve_user_language
+    language = await resolve_user_language(context, user.id)
     if not is_private_chat(chat.id) and route["type"] != "url":
         return
-
-    # Keep group URL taps available for diagnostics. In private chats, a
-    # Reply Keyboard selection is just a normal user message; remove callback
-    # taps so the conversation stays focused on the active bot screen.
     if not is_private_chat(chat.id):
         chat_cleanup.track(context.application.bot_data, chat.id, message.message_id)
-
     if route["type"] == "url":
         if is_private_chat(chat.id):
             await _delete_private_keyboard_tap(message, context, chat.id)
-        await message.reply_text(f"🔗 Open this link:\n{route['url']}")
+        await message.reply_text(f"{st(language, 'open_link')}\n{route['url']}")
         raise ApplicationHandlerStop
     if route["type"] != "callback":
-        await message.reply_text(
-            "⚠️ This action is not supported by a Reply Keyboard. "
-            "Please send /start to refresh the menu."
-        )
+        await message.reply_text(st(language, "unsupported_action"))
         raise ApplicationHandlerStop
-
     target_message = entry.get("target_message")
     if target_message is None:
-        await message.reply_text("⚠️ This menu has expired. Please send /start.")
+        await message.reply_text(st(language, "menu_expired"))
         raise ApplicationHandlerStop
-
     if is_private_chat(chat.id):
         await _delete_private_keyboard_tap(message, context, chat.id)
-
     query = _ReplyKeyboardCallbackQuery(
         id=f"reply-keyboard-{update.update_id}",
         from_user=user,
@@ -272,19 +262,9 @@ async def handle_reply_keyboard_message(
         message=target_message,
         data=route["data"],
     )
-    # A synthetic CallbackQuery is not deserialized from Telegram's API
-    # payload, so PTB cannot attach the originating Bot automatically.
-    # Existing callbacks rely on query.get_bot() / query.bot in wizard and
-    # group-permission flows. Bind the real application bot before the update
-    # is queued so those handlers behave exactly like native callback queries.
     query.set_bot(context.bot)
     synthetic_update = Update(update_id=update.update_id, callback_query=query)
     try:
-        # Do not call process_update() from inside another update handler.
-        # PTB processes updates sequentially by default; recursively entering
-        # its update processor can block on the same concurrency semaphore.
-        # Queue the synthetic callback so the normal dispatcher handles it
-        # after this Reply Keyboard message handler has returned.
         await context.application.update_queue.put(synthetic_update)
     except Exception:
         logger.exception(
@@ -292,7 +272,5 @@ async def handle_reply_keyboard_message(
             chat.id,
             route.get("data"),
         )
-        await message.reply_text(
-            "⚠️ I couldn't process that action. Please try again or send /start."
-        )
+        await message.reply_text(st(language, "action_failed"))
     raise ApplicationHandlerStop
