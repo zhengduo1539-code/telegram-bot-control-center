@@ -643,6 +643,33 @@ _WIZARD_ROWS: dict[str, tuple[str, ...]] = {
 for _locale, _values in _WIZARD_ROWS.items():
     TRANSLATIONS[_locale].update(dict(zip(_WIZARD_KEYS, _values, strict=True)))
 
+
+# Explain one-time delivery, custom counts from 1, and unlimited scheduling clearly.
+_MAX_RUNS_PROMPTS: dict[str, str] = {
+    "en": "🔢 Step 6/8 — Max Runs\n\nChoose *1× One time* to send this post once only.\nOr enter any whole number starting from *1* (for example, 7) to choose exactly how many times it should be sent.\nChoose *∞ Unlimited* to keep sending it on the selected schedule until you stop it.",
+    "my": "🔢 အဆင့် ၆/၈ — ပို့မည့်အကြိမ်ရေ\n\nတစ်ကြိမ်တည်းသာ ပို့လိုပါက *1× One time* ကိုနှိပ်ပါ။\nကိုယ်တိုင်အကြိမ်ရေ သတ်မှတ်လိုပါက *1* မှစ၍ လိုချင်သည့် အရေအတွက်ကို ဂဏန်းအပြည့်ဖြင့် ရိုက်ထည့်ပါ (ဥပမာ 7)။\nသတ်မှတ်ထားသော Schedule အတိုင်း အကြိမ်ရေ အကန့်အသတ်မရှိ ပို့လိုပါက *∞ Unlimited* ကို ရွေးပါ။",
+    "zh": "🔢 第 6/8 步 — 发送次数\n\n只发送一次，请选择 *1× One time*。\n如需自定义次数，请输入从 *1* 开始的任意整数（例如 7）。\n如需按照所选计划持续发送且不限制次数，请选择 *∞ Unlimited*。",
+    "es": "🔢 Paso 6/8 — Número de envíos\n\nElige *1× One time* para enviar esta publicación una sola vez.\nO introduce cualquier número entero desde *1* (por ejemplo, 7) para definir el número exacto de envíos.\nElige *∞ Unlimited* para seguir enviándola según el horario seleccionado hasta que la detengas.",
+    "hi": "🔢 चरण 6/8 — भेजने की संख्या\n\nपोस्ट केवल एक बार भेजने के लिए *1× One time* चुनें।\nअपनी संख्या तय करने के लिए *1* या उससे बड़ी कोई भी पूर्ण संख्या दर्ज करें (उदाहरण: 7)।\nचुने गए शेड्यूल के अनुसार बिना सीमा भेजते रहने के लिए *∞ Unlimited* चुनें।",
+    "ar": "🔢 الخطوة 6/8 — عدد مرات الإرسال\n\nاختر *1× One time* لإرسال المنشور مرة واحدة فقط.\nأو أدخل أي عدد صحيح يبدأ من *1* (مثلاً 7) لتحديد عدد مرات الإرسال بنفسك.\nاختر *∞ Unlimited* للاستمرار وفق الجدول المحدد دون حد حتى توقفه.",
+    "pt": "🔢 Etapa 6/8 — Número de envios\n\nEscolha *1× One time* para enviar esta publicação apenas uma vez.\nOu digite qualquer número inteiro a partir de *1* (por exemplo, 7) para definir a quantidade exata de envios.\nEscolha *∞ Unlimited* para continuar enviando conforme o agendamento selecionado, até você parar.",
+    "fr": "🔢 Étape 6/8 — Nombre d'envois\n\nChoisissez *1× One time* pour envoyer cette publication une seule fois.\nOu saisissez un nombre entier à partir de *1* (par exemple, 7) pour définir le nombre exact d'envois.\nChoisissez *∞ Unlimited* pour continuer selon le planning choisi, jusqu'à ce que vous l'arrêtiez.",
+    "ru": "🔢 Шаг 6/8 — Количество отправок\n\nВыберите *1× One time*, чтобы отправить публикацию только один раз.\nИли введите любое целое число от *1* (например, 7), чтобы задать точное количество отправок.\nВыберите *∞ Unlimited*, чтобы продолжать отправку по выбранному расписанию без ограничения, пока вы её не остановите.",
+    "bn": "🔢 ধাপ ৬/৮ — পাঠানোর সংখ্যা\n\nপোস্টটি শুধু একবার পাঠাতে *1× One time* বেছে নিন।\nনিজের মতো সংখ্যা নির্ধারণ করতে *1* বা তার বেশি যেকোনো পূর্ণসংখ্যা লিখুন (যেমন 7)।\nনির্বাচিত সময়সূচি অনুযায়ী সীমাহীনভাবে পাঠাতে *∞ Unlimited* বেছে নিন।",
+    "id": "🔢 Langkah 6/8 — Jumlah Pengiriman\n\nPilih *1× One time* untuk mengirim postingan ini satu kali saja.\nAtau masukkan bilangan bulat mulai dari *1* (misalnya, 7) untuk menentukan jumlah pengiriman sendiri.\nPilih *∞ Unlimited* agar postingan terus dikirim sesuai jadwal yang dipilih tanpa batas sampai Anda menghentikannya.",
+    "ja": "🔢 ステップ 6/8 — 送信回数\n\n1回だけ送信する場合は *1× One time* を選択してください。\n回数を指定する場合は、*1* 以上の整数を入力してください（例：7）。\n選択したスケジュールで停止するまで無制限に送信する場合は *∞ Unlimited* を選択してください。",
+    "ko": "🔢 6/8단계 — 전송 횟수\n\n게시물을 한 번만 보내려면 *1× One time*을 선택하세요.\n원하는 횟수를 지정하려면 *1* 이상의 정수를 입력하세요(예: 7).\n선택한 일정에 따라 중지할 때까지 제한 없이 보내려면 *∞ Unlimited*를 선택하세요.",
+    "th": "🔢 ขั้นตอน 6/8 — จำนวนครั้งที่ส่ง\n\nเลือก *1× One time* หากต้องการส่งโพสต์นี้เพียงครั้งเดียว\nหรือป้อนจำนวนเต็มตั้งแต่ *1* ขึ้นไป (เช่น 7) เพื่อกำหนดจำนวนครั้งที่ต้องการเอง\nเลือก *∞ Unlimited* เพื่อส่งตามกำหนดการที่เลือกต่อไปโดยไม่จำกัด จนกว่าคุณจะหยุด",
+    "vi": "🔢 Bước 6/8 — Số lần gửi\n\nChọn *1× One time* để chỉ gửi bài đăng này một lần.\nHoặc nhập số nguyên bất kỳ bắt đầu từ *1* (ví dụ 7) để tự đặt số lần gửi.\nChọn *∞ Unlimited* để tiếp tục gửi theo lịch đã chọn không giới hạn cho đến khi bạn dừng.",
+    "tr": "🔢 6/8. Adım — Gönderim Sayısı\n\nBu gönderiyi yalnızca bir kez göndermek için *1× One time* seçin.\nKendi sayınızı belirlemek için *1* veya daha büyük herhangi bir tam sayı girin (ör. 7).\nDurdurana kadar seçilen programa göre sınırsız göndermek için *∞ Unlimited* seçin.",
+    "de": "🔢 Schritt 6/8 — Anzahl der Sendungen\n\nWähle *1× One time*, wenn dieser Beitrag nur einmal gesendet werden soll.\nOder gib eine beliebige ganze Zahl ab *1* ein (zum Beispiel 7), um die genaue Anzahl festzulegen.\nWähle *∞ Unlimited*, damit der Beitrag nach dem gewählten Zeitplan unbegrenzt weitergesendet wird, bis du ihn stoppst.",
+    "it": "🔢 Passaggio 6/8 — Numero di invii\n\nScegli *1× One time* per inviare questo post una sola volta.\nOppure inserisci un numero intero a partire da *1* (ad esempio 7) per decidere il numero esatto di invii.\nScegli *∞ Unlimited* per continuare a inviarlo secondo la pianificazione scelta senza limiti, finché non lo interrompi.",
+    "ur": "🔢 مرحلہ 6/8 — بھیجنے کی تعداد\n\nاس پوسٹ کو صرف ایک بار بھیجنے کے لیے *1× One time* منتخب کریں۔\nاپنی تعداد مقرر کرنے کے لیے *1* یا اس سے بڑا کوئی بھی مکمل عدد درج کریں (مثلاً 7)۔\nمنتخب شیڈول کے مطابق بغیر حد کے بھیجتے رہنے کے لیے *∞ Unlimited* منتخب کریں، جب تک آپ اسے روک نہ دیں۔",
+    "sw": "🔢 Hatua ya 6/8 — Idadi ya Kutuma\n\nChagua *1× One time* ili kutuma chapisho hili mara moja tu.\nAu weka nambari kamili yoyote kuanzia *1* (kwa mfano, 7) ili kuweka idadi unayotaka.\nChagua *∞ Unlimited* ili kuendelea kutuma kulingana na ratiba uliyochagua bila kikomo hadi utakaposimamisha.",
+}
+for _locale, _prompt in _MAX_RUNS_PROMPTS.items():
+    TRANSLATIONS[_locale]["max_runs_prompt"] = _prompt
+
 DEFAULT_LANGUAGE = "en"
 
 
