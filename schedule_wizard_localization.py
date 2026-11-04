@@ -2332,6 +2332,142 @@ if set(_SMART_ROWS) != set(LANGUAGES) or any(len(values) != len(_SMART_KEYS) for
 for _locale, _values in _SMART_ROWS.items():
     _MESSAGES[_locale].update(dict(zip(_SMART_KEYS, _values, strict=True)))
 
+
+_SUMMARY_KEYS = [
+    "window_range",
+    "self_destruct_summary",
+    "pin_after_hours",
+    "keep_pinned_summary"
+]
+_SUMMARY_ROWS = {
+    "en": [
+        "{start} to {end} ({timezone})",
+        "{seconds} seconds after publishing",
+        "Unpin after {hours} hours",
+        "Keep pinned until manually unpinned"
+],
+    "my": [
+        "{start} မှ {end} ({timezone})",
+        "ပို့ပြီးနောက် {seconds} စက္ကန့်အကြာတွင် ဖျက်မည်",
+        "{hours} နာရီအကြာတွင် Unpin လုပ်မည်",
+        "ကိုယ်တိုင် Unpin မလုပ်မချင်း Pin ထားမည်"
+],
+    "zh": [
+        "{start} 至 {end}（{timezone}）",
+        "发布后 {seconds} 秒删除",
+        "{hours} 小时后取消置顶",
+        "保持置顶直到手动取消"
+],
+    "es": [
+        "De {start} a {end} ({timezone})",
+        "{seconds} segundos después de publicar",
+        "Desfijar después de {hours} horas",
+        "Mantener fijado hasta retirarlo manualmente"
+],
+    "hi": [
+        "{start} से {end} ({timezone})",
+        "प्रकाशित होने के {seconds} सेकंड बाद",
+        "{hours} घंटे बाद अनपिन करें",
+        "जब तक स्वयं अनपिन न करें, पिन रखें"
+],
+    "ar": [
+        "من {start} إلى {end} ({timezone})",
+        "بعد {seconds} ثانية من النشر",
+        "إلغاء التثبيت بعد {hours} ساعة",
+        "الإبقاء مثبتًا حتى إلغاء التثبيت يدويًا"
+],
+    "pt": [
+        "De {start} a {end} ({timezone})",
+        "{seconds} segundos após a publicação",
+        "Desafixar após {hours} horas",
+        "Manter fixado até desafixar manualmente"
+],
+    "fr": [
+        "De {start} à {end} ({timezone})",
+        "{seconds} secondes après la publication",
+        "Retirer l’épingle après {hours} heures",
+        "Garder épinglé jusqu’au retrait manuel"
+],
+    "ru": [
+        "С {start} до {end} ({timezone})",
+        "Через {seconds} секунд после публикации",
+        "Открепить через {hours} ч.",
+        "Оставить закреплённым до ручного открепления"
+],
+    "bn": [
+        "{start} থেকে {end} ({timezone})",
+        "প্রকাশের {seconds} সেকেন্ড পরে",
+        "{hours} ঘণ্টা পরে আনপিন করুন",
+        "নিজে আনপিন না করা পর্যন্ত পিন রাখুন"
+],
+    "id": [
+        "{start} hingga {end} ({timezone})",
+        "{seconds} detik setelah diterbitkan",
+        "Lepas pin setelah {hours} jam",
+        "Tetap dipin sampai dilepas secara manual"
+],
+    "ja": [
+        "{start}～{end}（{timezone}）",
+        "公開から{seconds}秒後",
+        "{hours}時間後にピン留めを解除",
+        "手動で解除するまでピン留めを維持"
+],
+    "ko": [
+        "{start}부터 {end}까지 ({timezone})",
+        "게시 후 {seconds}초 뒤",
+        "{hours}시간 후 고정 해제",
+        "직접 고정 해제할 때까지 유지"
+],
+    "th": [
+        "{start} ถึง {end} ({timezone})",
+        "หลังเผยแพร่ {seconds} วินาที",
+        "ยกเลิกหมุดหลัง {hours} ชั่วโมง",
+        "ปักหมุดไว้จนกว่าจะยกเลิกด้วยตนเอง"
+],
+    "vi": [
+        "Từ {start} đến {end} ({timezone})",
+        "{seconds} giây sau khi đăng",
+        "Bỏ ghim sau {hours} giờ",
+        "Giữ ghim cho đến khi bạn tự bỏ ghim"
+],
+    "tr": [
+        "{start} - {end} ({timezone})",
+        "Yayınlandıktan {seconds} saniye sonra",
+        "{hours} saat sonra sabitlemeyi kaldır",
+        "Elle kaldırılana kadar sabit tut"
+],
+    "de": [
+        "{start} bis {end} ({timezone})",
+        "{seconds} Sekunden nach der Veröffentlichung",
+        "Nach {hours} Stunden lösen",
+        "Bis zum manuellen Lösen angeheftet lassen"
+],
+    "it": [
+        "Dalle {start} alle {end} ({timezone})",
+        "{seconds} secondi dopo la pubblicazione",
+        "Rimuovi il fissaggio dopo {hours} ore",
+        "Mantieni fissato fino alla rimozione manuale"
+],
+    "ur": [
+        "{start} سے {end} ({timezone})",
+        "اشاعت کے {seconds} سیکنڈ بعد",
+        "{hours} گھنٹے بعد ان پن کریں",
+        "دستی طور پر ان پن کرنے تک پن رکھیں"
+],
+    "sw": [
+        "{start} hadi {end} ({timezone})",
+        "Sekunde {seconds} baada ya kuchapisha",
+        "Ondoa pini baada ya saa {hours}",
+        "Liache limebandikwa hadi uliondoe mwenyewe"
+],
+}
+if set(_SUMMARY_ROWS) != set(LANGUAGES):
+    raise RuntimeError("Schedule review summary must cover every supported language.")
+for _locale, _values in _SUMMARY_ROWS.items():
+    if len(_values) != len(_SUMMARY_KEYS) or any(not value for value in _values):
+        raise RuntimeError(f"Incomplete Schedule review summary for {_locale}.")
+    _MESSAGES[_locale].update(dict(zip(_SUMMARY_KEYS, _values, strict=True)))
+
 _WEEKDAY_LABELS = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
     "my": ("တနင်္လာ", "အင်္ဂါ", "ဗုဒ္ဓဟူး", "ကြာသပတေး", "သောကြာ", "စနေ", "တနင်္ဂနွေ"),
