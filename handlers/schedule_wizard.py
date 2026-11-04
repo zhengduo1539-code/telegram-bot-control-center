@@ -1264,12 +1264,19 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     tz_str = w.get("timezone", "UTC")
     await query.answer()
     local_display = dt.astimezone(pytz.timezone(tz_str)).strftime("%d/%m/%Y %H:%M")
+    one_time = w.get("recurrence_type") == "once"
+    if one_time:
+        w["max_runs"] = 1
+        prompt = (
+            f"✅ First run: {local_display} ({tz_str})\n\n"
+            "🔢 One-time delivery selected\n"
+            "This post will be sent once at the time shown above. Confirm to continue."
+        )
+    else:
+        prompt = f"✅ First run: {local_display} ({tz_str})\n\n{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}"
     await query.edit_message_text(
-        f"✅ First run: `{local_display}` ({tz_str})\n\n"
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n"
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(),
+        prompt,
+        reply_markup=_max_runs_keyboard(one_time=one_time),
     )
     return WIZARD_MAX_RUNS
 
