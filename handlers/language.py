@@ -63,7 +63,7 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if private_url:
             open_label = "📩 Open Bot in Private Chat"
             keyboard = ReplyKeyboardMarkup(
-                [[KeyboardButton(open_label)]],
+                [[KeyboardButton(open_label, style="primary")]],
                 resize_keyboard=True,
                 one_time_keyboard=False,
                 is_persistent=True,
