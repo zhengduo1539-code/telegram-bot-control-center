@@ -388,6 +388,10 @@ def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool) -> InlineKeyboard
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
+_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+_DT_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})$")
+
+
 def _parse_run_time(text: str, tz: str) -> datetime | None:
     """Parse the selected local time and return an aware UTC datetime."""
     return parse_schedule_datetime(text, tz)
