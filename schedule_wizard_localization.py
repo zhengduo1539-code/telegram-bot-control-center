@@ -2083,6 +2083,226 @@ for _locale, _values in _LABEL_ROWS.items():
         raise RuntimeError(f"Incomplete Schedule wizard labels for {_locale}.")
     _MESSAGES[_locale].update(dict(zip(_LABEL_KEYS, _values, strict=True)))
 
+
+_MORE_KEYS = [
+    "interval_unit_prompt",
+    "one_time_delivery",
+    "smart_title",
+    "smart_no_data_heading",
+    "smart_custom_time",
+    "first_post_selected",
+    "interval_repeat_format",
+    "weekly_repeat_format"
+]
+_MORE_ROWS = {
+    "en": [
+        "Choose whether this interval is measured in minutes, hours, or days.",
+        "🔢 *One-time delivery*\nThis post will be sent once at the selected time. No repeat count is needed.",
+        "💡 *Suggested Best Times*",
+        "⚠️ *Not enough activity data yet.*",
+        "✏️ Enter a custom time",
+        "✅ *First post:* {time} ({timezone})",
+        "Every {value} {unit}",
+        "Weekly on {days}"
+],
+    "my": [
+        "ဤအချိန်ခြားကာလကို မိနစ်၊ နာရီ သို့မဟုတ် ရက်ဖြင့် သတ်မှတ်ပါ။",
+        "🔢 *တစ်ကြိမ်တည်း ပို့မည်*\nဤ Post ကို ရွေးချယ်ထားသောအချိန်တွင် တစ်ကြိမ်သာ ပို့ပါမည်။ ထပ်မံပို့မည့်အကြိမ်ရေ သတ်မှတ်ရန် မလိုပါ။",
+        "💡 *အကြံပြုထားသော Post အချိန်များ*",
+        "⚠️ *လှုပ်ရှားမှုဒေတာ မလုံလောက်သေးပါ။*",
+        "✏️ အချိန်ကို ကိုယ်တိုင်ထည့်ရန်",
+        "✅ *ပထမဆုံး Post:* {time} ({timezone})",
+        "{value} {unit} တစ်ကြိမ်ခြားစီ",
+        "အပတ်စဉ် {days} ရက်များတွင်"
+],
+    "zh": [
+        "请选择此间隔使用分钟、小时还是天作为单位。",
+        "🔢 *仅发送一次*\n此帖子将在所选时间发送一次，无需设置重复次数。",
+        "💡 *推荐发布时间*",
+        "⚠️ *目前还没有足够的活跃数据。*",
+        "✏️ 手动输入时间",
+        "✅ *首次发布时间：* {time}（{timezone}）",
+        "每 {value} {unit}",
+        "每周在 {days}"
+],
+    "es": [
+        "Elige si este intervalo se mide en minutos, horas o días.",
+        "🔢 *Publicación única*\nEsta publicación se enviará una sola vez a la hora seleccionada. No necesitas indicar un número de repeticiones.",
+        "💡 *Mejores horas sugeridas*",
+        "⚠️ *Aún no hay suficientes datos de actividad.*",
+        "✏️ Introducir una hora manualmente",
+        "✅ *Primera publicación:* {time} ({timezone})",
+        "Cada {value} {unit}",
+        "Semanalmente los {days}"
+],
+    "hi": [
+        "चुनें कि यह अंतराल मिनट, घंटे या दिनों में मापा जाएगा।",
+        "🔢 *एक बार पोस्ट करें*\nयह पोस्ट चुने गए समय पर केवल एक बार भेजी जाएगी। दोहराव की संख्या तय करने की आवश्यकता नहीं है।",
+        "💡 *सुझाए गए पोस्ट समय*",
+        "⚠️ *अभी पर्याप्त गतिविधि डेटा नहीं है।*",
+        "✏️ समय स्वयं दर्ज करें",
+        "✅ *पहली पोस्ट:* {time} ({timezone})",
+        "हर {value} {unit}",
+        "हर सप्ताह {days}"
+],
+    "ar": [
+        "اختر ما إذا كان هذا الفاصل يُقاس بالدقائق أو الساعات أو الأيام.",
+        "🔢 *إرسال مرة واحدة*\nسيتم إرسال هذا المنشور مرة واحدة في الوقت المحدد. لا حاجة لتحديد عدد مرات التكرار.",
+        "💡 *الأوقات المقترحة للنشر*",
+        "⚠️ *لا توجد بيانات نشاط كافية بعد.*",
+        "✏️ إدخال الوقت يدويًا",
+        "✅ *أول منشور:* {time} ({timezone})",
+        "كل {value} {unit}",
+        "أسبوعيًا في {days}"
+],
+    "pt": [
+        "Escolha se este intervalo será medido em minutos, horas ou dias.",
+        "🔢 *Publicação única*\nEsta publicação será enviada uma única vez no horário selecionado. Não é necessário definir uma quantidade de repetições.",
+        "💡 *Melhores horários sugeridos*",
+        "⚠️ *Ainda não há dados de atividade suficientes.*",
+        "✏️ Digitar horário manualmente",
+        "✅ *Primeira publicação:* {time} ({timezone})",
+        "A cada {value} {unit}",
+        "Semanalmente em {days}"
+],
+    "fr": [
+        "Choisissez si cet intervalle est exprimé en minutes, heures ou jours.",
+        "🔢 *Publication unique*\nCette publication sera envoyée une seule fois à l’heure choisie. Aucun nombre de répétitions n’est nécessaire.",
+        "💡 *Meilleurs horaires suggérés*",
+        "⚠️ *Les données d’activité sont encore insuffisantes.*",
+        "✏️ Saisir une heure manuellement",
+        "✅ *Première publication :* {time} ({timezone})",
+        "Toutes les {value} {unit}",
+        "Chaque semaine : {days}"
+],
+    "ru": [
+        "Выберите, в минутах, часах или днях задаётся этот интервал.",
+        "🔢 *Однократная публикация*\nПубликация будет отправлена один раз в выбранное время. Указывать количество повторов не нужно.",
+        "💡 *Рекомендуемое время публикации*",
+        "⚠️ *Пока недостаточно данных об активности.*",
+        "✏️ Ввести время вручную",
+        "✅ *Первая публикация:* {time} ({timezone})",
+        "Каждые {value} {unit}",
+        "Еженедельно: {days}"
+],
+    "bn": [
+        "এই বিরতি মিনিট, ঘণ্টা নাকি দিনে গণনা হবে তা বেছে নিন।",
+        "🔢 *একবারের পোস্ট*\nনির্বাচিত সময়ে পোস্টটি শুধু একবার পাঠানো হবে। পুনরাবৃত্তির সংখ্যা নির্ধারণের প্রয়োজন নেই।",
+        "💡 *প্রস্তাবিত পোস্টের সময়*",
+        "⚠️ *এখনও পর্যাপ্ত কার্যকলাপের তথ্য নেই।*",
+        "✏️ নিজে সময় লিখুন",
+        "✅ *প্রথম পোস্ট:* {time} ({timezone})",
+        "প্রতি {value} {unit}",
+        "প্রতি সপ্তাহে {days}"
+],
+    "id": [
+        "Pilih apakah interval ini dihitung dalam menit, jam, atau hari.",
+        "🔢 *Posting Sekali*\nPostingan ini akan dikirim satu kali pada waktu yang dipilih. Anda tidak perlu menentukan jumlah pengulangan.",
+        "💡 *Waktu Posting yang Disarankan*",
+        "⚠️ *Data aktivitas belum cukup.*",
+        "✏️ Masukkan waktu secara manual",
+        "✅ *Postingan pertama:* {time} ({timezone})",
+        "Setiap {value} {unit}",
+        "Setiap minggu pada {days}"
+],
+    "ja": [
+        "この間隔を分、時間、日のどれで指定するか選択してください。",
+        "🔢 *1回のみ送信*\nこの投稿は選択した時刻に1回だけ送信されます。繰り返し回数の指定は不要です。",
+        "💡 *おすすめの投稿時刻*",
+        "⚠️ *アクティビティデータがまだ不足しています。*",
+        "✏️ 時刻を手動で入力",
+        "✅ *初回投稿：* {time}（{timezone}）",
+        "{value}{unit}ごと",
+        "毎週 {days}"
+],
+    "ko": [
+        "이 간격을 분, 시간 또는 일 중 어떤 단위로 설정할지 선택하세요.",
+        "🔢 *한 번만 게시*\n이 게시물은 선택한 시간에 한 번만 전송됩니다. 반복 횟수를 지정할 필요가 없습니다.",
+        "💡 *추천 게시 시간*",
+        "⚠️ *아직 활동 데이터가 충분하지 않습니다.*",
+        "✏️ 시간 직접 입력",
+        "✅ *첫 게시:* {time} ({timezone})",
+        "매 {value} {unit}",
+        "매주 {days}"
+],
+    "th": [
+        "เลือกว่าให้ช่วงเวลานี้คำนวณเป็นนาที ชั่วโมง หรือวัน",
+        "🔢 *โพสต์ครั้งเดียว*\nโพสต์นี้จะถูกส่งเพียงครั้งเดียวตามเวลาที่เลือก ไม่จำเป็นต้องกำหนดจำนวนครั้งที่ทำซ้ำ",
+        "💡 *เวลาที่แนะนำสำหรับโพสต์*",
+        "⚠️ *ยังมีข้อมูลกิจกรรมไม่เพียงพอ*",
+        "✏️ กรอกเวลาด้วยตนเอง",
+        "✅ *โพสต์ครั้งแรก:* {time} ({timezone})",
+        "ทุก {value} {unit}",
+        "ทุกสัปดาห์ในวัน {days}"
+],
+    "vi": [
+        "Chọn khoảng thời gian này được tính bằng phút, giờ hay ngày.",
+        "🔢 *Đăng một lần*\nBài đăng này sẽ được gửi một lần vào thời điểm đã chọn. Không cần đặt số lần lặp lại.",
+        "💡 *Thời gian đăng được đề xuất*",
+        "⚠️ *Chưa có đủ dữ liệu hoạt động.*",
+        "✏️ Nhập thời gian thủ công",
+        "✅ *Bài đăng đầu tiên:* {time} ({timezone})",
+        "Mỗi {value} {unit}",
+        "Hàng tuần vào {days}"
+],
+    "tr": [
+        "Bu aralığın dakika, saat veya gün olarak mı ölçüleceğini seçin.",
+        "🔢 *Tek seferlik gönderi*\nBu gönderi seçilen saatte yalnızca bir kez gönderilir. Tekrar sayısı belirlemeniz gerekmez.",
+        "💡 *Önerilen Gönderim Saatleri*",
+        "⚠️ *Henüz yeterli etkinlik verisi yok.*",
+        "✏️ Saati elle gir",
+        "✅ *İlk gönderi:* {time} ({timezone})",
+        "Her {value} {unit}",
+        "Her hafta {days}"
+],
+    "de": [
+        "Wähle, ob dieses Intervall in Minuten, Stunden oder Tagen angegeben wird.",
+        "🔢 *Einmaliger Beitrag*\nDieser Beitrag wird zur ausgewählten Zeit nur einmal gesendet. Eine Wiederholungsanzahl ist nicht erforderlich.",
+        "💡 *Vorgeschlagene Veröffentlichungszeiten*",
+        "⚠️ *Es liegen noch nicht genügend Aktivitätsdaten vor.*",
+        "✏️ Zeit manuell eingeben",
+        "✅ *Erster Beitrag:* {time} ({timezone})",
+        "Alle {value} {unit}",
+        "Wöchentlich an {days}"
+],
+    "it": [
+        "Scegli se questo intervallo è espresso in minuti, ore o giorni.",
+        "🔢 *Post singolo*\nQuesto post verrà inviato una sola volta all'orario selezionato. Non è necessario indicare un numero di ripetizioni.",
+        "💡 *Orari di pubblicazione suggeriti*",
+        "⚠️ *I dati sull'attività non sono ancora sufficienti.*",
+        "✏️ Inserisci l'orario manualmente",
+        "✅ *Primo post:* {time} ({timezone})",
+        "Ogni {value} {unit}",
+        "Ogni settimana: {days}"
+],
+    "ur": [
+        "منتخب کریں کہ یہ وقفہ منٹ، گھنٹے یا دن میں شمار ہوگا۔",
+        "🔢 *صرف ایک بار پوسٹ کریں*\nیہ پوسٹ منتخب وقت پر صرف ایک مرتبہ بھیجی جائے گی۔ دوبارہ بھیجنے کی تعداد مقرر کرنے کی ضرورت نہیں۔",
+        "💡 *تجویز کردہ پوسٹنگ اوقات*",
+        "⚠️ *ابھی سرگرمی کا کافی ڈیٹا موجود نہیں۔*",
+        "✏️ وقت دستی طور پر درج کریں",
+        "✅ *پہلی پوسٹ:* {time} ({timezone})",
+        "ہر {value} {unit}",
+        "ہر ہفتے {days}"
+],
+    "sw": [
+        "Chagua kama kipindi hiki kitapimwa kwa dakika, saa au siku.",
+        "🔢 *Chapisho la Mara Moja*\nChapisho hili litatumwa mara moja tu kwa wakati uliochagua. Hakuna haja ya kuweka idadi ya marudio.",
+        "💡 *Muda Unaopendekezwa wa Kuchapisha*",
+        "⚠️ *Bado hakuna data ya kutosha ya shughuli.*",
+        "✏️ Ingiza muda mwenyewe",
+        "✅ *Chapisho la kwanza:* {time} ({timezone})",
+        "Kila {value} {unit}",
+        "Kila wiki siku ya {days}"
+],
+}
+if set(_MORE_ROWS) != set(LANGUAGES):
+    raise RuntimeError("Extended Schedule wizard copy must cover every supported language.")
+for _locale, _values in _MORE_ROWS.items():
+    if len(_values) != len(_MORE_KEYS) or any(not value for value in _values):
+        raise RuntimeError(f"Incomplete extended Schedule wizard copy for {_locale}.")
+    _MESSAGES[_locale].update(dict(zip(_MORE_KEYS, _values, strict=True)))
+
 _WEEKDAY_LABELS = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
     "my": ("တနင်္လာ", "အင်္ဂါ", "ဗုဒ္ဓဟူး", "ကြာသပတေး", "သောကြာ", "စနေ", "တနင်္ဂနွေ"),
