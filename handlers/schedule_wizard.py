@@ -1639,10 +1639,7 @@ async def cb_ap_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     """Save permanent pinning and display the full review screen."""
     query = update.callback_query
     _w(context)["ap_hours"] = None
-    await query.answer("Posts will stay pinned until manually unpinned.")
     return await _show_summary(update, context)
-
-
 async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     try:
@@ -1832,13 +1829,17 @@ async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await _edit(query,
-        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
-        _max_runs_keyboard(),
-    )
+    w = _w(context)
+    one_time = w.get("recurrence_type") == "once"
+    if one_time:
+        prompt = (
+            "🔢 *One-time delivery*\n"
+            "This post will be sent once. Confirm the one-send setting to continue."
+        )
+    else:
+        prompt = tr(context.user_data.get("language", "en"), "max_runs_prompt")
+    await _edit(query, prompt, _max_runs_keyboard(one_time=one_time))
     return WIZARD_MAX_RUNS
-
-
 async def cb_back_tw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Go back to the Advanced Options screen (from TW_START or lifecycle detail)."""
     query = update.callback_query
@@ -2012,6 +2013,7 @@ def build_schedule_wizard() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_ap_hours),
                 CallbackQueryHandler(cb_back_tw, pattern=f"^{CB_BACK_TW}$"),
                 CallbackQueryHandler(cb_back_lifecycle, pattern=f"^{CB_BACK_LIFECYCLE}$"),
+                CallbackQueryHandler(cb_ap_forever, pattern=f"^{CB_AP_FOREVER}$"),
             ],
             WIZARD_SUMMARY: [
                 CallbackQueryHandler(cb_confirm_post,   pattern=f"^{CB_CONFIRM_POST}$"),
