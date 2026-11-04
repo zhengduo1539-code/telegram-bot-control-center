@@ -267,12 +267,10 @@ def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(tr(language, "recurrence_days"), style="primary", callback_data=CB_REC_DOW)],
         [InlineKeyboardButton(tr(language, "recurrence_once"), style="primary", callback_data=CB_REC_ONCE)],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_MAIN_MENU),
+            InlineKeyboardButton("⬅️ Back to Post Buttons", callback_data=CB_BACK_INLINE_BTNS),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
-
-
 def _interval_unit_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
@@ -596,6 +594,63 @@ def _inline_buttons_prompt(w: dict[str, Any]) -> str:
         "3. Send a full URL, such as https://example.com, or a Telegram @username.\n\n"
         f"Added: *{count}/10*. Choose Skip or Done when you are ready."
     )
+async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return to destination selection without discarding saved draft data."""
+    query = update.callback_query
+    user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
+    bot_username = (await query.get_bot().get_me()).username
+    groups = await list_groups_for_user(user_id) if user_id is not None else []
+    await query.answer()
+    if groups:
+        await query.edit_message_text(
+            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
+        )
+    else:
+        await query.edit_message_text(
+            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_no_groups_keyboard(bot_username, language),
+        )
+    return WIZARD_CHAT_ID
+
+async def cb_back_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return to saved content; user can keep it or replace it."""
+    query = update.callback_query
+    w = _w(context)
+    w.pop("pending_inline_button_label", None)
+    has_content = bool(w.get("content_text") or w.get("media_file_id"))
+    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
+    prompt = _content_prompt_text(w, language)
+    if has_content:
+        prompt += "\n\nYour content is saved. Choose Keep Current Content to continue, or send a new message to replace it."
+    await query.answer()
+    await query.edit_message_text(
+        prompt,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_content_step_keyboard(has_content),
+    )
+    return WIZARD_CONTENT
+
+
+async def cb_content_keep(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Continue with saved content without sending it again."""
+    query = update.callback_query
+    w = _w(context)
+    if not (w.get("content_text") or w.get("media_file_id")):
+        await query.answer("Send the post content first.", show_alert=True)
+        return WIZARD_CONTENT
+    w.setdefault("inline_buttons", [])
+    await query.answer()
+    await query.edit_message_text(
+        _inline_buttons_prompt(w),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
+    )
+    return WIZARD_INLINE_BTNS
+
 async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Paginate the group list."""
     query = update.callback_query
@@ -739,7 +794,7 @@ async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start the simple two-step button entry flow."""
+    """Start the guided two-step post-button entry flow."""
     query = update.callback_query
     w = _w(context)
     if len(w.get("inline_buttons", [])) >= 10:
@@ -749,15 +804,12 @@ async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _edit(
         query,
         "➕ *Add a Post Button*\n\n"
-        "📝 *Step 1 of 2 — Button text*\n"
-        "Send the short text people will see on the button.\n\n"
-        "Examples: Visit Website or Join Channel.\n"
-        "Next, I'll ask you for the destination link.",
-        nav_keyboard(),
+        "📝 *Step 1 of 2 — Button label*\n"
+        "Send the short text people will see on the button, such as Visit Website or Join Channel.\n\n"
+        "Next, the bot will ask for its destination link.",
+        nav_keyboard(back_data=CB_BACK_CONTENT),
     )
     return WIZARD_INLINE_BTNS
-
-
 async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Receive one or more 'Label | URL' lines from the user."""
     text = (update.message.text or "").strip()
@@ -874,6 +926,19 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     )
     return WIZARD_INLINE_BTNS
 
+
+async def cb_back_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return from recurrence selection to the optional post-button step."""
+    query = update.callback_query
+    w = _w(context)
+    w.pop("pending_inline_button_label", None)
+    await query.answer()
+    await query.edit_message_text(
+        _inline_buttons_prompt(w),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_inline_btns_keyboard(len(w.get("inline_buttons", []))),
+    )
+    return WIZARD_INLINE_BTNS
 
 async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Finished adding buttons — move to recurrence."""
@@ -1820,12 +1885,15 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_wizard_continue, pattern=f"^{CB_WIZARD_CONTINUE}$"),
             ],
             WIZARD_CHAT_ID: [
+                CallbackQueryHandler(cb_back_chat, pattern=f"^{CB_BACK_CHAT}$"),
                 CallbackQueryHandler(cb_chat_pick,       pattern=r"^chat:pick:-?\d+$"),
                 CallbackQueryHandler(cb_chat_page,       pattern=r"^chat:page:\d+$"),
                 CallbackQueryHandler(cb_manual_chat_id,  pattern=f"^{CB_MANUAL_CHAT_ID}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_chat_id),
             ],
             WIZARD_CONTENT: [
+                CallbackQueryHandler(cb_content_keep, pattern=f"^{CB_CONTENT_KEEP}$"),
+                CallbackQueryHandler(cb_back_chat, pattern=f"^{CB_BACK_CHAT}$"),
                 MessageHandler(
                     (filters.TEXT | filters.PHOTO | filters.VIDEO |
                      filters.Document.ALL | filters.AUDIO | filters.ANIMATION |
@@ -1837,9 +1905,11 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_ib_skip, pattern=f"^{CB_IB_SKIP}$"),
                 CallbackQueryHandler(cb_ib_add,  pattern=f"^{CB_IB_ADD}$"),
                 CallbackQueryHandler(cb_ib_done, pattern=f"^{CB_IB_DONE}$"),
+                CallbackQueryHandler(cb_back_content, pattern=f"^{CB_BACK_CONTENT}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_ib_entry),
             ],
             WIZARD_RECURRENCE: [
+                CallbackQueryHandler(cb_back_inline_buttons, pattern=f"^{CB_BACK_INLINE_BTNS}$"),
                 CallbackQueryHandler(cb_rec_once,     pattern=f"^{CB_REC_ONCE}$"),
                 CallbackQueryHandler(cb_rec_interval, pattern=f"^{CB_REC_INTERVAL}$"),
                 CallbackQueryHandler(cb_rec_dow,      pattern=f"^{CB_REC_DOW}$"),
