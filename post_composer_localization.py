@@ -93,6 +93,31 @@ for locale, row in ROWS.items():
 
 CATALOG = {locale: dict(zip(KEYS, row, strict=True)) for locale, row in ROWS.items()}
 
+_EXTRA_ROWS = {
+    "en": {"time_updated": "Publish time updated.", "custom_amount": "✏️ Custom Amount"},
+    "my": {"time_updated": "ပထမဆုံး Post တင်မည့်အချိန်ကို ပြင်ဆင်ပြီးပါပြီ။", "custom_amount": "✏️ ကိုယ်တိုင်သတ်မှတ်ရန်"},
+    "zh": {"time_updated": "首次发布时间已更新。", "custom_amount": "✏️ 自定义次数"},
+    "es": {"time_updated": "Se actualizó la hora de publicación.", "custom_amount": "✏️ Cantidad personalizada"},
+    "hi": {"time_updated": "पहली पोस्ट का समय अपडेट हो गया।", "custom_amount": "✏️ अपनी संख्या चुनें"},
+    "ar": {"time_updated": "تم تحديث وقت النشر الأول.", "custom_amount": "✏️ عدد مخصص"},
+    "pt": {"time_updated": "O horário da primeira publicação foi atualizado.", "custom_amount": "✏️ Quantidade personalizada"},
+    "fr": {"time_updated": "L’heure de la première publication a été mise à jour.", "custom_amount": "✏️ Nombre personnalisé"},
+    "ru": {"time_updated": "Время первой публикации обновлено.", "custom_amount": "✏️ Свое количество"},
+    "bn": {"time_updated": "প্রথম পোস্টের সময় আপডেট হয়েছে।", "custom_amount": "✏️ নিজের সংখ্যা দিন"},
+    "id": {"time_updated": "Waktu posting pertama diperbarui.", "custom_amount": "✏️ Jumlah khusus"},
+    "ja": {"time_updated": "初回投稿時刻を更新しました。", "custom_amount": "✏️ 回数を指定"},
+    "ko": {"time_updated": "첫 게시 시간이 업데이트되었습니다.", "custom_amount": "✏️ 직접 횟수 입력"},
+    "th": {"time_updated": "อัปเดตเวลาโพสต์ครั้งแรกแล้ว","custom_amount": "✏️ กำหนดจำนวนเอง"},
+    "vi": {"time_updated": "Đã cập nhật thời gian đăng đầu tiên.", "custom_amount": "✏️ Số lượng tùy chỉnh"},
+    "tr": {"time_updated": "İlk yayın zamanı güncellendi.", "custom_amount": "✏️ Özel miktar"},
+    "de": {"time_updated": "Die erste Veröffentlichungszeit wurde aktualisiert.", "custom_amount": "✏️ Eigene Anzahl"},
+    "it": {"time_updated": "L'orario della prima pubblicazione è stato aggiornato.", "custom_amount": "✏️ Numero personalizzato"},
+    "ur": {"time_updated": "پہلی اشاعت کا وقت اپ ڈیٹ ہوگیا۔", "custom_amount": "✏️ اپنی تعداد درج کریں"},
+    "sw": {"time_updated": "Muda wa kwanza wa kuchapisha umesasishwa.", "custom_amount": "✏️ Weka idadi maalum"},
+}
+for locale, values in _EXTRA_ROWS.items():
+    CATALOG[locale].update(values)
+
 
 def translate_post_composer(language: str | None, key: str, **values: object) -> str:
     locale = normalize_language(language)
