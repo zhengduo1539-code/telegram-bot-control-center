@@ -1893,9 +1893,40 @@ async def _edit_confirm_result(
     return False
 
 
+def _localize_validation_error(error: str, language: str) -> str:
+    """Map validator details to the matching localized recovery guidance."""
+    message = (error or "").lower()
+    if "destination" in message or "posting access" in message:
+        return sw_tr(language, "deep_link_unavailable")
+    if "first posting time" in message or "future" in message:
+        return sw_tr(language, "first_time_invalid")
+    if "timezone" in message:
+        return sw_tr(language, "timezone_unknown")
+    if "weekday" in message or "day" in message and "select" in message:
+        return sw_tr(language, "days_required")
+    if "interval" in message or "repeat schedule" in message:
+        return sw_tr(language, "interval_invalid")
+    if "posting window" in message or "window" in message:
+        return sw_tr(language, "invalid_window")
+    if "auto-delete" in message:
+        return sw_tr(language, "invalid_auto_delete")
+    if "self-destruct" in message:
+        return sw_tr(language, "invalid_self_destruct")
+    if "auto-pin" in message or "pinned" in message:
+        return sw_tr(language, "invalid_auto_pin")
+    if "delivery limit" in message:
+        return sw_tr(language, "delivery_invalid")
+    if "button" in message or "label" in message or "destination link" in message:
+        return sw_tr(language, "button_link_invalid")
+    if "content" in message or "media" in message:
+        return sw_tr(language, "unsupported_content")
+    return sw_tr(language, "validation_generic")
+
+
 async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Revalidate, save once, and confirm without relying on an editable old message."""
     query = update.callback_query
+    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
     message = getattr(query, "message", None)
     message_id = getattr(message, "message_id", None)
     completed = context.user_data.get("_completed_schedule_confirmations", {})
@@ -1904,19 +1935,16 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # A completed wizard can receive delayed/replayed callback updates. Never
     # recreate its draft or attempt a second database insert for that message.
     if message_key is not None and isinstance(completed, dict) and message_key in completed:
-        await query.answer("This schedule has already been saved.", show_alert=True)
+        await query.answer(sw_tr(language, "already_saved"), show_alert=True)
         return ConversationHandler.END
 
     w = context.user_data.get("wizard")
     if not isinstance(w, dict):
-        await query.answer(
-            "This setup is no longer active. Start a new schedule to continue.",
-            show_alert=True,
-        )
+        await query.answer(sw_tr(language, "setup_inactive"), show_alert=True)
         return ConversationHandler.END
 
     if w.get("_saving"):
-        await query.answer("Your schedule is already being saved.")
+        await query.answer(sw_tr(language, "saving_in_progress"))
         return WIZARD_SUMMARY
 
     validation_error = _validate_schedule_draft(w)
@@ -1924,13 +1952,12 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer()
         if "destination" in validation_error.lower():
             user_id = query.from_user.id if query.from_user else None
-            language = await resolve_user_language(context, user_id)
             bot_username = (await query.get_bot().get_me()).username
             groups = await list_groups_for_user(user_id) if user_id is not None else []
             await _edit_confirm_result(
                 query,
                 context,
-                f"⚠️ {validation_error}\\n\\n{tr(language, 'choose_group')}",
+                f"⚠️ {sw_tr(language, 'deep_link_unavailable')}\\n\\n{tr(language, 'choose_group')}",
                 _chat_list_keyboard(groups, 0, bot_username, language)
                 if groups else _no_groups_keyboard(bot_username, language),
             )
@@ -1939,17 +1966,19 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await _edit_confirm_result(
                 query,
                 context,
-                "⚠️ The selected first-post time is no longer in the future.\\n\\n"
-                "Enter a new 24-hour HH:MM time or an exact DD/MM/YYYY HH:MM date.",
+                "⚠️ " + sw_tr(language, "first_time_invalid") + "\\n\\n"
+                + sw_tr(language, "first_time_format"),
                 _first_run_keyboard(CB_BACK_TIMEZONE, _language(context)),
             )
             return WIZARD_FIRST_RUN
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ *This schedule is incomplete.*\\n\\n"
-            + escape_markdown(validation_error, version=1)
-            + "\\n\\nReview the settings and try again.",
+            sw_tr(
+                language,
+                "validation_incomplete",
+                error=escape_markdown(_localize_validation_error(validation_error, language), version=1),
+            ),
             _confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -1957,7 +1986,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     user_id = query.from_user.id if query.from_user else None
     if user_id is None:
-        await query.answer("Unable to identify your Telegram account.", show_alert=True)
+        await query.answer(sw_tr(language, "cannot_identify_user"), show_alert=True)
         return WIZARD_SUMMARY
 
     # Acquire the per-user wizard lock before the first awaited operation.
@@ -1965,7 +1994,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # checks and insert the same schedule.
     w["_saving"] = True
     try:
-        await query.answer("Saving schedule…")
+        await query.answer(sw_tr(language, "saving_in_progress"))
     except Exception:
         logger.debug("Could not acknowledge Schedule New Post confirmation callback.", exc_info=True)
 
@@ -1978,10 +2007,9 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ Posting access to the selected destination has changed. "
-            "Restore the bot's administrator/posting permissions, then select the destination again.",
-            _chat_list_keyboard(groups, 0, bot_username)
-            if groups else _no_groups_keyboard(bot_username, _language(context)),
+            "⚠️ " + sw_tr(language, "access_changed"),
+            _chat_list_keyboard(groups, 0, bot_username, language)
+            if groups else _no_groups_keyboard(bot_username, language),
         )
         return WIZARD_CHAT_ID
     except Exception:
@@ -1990,8 +2018,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ We couldn't verify posting access right now. Your setup is still available. "
-            "Please try confirming again.",
+            "⚠️ " + sw_tr(language, "access_check_failed"),
             _confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -2029,8 +2056,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ *We couldn't confirm that your schedule was saved.*\\n\\n"
-            "Your setup is still available. Before retrying, check *My Posts* in case the database save completed but the response was interrupted.",
+            sw_tr(language, "save_failed"),
             _confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -2062,11 +2088,9 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _edit_confirm_result(
         query,
         context,
-        f"✅ *Post scheduled successfully!*\\n\\n"
-        f"🆔 Post ID: {post_id}\\n\\n"
-        "Your schedule is saved and ready. Use *My Posts* to manage it.",
+        sw_tr(language, "save_success", post_id=post_id),
         InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏠 Main Menu", style="primary", callback_data=CB_MAIN_MENU)],
+            [InlineKeyboardButton(sw_tr(language, "main_menu_button"), style="primary", callback_data=CB_MAIN_MENU)],
         ]),
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -2169,7 +2193,7 @@ async def cb_back_lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return WIZARD_TIME_WINDOW
 async def cb_cancel_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer("Cancelled.")
+    await query.answer(sw_tr(language if "language" in locals() else _language(context), "cancelled"))
     _clear(context)
     chat_id = query.message.chat_id
     user_id = query.from_user.id if query.from_user else None
@@ -2178,7 +2202,7 @@ async def cb_cancel_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await replace_with_main_menu_message(
         query,
         context,
-        "❌ *Cancelled.* Back to Main Menu.",
+        sw_tr(language, "cancelled"),
         user_id,
         language,
     )
