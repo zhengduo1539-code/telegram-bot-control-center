@@ -23,6 +23,7 @@ Wizard flow:
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -965,16 +966,17 @@ def _inline_btns_list_text(buttons: list) -> str:
 # ---------------------------------------------------------------------------
 
 async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    _w(context)["recurrence_type"] = "once"
+    """Set one-time recurrence and force the matching one-send limit."""
+    w = _w(context)
+    w["recurrence_type"] = "once"
+    w["max_runs"] = 1
+    w.pop("interval_value", None)
+    w.pop("interval_unit", None)
+    w.pop("days_of_week", None)
     query = update.callback_query
     language = context.user_data.get("language", "en")
-    await _edit(
-        query,
-        tr(language, "timezone_prompt"),
-        _timezone_keyboard(0, language),
-    )
+    await _edit(query, tr(language, "timezone_prompt"), _timezone_keyboard(0, language))
     return WIZARD_TIMEZONE
-
 async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _w(context)["recurrence_type"] = "interval"
     query = update.callback_query
@@ -1088,34 +1090,43 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 # ---------------------------------------------------------------------------
 
 async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Parse a local future date/time and show only relevant delivery options."""
     raw = (update.message.text or "").strip()
-    tz_str = _w(context).get("timezone", "UTC")
-    dt = _parse_run_time(raw, tz_str)
+    w = _w(context)
+    timezone_name = w.get("timezone", "UTC")
+    dt = _parse_run_time(raw, timezone_name)
     if dt is None:
         await update.message.reply_text(
-            "⚠️ Couldn't validate that future time. Use HH:MM or DD/MM/YYYY HH:MM.\n"
-            "Example: 14:30 or 25/12/2027 09:00.",
+            "⚠️ That time could not be validated as a future date.\n\n"
+            "Enter a 24-hour time such as 14:30 for the next occurrence, or "
+            "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.",
+            reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
         )
         return WIZARD_FIRST_RUN
 
-    w = _w(context)
     w["first_run"] = dt
     w["first_run_raw"] = raw
     w.setdefault("time_window_enabled", False)
-    language = context.user_data.get("language", "en")
-    local_display = dt.astimezone(pytz.timezone(tz_str)).strftime("%d/%m/%Y %H:%M")
+    local_display = dt.astimezone(pytz.timezone(timezone_name)).strftime("%d/%m/%Y %H:%M")
+    one_time = w.get("recurrence_type") == "once"
+    if one_time:
+        w["max_runs"] = 1
+        prompt = (
+            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
+            "🔢 *One-time delivery*\n"
+            "This post will be sent once at the selected time. No repeat count is needed."
+        )
+    else:
+        prompt = (
+            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
+            f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}"
+        )
     await update.message.reply_text(
-        f"✅ First run: `{local_display}` ({tz_str})\n\n{tr(language, 'max_runs_prompt')}",
+        prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(),
+        reply_markup=_max_runs_keyboard(one_time=one_time),
     )
     return WIZARD_MAX_RUNS
-
-
-# ---------------------------------------------------------------------------
-# Back to first run
-# ---------------------------------------------------------------------------
-
 async def cb_back_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return to the First Run screen."""
     query = update.callback_query
@@ -1187,38 +1198,39 @@ async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User tapped a suggested time — save it and move to timezone step."""
+    """Apply a suggested local time and route to the matching delivery-limit step."""
     query = update.callback_query
-    time_str = (query.data or "").replace(CB_SMART_PICK_PREFIX, "", 1)  # "HH:MM"
-
+    time_str = (query.data or "").replace(CB_SMART_PICK_PREFIX, "", 1)
     w = _w(context)
-    tz_str = w.get("timezone", "UTC")
-    dt = _parse_run_time(time_str, tz_str)
+    timezone_name = w.get("timezone", "UTC")
+    dt = _parse_run_time(time_str, timezone_name)
     if dt is None:
-        await query.answer("Could not parse time — please enter manually.", show_alert=True)
+        await query.answer("That suggested time is no longer available. Enter a future time manually.", show_alert=True)
         return WIZARD_FIRST_RUN
 
     w["first_run"] = dt
     w["first_run_raw"] = time_str
     w.setdefault("time_window_enabled", False)
-
-    tz_str = w.get("timezone", "UTC")
+    one_time = w.get("recurrence_type") == "once"
+    local_display = dt.astimezone(pytz.timezone(timezone_name)).strftime("%d/%m/%Y %H:%M")
+    if one_time:
+        w["max_runs"] = 1
+        prompt = (
+            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
+            "🔢 *One-time delivery*\nThis post will be sent once at the selected time."
+        )
+    else:
+        prompt = (
+            f"✅ *First post:* {local_display} ({timezone_name})\n\n"
+            f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}"
+        )
     await query.answer()
-    local_display = dt.astimezone(pytz.timezone(tz_str)).strftime("%d/%m/%Y %H:%M")
     await query.edit_message_text(
-        f"✅ First run: `{local_display}` ({tz_str})\n\n"
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n"
-        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}",
+        prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(),
+        reply_markup=_max_runs_keyboard(one_time=one_time),
     )
     return WIZARD_MAX_RUNS
-
-
-# ---------------------------------------------------------------------------
-# Step 5 — Timezone
-# ---------------------------------------------------------------------------
-
 async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     page = int(query.data.replace(CB_TZ_PAGE, ""))
@@ -1296,11 +1308,19 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # Step 6 — Max runs
 # ---------------------------------------------------------------------------
 
-def _max_runs_keyboard() -> InlineKeyboardMarkup:
-    """Quick-tap presets, including one-time, plus a custom number input."""
+def _max_runs_keyboard(one_time: bool = False) -> InlineKeyboardMarkup:
+    """Only show delivery-limit choices that apply to this recurrence."""
+    if one_time:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ One-Time Post — 1 Send", style="success", callback_data=f"{CB_MR_PRESET}1")],
+            [
+                InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN),
+                InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            ],
+        ])
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("1× One time", style="success", callback_data=f"{CB_MR_PRESET}1"),
+            InlineKeyboardButton("1× One time", style="primary", callback_data=f"{CB_MR_PRESET}1"),
             InlineKeyboardButton("5×", style="primary", callback_data=f"{CB_MR_PRESET}5"),
             InlineKeyboardButton("10×", style="primary", callback_data=f"{CB_MR_PRESET}10"),
         ],
@@ -1313,73 +1333,72 @@ def _max_runs_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
-
-
 async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Accept a typed custom max-runs number."""
+    """Accept bounded positive custom counts for recurring schedules only."""
     text = (update.message.text or "").strip()
-    if not text.isdigit() or int(text) < 1:
+    w = _w(context)
+    one_time = w.get("recurrence_type") == "once"
+    if one_time:
+        w["max_runs"] = 1
         await update.message.reply_text(
-            "⚠️ Enter a whole number starting from *1* (for example, `7`).\n"
-            "For a single send, tap *1× One time*. For unlimited sends, tap *∞ Unlimited*.",
-            parse_mode=ParseMode.MARKDOWN,
+            "This is a one-time post, so its delivery limit is already set to one.",
+            reply_markup=_max_runs_keyboard(one_time=True),
+        )
+        return WIZARD_MAX_RUNS
+    if not text.isdecimal() or not (1 <= int(text) <= 100000):
+        await update.message.reply_text(
+            "⚠️ Enter a whole number from 1 to 100,000 (for example, 7). "
+            "Choose Unlimited below for an unlimited schedule.",
             reply_markup=_max_runs_keyboard(),
         )
         return WIZARD_MAX_RUNS
 
-    val = int(text)
-    w = _w(context)
-    w["max_runs"] = val
+    value = int(text)
+    w["max_runs"] = value
     w.setdefault("time_window_enabled", False)
-
-    label = "Unlimited" if val == 0 else "One time" if val == 1 else str(val)
-    w.setdefault("auto_delete",   False)
+    w.setdefault("auto_delete", False)
     w.setdefault("self_destruct", False)
-    w.setdefault("auto_pin",      False)
+    w.setdefault("auto_pin", False)
     await update.message.reply_text(
-        f"✅ Max runs: *{label}*\n\n"
-        "▰▰▰▰▰▰▰▱ 7/8\nChat › Content › Recurrence › Timezone › 1st Run › Max Runs › *Advanced* › Summary\n⚙️ *Step 7/8 — Advanced Options*\n\n"
-        "Toggle optional features on/off, then tap *➡️ Next*:",
+        f"✅ *Delivery limit:* {value} sends\n\n"
+        "⚙️ *Advanced Options*\n"
+        "These settings are optional and OFF by default. Turn on only what you need.",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_advanced_keyboard(w.get("time_window_enabled", False),
-                                        w["auto_delete"], w["self_destruct"], w["auto_pin"]),
+        reply_markup=_advanced_keyboard(
+            w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"]
+        ),
     )
     return WIZARD_TIME_WINDOW
-
-
 async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle quick-tap max-runs presets, including one-time and unlimited sends."""
+    """Validate the selected preset against the active recurrence."""
     query = update.callback_query
     raw = (query.data or "").replace(CB_MR_PRESET, "", 1)
     try:
-        val = int(raw)
+        value = int(raw)
     except ValueError:
-        await query.answer("Invalid preset.", show_alert=True)
+        await query.answer("Invalid delivery limit.", show_alert=True)
         return WIZARD_MAX_RUNS
 
     w = _w(context)
-    w["max_runs"] = None if val == 0 else val
+    one_time = w.get("recurrence_type") == "once"
+    allowed = {1} if one_time else {0, 1, 5, 10, 30}
+    if value not in allowed:
+        await query.answer("That delivery limit is not available for this schedule.", show_alert=True)
+        return WIZARD_MAX_RUNS
+    w["max_runs"] = 1 if one_time else (None if value == 0 else value)
     w.setdefault("time_window_enabled", False)
-
-    label = "Unlimited" if val == 0 else "One time" if val == 1 else str(val)
-    w = _w(context)
-    w.setdefault("auto_delete",   False)
+    w.setdefault("auto_delete", False)
     w.setdefault("self_destruct", False)
-    w.setdefault("auto_pin",      False)
-    await _edit(query,
-        f"✅ Max runs: *{label}*\n\n"
-        "▰▰▰▰▰▰▰▱ 7/8\nChat › Content › Recurrence › Timezone › 1st Run › Max Runs › *Advanced* › Summary\n⚙️ *Step 7/8 — Advanced Options*\n\n"
-        "Toggle optional features on/off, then tap *➡️ Next*:",
-        _advanced_keyboard(w.get("time_window_enabled", False),
-                           w["auto_delete"], w["self_destruct"], w["auto_pin"]),
+    w.setdefault("auto_pin", False)
+    label = "One send" if one_time else ("Unlimited" if value == 0 else f"{value} sends")
+    await _edit(
+        query,
+        f"✅ *Delivery limit:* {label}\n\n"
+        "⚙️ *Advanced Options*\n"
+        "These settings are optional and OFF by default. Turn on only what you need.",
+        _advanced_keyboard(w["time_window_enabled"], w["auto_delete"], w["self_destruct"], w["auto_pin"]),
     )
     return WIZARD_TIME_WINDOW
-
-
-# ---------------------------------------------------------------------------
-# Step 7 — Time window toggle
-# ---------------------------------------------------------------------------
-
 async def cb_tw_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Toggle silent-hours on/off; refresh the combined Advanced Options keyboard."""
     query = update.callback_query
