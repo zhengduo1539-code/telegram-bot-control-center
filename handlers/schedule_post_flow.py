@@ -1219,40 +1219,45 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
     w = context.user_data.get("schedule_post")
     if not isinstance(w, dict):
-        await _answer(query, _flow(_w(context), "setup_inactive"), alert=True)
+        language = await resolve_user_language(context, query.from_user.id if query and query.from_user else None)
+        await _answer(query, flow_tr(language, "setup_inactive"), alert=True)
         return ConversationHandler.END
+    language = _lang(w)
     if w.get("_save_uncertain"):
-        await _answer(query, _flow(_w(context), "save_failed"), alert=True)
+        await _answer(query, _flow(w, "save_failed"), alert=True)
         return REVIEW
     if w.get("_saving"):
-        await _answer(query, _flow(_w(context), "already_saving"))
+        await _answer(query, _flow(w, "already_saving"))
         return REVIEW
     errors = _validate(w)
     if errors:
-        await _answer(query, _flow(_w(context), "validation_generic"), alert=True)
+        await _answer(query, _flow(w, "validation_generic"), alert=True)
         return await _home(context, w, "; ".join(errors))
-    user_id = query.from_user.id if query.from_user else None
+    user_id = query.from_user.id if query and query.from_user else None
     if user_id is None:
-        await _answer(query, _flow(_w(context), "user_missing"), alert=True)
+        await _answer(query, _flow(w, "user_missing"), alert=True)
         return REVIEW
 
-    # Set the lock before any awaited permission or database operation.
     w["_saving"] = True
-    await _answer(query, _flow(_w(context), "saving"))
+    await _answer(query, _flow(w, "saving"))
     try:
-        await ensure_chat_access(context.bot, w["chat_id"], user_id)
+        await ensure_chat_access(context.bot, w["chat_id"], user_id, language)
     except ChatAccessError as exc:
         w.pop("_saving", None)
-        await _show(context, w, f"⚠️ {escape_markdown(str(exc), version=1)}\n\nChoose another destination or restore the required permissions.", InlineKeyboardMarkup([
-            [InlineKeyboardButton(_t(w, "section_destination"), style="primary", callback_data=CB_DESTINATION)],
-            [InlineKeyboardButton("⬅️ " + _t(w, "review_open_workspace"), callback_data=CB_HOME)],
-            [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
-        ]))
+        await _show(
+            context, w,
+            f"⚠️ {escape_markdown(str(exc), version=1)}",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton(_t(w, "section_destination"), style="primary", callback_data=CB_DESTINATION)],
+                [InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_HOME)],
+                [InlineKeyboardButton("❌ " + tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
+            ]),
+        )
         return DESTINATION
     except Exception:
         w.pop("_saving", None)
         logger.exception("Destination revalidation failed for user_id=%s", user_id)
-        await _show(context, w, f"⚠️ {_flow(w, 'access_failed')}", _nav(language=_lang(w)))
+        await _show(context, w, f"⚠️ {_flow(w, 'access_failed')}", _nav(language=language))
         return HOME
 
     try:
@@ -1280,13 +1285,15 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         post_id = await insert_post(document)
     except Exception:
-        # The database may have committed before the connection failed.
-        # Never expose a blind retry that could create a duplicate record.
         w["_save_uncertain"] = True
         logger.exception("Could not verify scheduled-post save for user_id=%s", user_id)
-        await _show(context, w, "⚠️ *The save result could not be verified.*\n\nTo avoid a duplicate, this setup is locked from retrying. Open *My Posts* and check whether the post appears before creating another one.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 " + tr(_lang(w), "menu_title"), style="primary", callback_data=CB_MENU)],
-        ]))
+        await _show(
+            context, w,
+            f"⚠️ *{_flow(w, 'save_failed')}*",
+            InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 " + tr(language, "menu_title"), style="primary", callback_data=CB_MENU),
+            ]]),
+        )
         return REVIEW
 
     if message_key:
@@ -1299,19 +1306,20 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             completed.pop(next(iter(completed)))
 
     chat_id, ui_message_id = w.get("ui_chat_id"), w.get("ui_message_id")
+    success = (
+        f"✅ *{_t(w, 'success_title')}*\n\n"
+        f"Post ID: {escape_markdown(str(post_id), version=1)}\n\n"
+        f"{_t(w, 'success_body')}"
+    )
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📋 " + tr(language, "menu_title"), style="primary", callback_data=CB_MENU)
+    ]])
     context.user_data.pop("schedule_post", None)
     if chat_id is not None:
         try:
             await chat_cleanup.cleanup(context, chat_id, keep_message_id=ui_message_id)
         except Exception:
             logger.exception("Post %s saved, but composer cleanup failed.", post_id)
-
-    success = (
-        "✅ *Post scheduled successfully*\n\n"
-        f"Post ID: {escape_markdown(str(post_id), version=1)}\n\n"
-        "Your post is now available in *My Posts*, where you can pause, resume or delete it."
-    )
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 " + tr(_lang(w), "menu_title"), style="primary", callback_data=CB_MENU)]])
     screen = {"ui_chat_id": chat_id, "ui_message_id": ui_message_id}
     try:
         await _show(context, screen, success, keyboard)
