@@ -33,6 +33,9 @@ from telegram.ext import (
 )
 
 from config import ADMIN_IDS
+from handlers.language import resolve_user_language
+from localization import translate as tr
+from owner_panel_localization import translate_owner_panel as ot
 
 logger = logging.getLogger(__name__)
 
@@ -69,121 +72,92 @@ def _is_owner(user_id: int | None) -> bool:
     return user_id is not None and user_id in ADMIN_IDS
 
 
-def _owner_menu_keyboard() -> InlineKeyboardMarkup:
-    """Present owner tools in clear operational groups without changing callbacks."""
+def _owner_menu_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton(ot(language, "status"), style="primary", callback_data=CB_OWNER_STATUS)],
         [
-            InlineKeyboardButton(
-                "📊 System Overview",
-                style="primary",
-                callback_data=CB_OWNER_STATUS,
-            ),
+            InlineKeyboardButton(ot(language, "users"), style="primary", callback_data=CB_OWNER_USERS),
+            InlineKeyboardButton(ot(language, "groups"), style="primary", callback_data=CB_OWNER_GROUPS),
         ],
         [
-            InlineKeyboardButton("👤 User Directory", style="primary", callback_data=CB_OWNER_USERS),
-            InlineKeyboardButton("👥 Group Directory", style="primary", callback_data=CB_OWNER_GROUPS),
+            InlineKeyboardButton(ot(language, "broadcast_all"), style="primary", callback_data=CB_OWNER_BCAST_ALL),
+            InlineKeyboardButton(ot(language, "broadcast_one"), style="primary", callback_data=CB_OWNER_BCAST_ONE),
         ],
-        [
-            InlineKeyboardButton("📣 Broadcast All", style="primary", callback_data=CB_OWNER_BCAST_ALL),
-            InlineKeyboardButton("🎯 Message One", style="primary", callback_data=CB_OWNER_BCAST_ONE),
-        ],
-        [
-            InlineKeyboardButton(
-                "🧹 Clear Bot Data",
-                style="danger",
-                callback_data=CB_OWNER_CLEARDATA,
-            ),
-        ],
-        [
-            InlineKeyboardButton("🏠 Main Menu", style="primary", callback_data="nav:main_menu"),
-        ],
+        [InlineKeyboardButton(ot(language, "clear_data"), style="danger", callback_data=CB_OWNER_CLEARDATA)],
+        [InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data="nav:main_menu")],
     ])
 
+def _back_only_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_OWNER_BACK)]])
 
-def _back_only_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Back to Owner Panel", callback_data=CB_OWNER_BACK)],
-    ])
-
-
-def _cancel_only_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_OWNER_BACK)],
-    ])
-
+def _cancel_only_keyboard(language: str = "en") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ " + tr(language, "cancel"), style="danger", callback_data=CB_OWNER_BACK)]])
 
 async def cb_owner_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Entry point — show the owner panel main menu."""
     query = update.callback_query
     if not query or not query.from_user:
         return ConversationHandler.END
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     await query.edit_message_text(
-        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
+        f"{ot(language, 'title')}\n\n{ot(language, 'intro')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_owner_menu_keyboard(),
+        reply_markup=_owner_menu_keyboard(language),
     )
     return OWNER_MENU
 
-
 async def cb_owner_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Return to the owner panel main menu from any sub-screen."""
     query = update.callback_query
     if not query or not query.from_user:
         return ConversationHandler.END
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     context.user_data.pop("_owner_bcast_target", None)
     await query.edit_message_text(
-        "🛠 *Owner Control Center*\n\nMonitor activity, manage users and groups, and send broadcasts.\n\nChoose an operation:",
+        f"{ot(language, 'title')}\n\n{ot(language, 'intro')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_owner_menu_keyboard(),
+        reply_markup=_owner_menu_keyboard(language),
     )
     return OWNER_MENU
 
-
 async def cb_owner_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show live counts of users, groups and scheduled posts."""
     from database import get_bot_stats
-
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     try:
         stats = await get_bot_stats()
-    except Exception as exc:
-        logger.exception("get_bot_stats failed: %s", exc)
+    except Exception:
+        logger.exception("get_bot_stats failed")
         await query.edit_message_text(
-            f"❌ Error loading status: `{_safe_exc(exc)}`",
+            ot(language, "status_error"),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_back_only_keyboard(),
+            reply_markup=_back_only_keyboard(language),
         )
         return OWNER_MENU
-
     text = (
-        "📊 *Bot Status*\n\n"
-        f"👤 Users tracked: `{stats['users']}`\n"
-        f"👥 Groups/channels tracked: `{stats['groups']}`\n\n"
-        f"📝 Scheduled posts total: `{stats['posts_total']}`\n"
-        f"  ⏳ Pending: `{stats['posts_pending']}`\n"
-        f"  ⏸ Paused: `{stats['posts_paused']}`\n"
-        f"  ✅ Posted: `{stats['posts_posted']}`\n"
-        f"  ❌ Failed: `{stats['posts_failed']}`\n\n"
+        f"{ot(language, 'status')}\n\n"
+        f"👤 {ot(language, 'users_label')}: `{stats['users']}`\n"
+        f"👥 {ot(language, 'groups_label')}: `{stats['groups']}`\n\n"
+        f"📝 {ot(language, 'posts_total')}: `{stats['posts_total']}`\n"
+        f"  ⏳ {ot(language, 'pending')}: `{stats['posts_pending']}`\n"
+        f"  ⏸ {ot(language, 'paused')}: `{stats['posts_paused']}`\n"
+        f"  ✅ {ot(language, 'posted')}: `{stats['posts_posted']}`\n"
+        f"  ❌ {ot(language, 'failed')}: `{stats['posts_failed']}`"
     )
-    await query.edit_message_text(
-        text, parse_mode=ParseMode.MARKDOWN, reply_markup=_back_only_keyboard()
-    )
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=_back_only_keyboard(language))
     return OWNER_MENU
-
 
 def _escape_md(text: str) -> str:
     """Escape characters that break Telegram's legacy Markdown parser."""
@@ -195,131 +169,107 @@ def _safe_exc(exc: Exception) -> str:
     return str(exc).replace("`", "'")
 
 
-async def _render_id_list(query, items: list[dict], page: int, label: str, page_cb_prefix: str, kind: str) -> None:
+async def _render_id_list(
+    query, items: list[dict], page: int, label: str,
+    page_cb_prefix: str, kind: str, language: str = "en",
+) -> None:
     total = len(items)
     n_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(0, min(page, n_pages - 1))
-    start = page * PAGE_SIZE
-    end = min(start + PAGE_SIZE, total)
+    start, end = page * PAGE_SIZE, min((page + 1) * PAGE_SIZE, total)
     chunk = items[start:end]
-
-    lines = [f"{label} (page {page + 1}/{n_pages}, total {total})\n"]
+    lines = [f"{label} · {page + 1}/{n_pages} · {total}"]
     for idx, item in enumerate(chunk, start=start + 1):
         if kind == "user":
             item_id = item["user_id"]
             username = item.get("username")
             name = item.get("first_name") or ""
-            if username:
-                handle = f"@{_escape_md(username)}"
-            elif name:
-                handle = _escape_md(name)
-            else:
-                handle = "_no username_"
-            lines.append(f"{idx}. `{item_id}` — {handle}")
+            handle = f"@{_escape_md(username)}" if username else (_escape_md(name) if name else "—")
         else:
             item_id = item["chat_id"]
             title = item.get("title")
-            handle = _escape_md(title) if title else "_untitled_"
-            lines.append(f"{idx}. `{item_id}` — {handle}")
+            handle = _escape_md(title) if title else "—"
+        lines.append(f"{idx}. `{item_id}` — {handle}")
     if not chunk:
-        lines.append("_None yet._")
-
+        lines.append("—")
     nav_row: list[InlineKeyboardButton] = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("◀️ Prev", style="primary", callback_data=f"{page_cb_prefix}{page - 1}"))
+        nav_row.append(InlineKeyboardButton("◀️ " + tr(language, "previous"), style="primary", callback_data=f"{page_cb_prefix}{page - 1}"))
     if end < total:
-        nav_row.append(InlineKeyboardButton("Next ▶️", style="primary", callback_data=f"{page_cb_prefix}{page + 1}"))
+        nav_row.append(InlineKeyboardButton(tr(language, "next") + " ▶️", style="primary", callback_data=f"{page_cb_prefix}{page + 1}"))
     buttons = [nav_row] if nav_row else []
-    buttons.append([InlineKeyboardButton("⬅️ Back to Owner Panel", callback_data=CB_OWNER_BACK)])
-
-    await query.edit_message_text(
-        "\n".join(lines),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
-
+    buttons.append([InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_OWNER_BACK)])
+    await query.edit_message_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(buttons))
 
 async def cb_owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from database import list_users
-
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     try:
         items = await list_users()
-    except Exception as exc:
-        logger.exception("list_users failed: %s", exc)
-        await query.edit_message_text(
-            f"❌ Error: `{_safe_exc(exc)}`", parse_mode=ParseMode.MARKDOWN, reply_markup=_back_only_keyboard()
-        )
+    except Exception:
+        logger.exception("list_users failed")
+        await query.edit_message_text(ot(language, "status_error"), parse_mode=ParseMode.MARKDOWN, reply_markup=_back_only_keyboard(language))
         return OWNER_MENU
-    await _render_id_list(query, items, 0, "👤 *User List*", CB_OWNER_USERS_PAGE, kind="user")
+    await _render_id_list(query, items, 0, ot(language, "user_list"), CB_OWNER_USERS_PAGE, kind="user", language=language)
     return OWNER_LIST
-
 
 async def cb_owner_users_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from database import list_users
-
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     page_str = (query.data or "").replace(CB_OWNER_USERS_PAGE, "")
     page = int(page_str) if page_str.isdigit() else 0
     await query.answer()
     items = await list_users()
-    await _render_id_list(query, items, page, "👤 *User List*", CB_OWNER_USERS_PAGE, kind="user")
+    await _render_id_list(query, items, page, ot(language, "user_list"), CB_OWNER_USERS_PAGE, kind="user", language=language)
     return OWNER_LIST
-
 
 async def cb_owner_groups(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from database import list_groups
-
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     await query.answer()
     try:
         items = await list_groups()
-    except Exception as exc:
-        logger.exception("list_groups failed: %s", exc)
-        await query.edit_message_text(
-            f"❌ Error: `{_safe_exc(exc)}`", parse_mode=ParseMode.MARKDOWN, reply_markup=_back_only_keyboard()
-        )
+    except Exception:
+        logger.exception("list_groups failed")
+        await query.edit_message_text(ot(language, "status_error"), parse_mode=ParseMode.MARKDOWN, reply_markup=_back_only_keyboard(language))
         return OWNER_MENU
-    await _render_id_list(query, items, 0, "👥 *Group List*", CB_OWNER_GROUPS_PAGE, kind="group")
+    await _render_id_list(query, items, 0, ot(language, "group_list"), CB_OWNER_GROUPS_PAGE, kind="group", language=language)
     return OWNER_LIST
-
 
 async def cb_owner_groups_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from database import list_groups
-
     query = update.callback_query
     if not query or not query.from_user:
         return OWNER_MENU
+    language = await resolve_user_language(context, query.from_user.id)
     if not _is_owner(query.from_user.id):
-        await query.answer("⛔ Owner only.", show_alert=True)
+        await query.answer(ot(language, "owner_only"), show_alert=True)
         return ConversationHandler.END
     page_str = (query.data or "").replace(CB_OWNER_GROUPS_PAGE, "")
     page = int(page_str) if page_str.isdigit() else 0
     await query.answer()
     items = await list_groups()
-    await _render_id_list(query, items, page, "👥 *Group List*", CB_OWNER_GROUPS_PAGE, kind="group")
+    await _render_id_list(query, items, page, ot(language, "group_list"), CB_OWNER_GROUPS_PAGE, kind="group", language=language)
     return OWNER_LIST
-
-
-# ---------------------------------------------------------------------------
-# Broadcast — all users
-# ---------------------------------------------------------------------------
 
 async def cb_owner_bcast_all_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
