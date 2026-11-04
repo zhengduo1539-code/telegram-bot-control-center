@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ChatType, ParseMode
 from telegram.ext import ContextTypes, filters
 
 from database import get_user_language, set_user_language
+from reply_keyboard import register_reply_keyboard_routes
 from localization import (
     DEFAULT_LANGUAGE,
     LANGUAGES,
@@ -61,15 +62,23 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.exception("Could not create private language-settings link.")
             private_url = None
         if private_url:
-            await message.reply_text(
-                f"{lut(language, 'private_only')}\n\n{lut(language, 'open_private')}",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
-                        translate(language, "open_private"),
-                        style="primary",
-                        url=private_url,
-                    )
-                ]]),
+            open_label = translate(language, "open_private")
+            keyboard = ReplyKeyboardMarkup(
+                [[KeyboardButton(open_label, style="primary")]],
+                resize_keyboard=True,
+                one_time_keyboard=False,
+                is_persistent=True,
+            )
+            sent = await message.reply_text(
+                f"{lut(language, 'private_only')}\n\n"
+                f"{lut(language, 'open_private')}\n\n🔗 {private_url}",
+                reply_markup=keyboard,
+            )
+            register_reply_keyboard_routes(
+                context.bot_data,
+                chat.id,
+                {open_label: {"type": "url", "url": private_url}},
+                sent,
             )
         else:
             await message.reply_text(lut(language, "private_only"))
