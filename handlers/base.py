@@ -425,6 +425,128 @@ def _posts_list_text(posts: list[dict], page: int, language: str = "en", filter_
     return "\n".join(lines)
 
 
+def _posts_keyboard(
+    posts: list[dict], page: int, language: str = "en", filter_key: str = "all"
+) -> InlineKeyboardMarkup:
+    total = len(posts)
+    start = page * POSTS_PER_PAGE
+    end = min(start + POSTS_PER_PAGE, total)
+    buttons: list[list[InlineKeyboardButton]] = []
+    buttons.append([
+        InlineKeyboardButton(
+            f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}",
+            style="success" if filter_key == key else "primary",
+            callback_data=f"{CB_MPP_FILTER}{key}",
+        )
+        for key in ("all", "pending", "paused")
+    ])
+    buttons.append([
+        InlineKeyboardButton(
+            f"{'• ' if filter_key == key else ''}{_mp_label(language, key)}",
+            style="success" if filter_key == key else "primary",
+            callback_data=f"{CB_MPP_FILTER}{key}",
+        )
+        for key in ("posted", "failed")
+    ])
+    for idx, post in enumerate(posts[start:end], start=start + 1):
+        pid = str(post["_id"])
+        status = post.get("status", "pending")
+        controls: list[InlineKeyboardButton] = []
+        if status == "pending":
+            controls.append(InlineKeyboardButton(f"{tr(language, 'pause')} #{idx}", style="primary", callback_data=f"{CB_MPP_PAUSE}{pid}"))
+        elif status == "paused":
+            controls.append(InlineKeyboardButton(f"{tr(language, 'resume')} #{idx}", style="success", callback_data=f"{CB_MPP_RESUME}{pid}"))
+        controls.append(InlineKeyboardButton(f"{tr(language, 'delete')} #{idx}", style="danger", callback_data=f"{CB_MPP_DEL}{pid}"))
+        buttons.append(controls)
+        buttons.append([InlineKeyboardButton(f"{tr(language, 'clone')} #{idx}", style="primary", callback_data=f"{CB_MPP_CLONE}{pid}")])
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(tr(language, "previous"), style="primary", callback_data=f"{CB_MPP_PAGE}{page - 1}"))
+    if end < total:
+        nav_row.append(InlineKeyboardButton(tr(language, "next"), style="primary", callback_data=f"{CB_MPP_PAGE}{page + 1}"))
+    if nav_row:
+        buttons.append(nav_row)
+    buttons.append([InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU)])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def _render_my_posts(query: Any, user_id: int, page: int, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Fetch, filter, and render the user's localized post-management dashboard."""
+    from database import get_user_posts
+    language = await resolve_user_language(context, user_id)
+    t = lambda key, **values: mp_tr(language, key, **values)
+    try:
+        posts = await get_user_posts(user_id)
+    except Exception:
+        logger.exception("get_user_posts failed")
+        await query.edit_message_text(
+            f"⚠️ {t('action_failed')}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU)]]),
+        )
+        return MY_POSTS
+
+    filter_key = context.user_data.get("_mp_filter", "all")
+    if filter_key not in _MP_FILTERS:
+        filter_key = "all"
+        context.user_data["_mp_filter"] = filter_key
+    filtered_posts = _filter_posts(posts, filter_key)
+
+    if not posts:
+        await query.edit_message_text(
+            f"{t('empty_body')}\n\n{t('empty_footer')}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(tr(language, "schedule_new"), style="primary", callback_data=CB_SCHEDULE_NEW)],
+                [InlineKeyboardButton(tr(language, "menu_title"), style="primary", callback_data=CB_MAIN_MENU)],
+            ]),
+        )
+        return MY_POSTS
+
+    if not filtered_posts:
+        await query.edit_message_text(
+            f"📋 *{tr(language, 'posts_title')}*\n\n{t('filter_empty', status=_mp_label(language, filter_key))}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_posts_keyboard([], 0, language, filter_key),
+        )
+        context.user_data["_mp_page"] = 0
+        return MY_POSTS
+
+    max_page = max(0, (len(filtered_posts) + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE - 1)
+    page = max(0, min(page, max_page))
+    context.user_data["_mp_page"] = page
+    keyboard = _posts_keyboard(filtered_posts, page, language, filter_key)
+    rich_message = _posts_rich_message(filtered_posts, page, language, all_posts=posts, filter_key=filter_key)
+    try:
+        inline_markup, reply_keyboard, keyboard_routes = split_inline_keyboard(keyboard)
+        api_kwargs: dict[str, Any] = {"rich_message": rich_message}
+        if inline_markup is not None:
+            api_kwargs["reply_markup"] = inline_markup
+        inline_message_id = getattr(query, "inline_message_id", None)
+        message = getattr(query, "message", None)
+        if inline_message_id:
+            api_kwargs["inline_message_id"] = inline_message_id
+        elif message:
+            api_kwargs["chat_id"] = message.chat_id
+            api_kwargs["message_id"] = message.message_id
+        else:
+            raise ValueError("Cannot edit My Posts: callback message is unavailable.")
+        await context.bot.do_api_request("editMessageText", api_kwargs=api_kwargs)
+        if reply_keyboard is not None and message is not None:
+            await publish_reply_keyboard(
+                context.bot, getattr(context, "bot_data", {}), message.chat_id,
+                reply_keyboard, keyboard_routes, message,
+            )
+    except Exception as exc:
+        logger.warning("Native My Posts Rich Message unavailable; using text fallback: %s", exc)
+        await query.edit_message_text(
+            _posts_list_text(filtered_posts, page, language, filter_key),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboard,
+        )
+    return MY_POSTS
+
+
 # ---------------------------------------------------------------------------
 # Handlers — navigation & main menu
 # ---------------------------------------------------------------------------
