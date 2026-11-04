@@ -123,7 +123,7 @@ def start_keyboard(bot: Bot | None, language: str = "en") -> InlineKeyboardMarku
     share_url = "https://t.me/share/url?" + urlencode(
         {
             "url": f"https://t.me/{username}",
-            "text": "Check out this Advanced Scheduler Bot!",
+            "text": tr(language, "share_bot"),
         }
     )
     return InlineKeyboardMarkup([[
