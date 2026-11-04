@@ -104,7 +104,7 @@ _UI_ROWS = {
         "Enter a whole number from 1 to 525,600. For example, 6.",
         "Select every day on which this post should be published. You can select more than one day.\nTap Next when your selection is complete.",
         "Please select at least one day.",
-        "That time could not be validated as a future time or date.",
+        "The selected first-post time could not be validated as a future time or date.",
         "Enter a 24-hour time such as 14:30 for the next occurrence, or DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.",
         "The bot learns active hours by observing messages in the group. Come back after it has been active there for a while.",
         "💡 *Smart Scheduling*\n\nChoose a suggested posting time based on recent activity in this chat, or enter a time manually.",
@@ -2739,6 +2739,35 @@ for _locale, _values in _FINAL_ROWS.items():
     if len(_values) != len(_FINAL_KEYS) or any(not value for value in _values):
         raise RuntimeError(f"Incomplete final Schedule wizard text for {_locale}.")
     _MESSAGES[_locale].update(dict(zip(_FINAL_KEYS, _values, strict=True)))
+
+
+_COUNT_KEYS = ("delivery_count",)
+_COUNT_ROWS = {
+    "en": ("{count} sends",),
+    "my": ("{count} ကြိမ်ပို့မည်",),
+    "zh": ("发送 {count} 次",),
+    "es": ("{count} envíos",),
+    "hi": ("{count} बार भेजें",),
+    "ar": ("{count} عملية إرسال",),
+    "pt": ("{count} envios",),
+    "fr": ("{count} envois",),
+    "ru": ("{count} отправок",),
+    "bn": ("{count} বার পাঠান",),
+    "id": ("{count} kiriman",),
+    "ja": ("{count}回送信",),
+    "ko": ("{count}회 전송",),
+    "th": ("ส่ง {count} ครั้ง",),
+    "vi": ("{count} lượt gửi",),
+    "tr": ("{count} gönderim",),
+    "de": ("{count} Sendungen",),
+    "it": ("{count} invii",),
+    "ur": ("{count} مرتبہ بھیجیں",),
+    "sw": ("Utumaji {count}",),
+}
+if set(_COUNT_ROWS) != set(LANGUAGES):
+    raise RuntimeError("Delivery count copy must cover every supported language.")
+for _locale, _values in _COUNT_ROWS.items():
+    _MESSAGES[_locale].update(dict(zip(_COUNT_KEYS, _values, strict=True)))
 
 _WEEKDAY_LABELS = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
