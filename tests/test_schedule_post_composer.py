@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from telegram import InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from handlers import schedule_post_flow as composer
 
@@ -160,7 +160,7 @@ def test_workspace_screen_sends_replacement_when_existing_message_cannot_be_edit
             context,
             draft,
             "Composer",
-            InlineKeyboardMarkup([[]]),
+            InlineKeyboardMarkup([[InlineKeyboardButton("Continue", callback_data="continue")]]),
         )
 
         bot.edit_message_text.assert_awaited_once()
