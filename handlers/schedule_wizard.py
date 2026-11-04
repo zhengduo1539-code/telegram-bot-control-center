@@ -304,7 +304,7 @@ def _dow_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
     rows.append(days_row2)
     rows.append([
         InlineKeyboardButton("⬅️ Back",    callback_data=CB_BACK_RECURRENCE),
-        InlineKeyboardButton("➡️ Next",    style="primary", callback_data=CB_DOW_NEXT),
+        InlineKeyboardButton("➡️ Next",    style="success", callback_data=CB_DOW_NEXT),
         InlineKeyboardButton("❌ Cancel",  style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
@@ -342,7 +342,7 @@ def _time_window_keyboard(enabled: bool) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⬅️ Back",    callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton("➡️ Next",    style="primary", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton("➡️ Next",    style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton("❌ Cancel",  style="danger", callback_data=CB_CANCEL),
         ],
     ])
@@ -357,7 +357,7 @@ def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)", callback_data=CB_LC_AP)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_TW),
-            InlineKeyboardButton("➡️ Next",   style="primary", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton("➡️ Next",   style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
@@ -378,7 +378,7 @@ def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool) -> InlineKeyboard
         [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)",  callback_data=CB_LC_AP)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton("➡️ Next",   style="primary", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton("➡️ Next",   style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
