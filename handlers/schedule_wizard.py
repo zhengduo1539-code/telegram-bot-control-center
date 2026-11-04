@@ -291,7 +291,7 @@ def _dow_keyboard(selected: set[int], language: str = "en") -> InlineKeyboardMar
         ])
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_RECURRENCE),
-        InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_DOW_NEXT),
+        InlineKeyboardButton(sw_tr(language, "next_step_button"), style="success", callback_data=CB_DOW_NEXT),
         InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
@@ -332,7 +332,7 @@ def _time_window_keyboard(enabled: bool, language: str = "en") -> InlineKeyboard
         ],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(sw_tr(language, "next_step_button"), style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
@@ -735,11 +735,11 @@ def _inline_btns_keyboard(count: int, language: str = "en") -> InlineKeyboardMar
             InlineKeyboardButton(sw_tr(language, "skip_button"), style="primary", callback_data=CB_IB_SKIP),
         ])
     elif count >= 10:
-        rows.append([InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=CB_IB_DONE)])
+        rows.append([InlineKeyboardButton(sw_tr(language, "done_button"), style="success", callback_data=CB_IB_DONE)])
     else:
         rows.append([
             InlineKeyboardButton(sw_tr(language, "add_button"), style="primary", callback_data=CB_IB_ADD),
-            InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=CB_IB_DONE),
+            InlineKeyboardButton(sw_tr(language, "done_button"), style="success", callback_data=CB_IB_DONE),
         ])
     rows.append([
         InlineKeyboardButton(sw_tr(language, "back_content_button"), callback_data=CB_BACK_CONTENT),
@@ -1268,7 +1268,7 @@ def _max_runs_keyboard(one_time: bool = False, language: str = "en") -> InlineKe
         ])
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(sw_tr(language, "one_time_button"), style="primary", callback_data=f"{CB_MR_PRESET}1"),
+            InlineKeyboardButton(sw_tr(language, "one_time_choice_button"), style="primary", callback_data=f"{CB_MR_PRESET}1"),
             InlineKeyboardButton("5×", style="primary", callback_data=f"{CB_MR_PRESET}5"),
             InlineKeyboardButton("10×", style="primary", callback_data=f"{CB_MR_PRESET}10"),
         ],
@@ -1926,7 +1926,8 @@ def _localize_validation_error(error: str, language: str) -> str:
 async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Revalidate, save once, and confirm without relying on an editable old message."""
     query = update.callback_query
-    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
+    user = getattr(query, "from_user", None)
+    language = await resolve_user_language(context, user.id if user else None)
     message = getattr(query, "message", None)
     message_id = getattr(message, "message_id", None)
     completed = context.user_data.get("_completed_schedule_confirmations", {})
