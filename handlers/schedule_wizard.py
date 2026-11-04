@@ -799,12 +799,12 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 return WIZARD_INLINE_BTNS
             w["pending_inline_button_label"] = text
             await update.message.reply_text(
-                f"✅ Button text saved: *{escape_markdown(text, version=1)}*\\n\\n"
-                "🔗 *Step 2 of 2 — Destination link*\\n"
-                "Now send the full website/channel link, or a Telegram @username.\\n\\n"
-                "Examples:\\n"
-                "• https://example.com\\n"
-                "• https://t.me/mychannel\\n"
+                f"✅ Button text saved: *{escape_markdown(text, version=1)}*\n\n"
+                "🔗 *Step 2 of 2 — Destination link*\n"
+                "Now send the full website/channel link, or a Telegram @username.\n\n"
+                "Examples:\n"
+                "• https://example.com\n"
+                "• https://t.me/mychannel\n"
                 "• @mychannel",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=nav_keyboard(),
@@ -845,8 +845,8 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "Tap *➕ Add Another* to add one more, or *✅ Done* to continue."
         )
         await update.message.reply_text(
-            f"✅ *Button added! ({count}/10)*\\n\\n"
-            f"*Buttons so far:*\\n{existing}\\n\\n{next_step}",
+            f"✅ *Button added! ({count}/10)*\n\n"
+            f"*Buttons so far:*\n{existing}\n\n{next_step}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_inline_btns_keyboard(count),
         )
@@ -1158,8 +1158,8 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     local_display = dt.astimezone(pytz.timezone(tz_str)).strftime("%d/%m/%Y %H:%M")
     await query.edit_message_text(
         f"✅ First run: `{local_display}` ({tz_str})\n\n"
-        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n🔢 *Step 6/8 — Max Runs*\n\n"
-        tr(context.user_data.get("language", "en"), "max_runs_prompt"),
+        "▰▰▰▰▰▰▱▱ 6/8\nChat › Content › Recurrence › Timezone › 1st Run › *Max Runs* › Advanced › Summary\n"
+        f"{tr(context.user_data.get('language', 'en'), 'max_runs_prompt')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_max_runs_keyboard(),
     )
