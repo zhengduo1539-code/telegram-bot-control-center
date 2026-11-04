@@ -53,6 +53,7 @@ CB_WINDOW = P + "window"
 CB_DELETE = P + "delete"
 CB_DESTRUCT = P + "destruct"
 CB_PIN = P + "pin"
+CB_PIN_DURATION = P + "pin:duration"
 CB_PIN_FOREVER = P + "pin:forever"
 CB_BUTTONS = P + "buttons"
 CB_BUTTON_ADD = P + "button:add"
@@ -951,11 +952,22 @@ async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("Keep Pinned", style="success", callback_data=CB_PIN_FOREVER)],
-        [InlineKeyboardButton("Set Unpin Time", style="primary", callback_data=CB_PIN)],
+        [InlineKeyboardButton("Set Unpin Time", style="primary", callback_data=CB_PIN_DURATION)],
         [InlineKeyboardButton("⬅️ Delivery Rules", callback_data=CB_OPTIONS)],
         [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
     ])
     await _show(context, w, "📌 *Auto-Pin*\n\nChoose a duration or keep the post pinned until someone manually unpins it.", keyboard)
+    return AUTO_PIN
+
+
+async def cb_pin_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query, w = update.callback_query, _w(context)
+    await _answer(query)
+    await _show(
+        context, w,
+        "📌 *Set Auto-Unpin Time*\n\nEnter the number of hours the post should remain pinned. Use a number greater than 0 and no more than 87,600.",
+        _nav(CB_OPTIONS),
+    )
     return AUTO_PIN
 
 
@@ -1061,6 +1073,9 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not isinstance(w, dict):
         await _answer(query, "This setup is no longer active. Start a new post.", alert=True)
         return ConversationHandler.END
+    if w.get("_save_uncertain"):
+        await _answer(query, "The save result is uncertain. Check My Posts before trying again.", alert=True)
+        return REVIEW
     if w.get("_saving"):
         await _answer(query, "Your post is already being saved.")
         return REVIEW
@@ -1124,7 +1139,7 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await _show(context, w, "⚠️ *The save result could not be verified.*\n\nTo avoid a duplicate, this setup is locked from retrying. Open *My Posts* and check whether the post appears before creating another one.", InlineKeyboardMarkup([
             [InlineKeyboardButton("📋 Main Menu", style="primary", callback_data=CB_MENU)],
         ]))
-        return ConversationHandler.END
+        return REVIEW
 
     if message_key:
         completed = context.user_data.setdefault("_completed_post_composers", {})
@@ -1159,7 +1174,7 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 await context.bot.send_message(chat_id=chat_id, text=success, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
             except Exception:
                 logger.exception("Could not send success notice for scheduled post %s.", post_id)
-    return ConversationHandler.END
+    return HOME
 
 
 async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1200,14 +1215,20 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_buttons, pattern=f"^{CB_BUTTONS}$"),
                 CallbackQueryHandler(cb_review, pattern=f"^{CB_REVIEW}$"),
             ],
-            CONTENT: [MessageHandler((filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.AUDIO | filters.ANIMATION | filters.VOICE) & ~filters.COMMAND, recv_content)],
+            CONTENT: [
+                MessageHandler((filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.AUDIO | filters.ANIMATION | filters.VOICE) & ~filters.COMMAND, recv_content),
+                CallbackQueryHandler(cb_home, pattern=f"^{CB_HOME}$"),
+            ],
             DESTINATION: [
                 CallbackQueryHandler(cb_choose_chat, pattern=rf"^{re.escape(CB_CHAT)}-?\d+$"),
                 CallbackQueryHandler(cb_destination_page, pattern=rf"^{re.escape(CB_CHAT_PAGE)}\d+$"),
                 CallbackQueryHandler(cb_manual_destination, pattern=f"^{CB_MANUAL}$"),
                 CallbackQueryHandler(cb_home, pattern=f"^{CB_HOME}$"),
             ],
-            MANUAL_DESTINATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_manual_destination)],
+            MANUAL_DESTINATION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_manual_destination),
+                CallbackQueryHandler(cb_home, pattern=f"^{CB_HOME}$"),
+            ],
             SCHEDULE: [
                 CallbackQueryHandler(cb_mode_once, pattern=f"^{CB_MODE_ONCE}$"),
                 CallbackQueryHandler(cb_mode_interval, pattern=f"^{CB_MODE_INTERVAL}$"),
@@ -1222,7 +1243,10 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_timezone_page, pattern=rf"^{re.escape(CB_TZ_PAGE)}\d+$"),
                 CallbackQueryHandler(cb_schedule, pattern=f"^{CB_SCHEDULE}$"),
             ],
-            INTERVAL_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_interval_value)],
+            INTERVAL_VALUE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_interval_value),
+                CallbackQueryHandler(cb_schedule, pattern=f"^{CB_SCHEDULE}$"),
+            ],
             INTERVAL_UNIT: [
                 CallbackQueryHandler(cb_interval_unit, pattern=rf"^{re.escape(CB_UNIT)}(?:minutes|hours|days)$"),
                 CallbackQueryHandler(cb_schedule, pattern=f"^{CB_SCHEDULE}$"),
@@ -1232,11 +1256,15 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_days_done, pattern=f"^{CB_DAYS_DONE}$"),
                 CallbackQueryHandler(cb_schedule, pattern=f"^{CB_SCHEDULE}$"),
             ],
-            FIRST_RUN: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_first_run)],
+            FIRST_RUN: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_first_run),
+                CallbackQueryHandler(cb_schedule, pattern=f"^{CB_SCHEDULE}$"),
+            ],
             RUN_LIMIT: [
                 CallbackQueryHandler(cb_limit_choice, pattern=rf"^{re.escape(CB_LIMIT)}(?:custom|\d+)$"),
                 CallbackQueryHandler(cb_limit_unlimited, pattern=f"^{CB_LIMIT_UNLIMITED}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_run_limit),
+                CallbackQueryHandler(cb_schedule, pattern=f"^{CB_SCHEDULE}$"),
             ],
             OPTIONS: [
                 CallbackQueryHandler(cb_window, pattern=f"^{CB_WINDOW}$"),
@@ -1245,13 +1273,23 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_pin, pattern=f"^{CB_PIN}$"),
                 CallbackQueryHandler(cb_home, pattern=f"^{CB_HOME}$"),
             ],
-            POSTING_WINDOW: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_posting_window)],
-            AUTO_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_auto_delete)],
-            SELF_DESTRUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_self_destruct)],
+            POSTING_WINDOW: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_posting_window),
+                CallbackQueryHandler(cb_home, pattern=f"^{CB_HOME}$"),
+            ],
+            AUTO_DELETE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_auto_delete),
+                CallbackQueryHandler(cb_options, pattern=f"^{CB_OPTIONS}$"),
+            ],
+            SELF_DESTRUCT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_self_destruct),
+                CallbackQueryHandler(cb_options, pattern=f"^{CB_OPTIONS}$"),
+            ],
             AUTO_PIN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_auto_pin),
                 CallbackQueryHandler(cb_pin_forever, pattern=f"^{CB_PIN_FOREVER}$"),
-                CallbackQueryHandler(cb_pin, pattern=f"^{CB_PIN}$"),
+                CallbackQueryHandler(cb_pin_duration, pattern=f"^{CB_PIN_DURATION}$"),
+                CallbackQueryHandler(cb_options, pattern=f"^{CB_OPTIONS}$"),
             ],
             BUTTONS: [
                 CallbackQueryHandler(cb_button_add, pattern=f"^{CB_BUTTON_ADD}$"),
@@ -1259,7 +1297,10 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_button_clear, pattern=f"^{CB_BUTTON_CLEAR}$"),
                 CallbackQueryHandler(cb_home, pattern=f"^{CB_HOME}$"),
             ],
-            BUTTON_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_button_batch)],
+            BUTTON_ENTRY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_button_batch),
+                CallbackQueryHandler(cb_buttons, pattern=f"^{CB_BUTTONS}$"),
+            ],
             REVIEW: [
                 CallbackQueryHandler(cb_confirm, pattern=f"^{CB_CONFIRM}$"),
                 CallbackQueryHandler(cb_content, pattern=f"^{CB_CONTENT}$"),
