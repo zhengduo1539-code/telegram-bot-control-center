@@ -48,14 +48,15 @@ def split_inline_keyboard(
             label = str(getattr(button, "text", "") or "").strip() or "Select option"
             callback_data = getattr(button, "callback_data", None)
             url = getattr(button, "url", None)
-            # Only the two explicit welcome actions remain native Inline Buttons.
-            # Other URL actions (for example, group-to-private setup links) keep
-            # the established Reply Keyboard routing behaviour.
+            # Native Telegram URL buttons stay inline, including start/deep
+            # links that must open the bot directly instead of becoming text
+            # choices in a Reply Keyboard.
             keep_inline = bool(
                 url
                 and (
                     "startgroup=true" in str(url)
                     or "/share/url?" in str(url)
+                    or "?start=" in str(url)
                 )
             )
             if keep_inline:
