@@ -72,7 +72,7 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 is_persistent=True,
             )
             sent = await message.reply_text(
-                f"{lut(language, 'private_only')}\n\n"
+                f"{lut(language, 'private_only')} "
                 f"{lut(language, 'open_private')}\n\n🔗 {private_url}",
                 reply_markup=keyboard,
             )
