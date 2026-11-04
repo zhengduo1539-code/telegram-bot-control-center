@@ -57,9 +57,11 @@ def test_wizard_continue_and_next_actions_use_success_style():
         _dow_keyboard(set()),
         _time_window_keyboard(False),
         _lifecycle_keyboard(False, False, False),
-        _advanced_keyboard(False, False, False, False),
     ):
-        assert _button(markup, "➡️ Review Options").style == "success"
+        assert _button(markup, "➡️ Next").style == "success"
+
+    advanced = _advanced_keyboard(False, False, False, False)
+    assert _button(advanced, "➡️ Review Options").style == "success"
 
 
 def test_cancel_actions_use_danger_style_across_wizard_and_owner_flows():
