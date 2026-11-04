@@ -113,10 +113,30 @@ async def _show(context, w: dict, text: str, keyboard: InlineKeyboardMarkup, par
     w["ui_message_id"] = message.message_id
 
 
+def _schedule_is_ready(w: dict) -> bool:
+    first = w.get("first_run")
+    if not isinstance(first, datetime) or first.tzinfo is None or first.utcoffset() is None:
+        return False
+    mode = w.get("recurrence_type")
+    if mode == "once":
+        return True
+    if mode == "interval":
+        value, unit = w.get("interval_value"), w.get("interval_unit")
+        limits = {"minutes": 525600, "hours": 8760, "days": 365}
+        return isinstance(value, int) and not isinstance(value, bool) and unit in limits and 1 <= value <= limits[unit]
+    if mode == "days_of_week":
+        days = w.get("days_of_week")
+        return bool(days) and all(
+            isinstance(day, int) and not isinstance(day, bool) and day in range(7)
+            for day in days
+        )
+    return False
+
+
 def _home_keyboard(w: dict) -> InlineKeyboardMarkup:
     content = bool(w.get("content_text") or w.get("media_file_id"))
     destination = isinstance(w.get("chat_id"), int) and w.get("chat_id", 0) < 0
-    scheduled = isinstance(w.get("first_run"), datetime)
+    scheduled = _schedule_is_ready(w)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(("✅" if content else "📝") + " Content", style="success" if content else "primary", callback_data=CB_CONTENT)],
         [InlineKeyboardButton(("✅" if destination else "📍") + " Destination", style="success" if destination else "primary", callback_data=CB_DESTINATION)],
@@ -133,7 +153,7 @@ def _home_keyboard(w: dict) -> InlineKeyboardMarkup:
 def _home_text(w: dict, notice: str | None = None) -> str:
     content = bool(w.get("content_text") or w.get("media_file_id"))
     destination = isinstance(w.get("chat_id"), int) and w.get("chat_id", 0) < 0
-    scheduled = isinstance(w.get("first_run"), datetime)
+    scheduled = _schedule_is_ready(w)
     mode = w.get("recurrence_type", "once")
     if mode == "interval":
         repeat = f"Every {w.get('interval_value', '?')} {w.get('interval_unit', '')}".strip()
@@ -283,11 +303,20 @@ def _days_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def _pin_label(w: dict) -> str:
+    if not w.get("auto_pin"):
+        return "Off"
+    if w.get("ap_hours") is None:
+        return "Keep pinned until manually unpinned"
+    duration = w.get("ap_duration_label") or f"{w.get('ap_hours')} hours"
+    return f"Unpin after {duration}"
+
+
 def _options_text(w: dict) -> str:
     window = f"{w.get('tw_start', '?')}–{w.get('tw_end', '?')}" if w.get("time_window_enabled") else "Off"
     auto_delete = str(w.get("ad_duration_label") or f"{w.get('ad_hours')} hours") if w.get("auto_delete") else "Off"
     self_destruct = f"{w.get('sd_secs')} seconds" if w.get("self_destruct") else "Off"
-    pin = "Off" if not w.get("auto_pin") else ("Keep pinned" if w.get("ap_hours") is None else f"Unpin after {w.get('ap_hours')} hours")
+    pin = _pin_label(w)
     return (
         "⚙️ *Delivery Rules*\n\n"
         f"*Posting Window:* {escape_markdown(window, version=1)}\n"
@@ -373,7 +402,7 @@ def _preview_text(w: dict) -> str:
     window = f"{w.get('tw_start')}–{w.get('tw_end')}" if w.get("time_window_enabled") else "Off"
     delete = str(w.get("ad_duration_label") or f"{w.get('ad_hours')} hours") if w.get("auto_delete") else "Off"
     destruct = f"{w.get('sd_secs')} seconds" if w.get("self_destruct") else "Off"
-    pin = "Off" if not w.get("auto_pin") else ("Keep pinned" if w.get("ap_hours") is None else f"Unpin after {w.get('ap_hours')} hours")
+    pin = _pin_label(w)
     button_lines = [
         f"• {escape_markdown(str(item.get('text') or ''), version=1)} → {escape_markdown(str(item.get('url') or ''), version=1)}"
         for row in w.get("inline_buttons") or [] for item in row
@@ -946,6 +975,7 @@ async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if w.get("auto_pin"):
         w["auto_pin"] = False
         w.pop("ap_hours", None)
+        w.pop("ap_duration_label", None)
         await _answer(query, "Auto-Pin disabled.")
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
@@ -971,23 +1001,44 @@ async def cb_pin_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return AUTO_PIN
 
 
+def _duration_to_hours(raw: str, *, max_minutes: int) -> float | None:
+    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.I)
+    if not match:
+        return None
+    amount, unit = int(match.group(1)), match.group(2).lower()
+    minutes = amount if unit in {"m", "min", "mins", "minute", "minutes"} else amount * 60
+    if not 5 <= minutes <= max_minutes:
+        return None
+    return minutes / 60
+
+
+def _duration_label(hours: float) -> str:
+    minutes = round(hours * 60)
+    if minutes < 60:
+        return f"{minutes} minutes"
+    if minutes % 60 == 0:
+        count = minutes // 60
+        return f"{count} hour" if count == 1 else f"{count} hours"
+    return f"{minutes} minutes"
+
+
 async def recv_auto_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
-    try:
-        value = float(raw)
-        if not math.isfinite(value) or not 0 < value <= 87600:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("Enter a number of hours greater than 0 and no more than 87,600.")
+    value = _duration_to_hours(raw, max_minutes=87600 * 60)
+    if value is None:
+        await update.message.reply_text(
+            "Enter a duration such as 5 minutes, 30m, 2 hours or 12h. "
+            "Minimum: 5 minutes; maximum: 87,600 hours."
+        )
         return AUTO_PIN
     w = _w(context)
-    w.update(auto_pin=True, ap_hours=value)
+    w.update(auto_pin=True, ap_hours=value, ap_duration_label=_duration_label(value))
     return await _home(context, w, "Auto-Pin updated.")
 
 
 async def cb_pin_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
-    w.update(auto_pin=True, ap_hours=None)
+    w.update(auto_pin=True, ap_hours=None, ap_duration_label="Keep pinned")
     await _answer(query, "The post will remain pinned until manually unpinned.")
     return await _home(context, w, "Auto-Pin updated.")
 
