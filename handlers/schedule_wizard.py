@@ -268,7 +268,7 @@ def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(tr(language, "recurrence_days"), style="primary", callback_data=CB_REC_DOW)],
         [InlineKeyboardButton(tr(language, "recurrence_once"), style="primary", callback_data=CB_REC_ONCE)],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_MAIN_MENU),
+            InlineKeyboardButton("⬅️ Back to Post Buttons", callback_data=CB_BACK_INLINE_BTNS),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
@@ -756,7 +756,7 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 # ---------------------------------------------------------------------------
 
 def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
-    """Keyboard shown at the inline-button collection step."""
+    """Optional-button controls with a consistent route back to post content."""
     rows: list[list[InlineKeyboardButton]] = []
     if count == 0:
         rows.append([
@@ -764,15 +764,16 @@ def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("⏭ Skip", style="primary", callback_data=CB_IB_SKIP),
         ])
     elif count >= 10:
-        rows.append([
-            InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
-        ])
+        rows.append([InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE)])
     else:
         rows.append([
             InlineKeyboardButton("➕ Add Another", style="primary", callback_data=CB_IB_ADD),
             InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
         ])
-    rows.append([InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)])
+    rows.append([
+        InlineKeyboardButton("⬅️ Back to Content", callback_data=CB_BACK_CONTENT),
+        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+    ])
     return InlineKeyboardMarkup(rows)
 
 
@@ -803,7 +804,7 @@ async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Send the short text people will see on the button.\n\n"
         "Examples: Visit Website or Join Channel.\n"
         "Next, I'll ask you for the destination link.",
-        nav_keyboard(),
+        nav_keyboard(back_data=CB_BACK_CONTENT),
     )
     return WIZARD_INLINE_BTNS
 
@@ -822,7 +823,7 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             if not text or "\n" in text or "\r" in text:
                 await update.message.reply_text(
                     "Please send one short button label at a time, such as Join Channel.",
-                    reply_markup=nav_keyboard(),
+                    reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
                 )
                 return WIZARD_INLINE_BTNS
             if len(text) > 64:
@@ -929,11 +930,72 @@ async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Finished adding buttons — move to recurrence."""
     query = update.callback_query
     _w(context).pop("pending_inline_button_label", None)
-    await _edit(query,
+    await _edit(
+        query,
         tr(context.user_data.get("language", "en"), "recurrence_prompt"),
         _recurrence_keyboard(context.user_data.get("language", "en")),
     )
     return WIZARD_RECURRENCE
+
+
+async def cb_back_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return from recurrence to the optional button step without losing choices."""
+    query = update.callback_query
+    w = _w(context)
+    w.pop("pending_inline_button_label", None)
+    await _edit(query, _inline_buttons_prompt(w), _inline_btns_keyboard(len(w.get("inline_buttons", []))))
+    return WIZARD_INLINE_BTNS
+
+
+async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return to destination selection while retaining the draft."""
+    query = update.callback_query
+    user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
+    bot_username = (await query.get_bot().get_me()).username
+    groups = await list_groups_for_user(user_id) if user_id is not None else []
+    await query.answer()
+    if groups:
+        await query.edit_message_text(
+            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
+            f"_(Showing {min(_CHAT_PAGE_SIZE, len(groups))} of {len(groups)} saved chats)_",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
+        )
+    else:
+        await query.edit_message_text(
+            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
+            "No saved groups were found. Add the bot to a group or enter a Chat ID manually.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=_no_groups_keyboard(bot_username, language),
+        )
+    return WIZARD_CHAT_ID
+
+
+async def cb_back_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return to content while preserving it; user may keep or replace the draft."""
+    query = update.callback_query
+    w = _w(context)
+    w.pop("pending_inline_button_label", None)
+    has_content = bool(w.get("content_text") or w.get("media_file_id"))
+    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
+    prompt = _content_prompt_text(w, language)
+    if has_content:
+        prompt += "\n\nYour current content is saved. Choose *Keep Current Content* to continue, or send a new message to replace it."
+    await _edit(query, prompt, _content_step_keyboard(has_content))
+    return WIZARD_CONTENT
+
+
+async def cb_content_keep(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Keep the saved content and continue to optional post buttons."""
+    query = update.callback_query
+    w = _w(context)
+    if not (w.get("content_text") or w.get("media_file_id")):
+        await query.answer("Please send the post content first.", show_alert=True)
+        return WIZARD_CONTENT
+    w.setdefault("inline_buttons", [])
+    await _edit(query, _inline_buttons_prompt(w), _inline_btns_keyboard(len(w["inline_buttons"])))
+    return WIZARD_INLINE_BTNS
 
 
 def _inline_btns_list_text(buttons: list) -> str:
@@ -1870,12 +1932,15 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_wizard_continue, pattern=f"^{CB_WIZARD_CONTINUE}$"),
             ],
             WIZARD_CHAT_ID: [
+                CallbackQueryHandler(cb_back_chat, pattern=f"^{CB_BACK_CHAT}$"),
                 CallbackQueryHandler(cb_chat_pick,       pattern=r"^chat:pick:-?\d+$"),
                 CallbackQueryHandler(cb_chat_page,       pattern=r"^chat:page:\d+$"),
                 CallbackQueryHandler(cb_manual_chat_id,  pattern=f"^{CB_MANUAL_CHAT_ID}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_chat_id),
             ],
             WIZARD_CONTENT: [
+                CallbackQueryHandler(cb_content_keep, pattern=f"^{CB_CONTENT_KEEP}$"),
+                CallbackQueryHandler(cb_back_chat, pattern=f"^{CB_BACK_CHAT}$"),
                 MessageHandler(
                     (filters.TEXT | filters.PHOTO | filters.VIDEO |
                      filters.Document.ALL | filters.AUDIO | filters.ANIMATION |
@@ -1887,9 +1952,11 @@ def build_schedule_wizard() -> ConversationHandler:
                 CallbackQueryHandler(cb_ib_skip, pattern=f"^{CB_IB_SKIP}$"),
                 CallbackQueryHandler(cb_ib_add,  pattern=f"^{CB_IB_ADD}$"),
                 CallbackQueryHandler(cb_ib_done, pattern=f"^{CB_IB_DONE}$"),
+                CallbackQueryHandler(cb_back_content, pattern=f"^{CB_BACK_CONTENT}$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, recv_ib_entry),
             ],
             WIZARD_RECURRENCE: [
+                CallbackQueryHandler(cb_back_inline_buttons, pattern=f"^{CB_BACK_INLINE_BTNS}$"),
                 CallbackQueryHandler(cb_rec_once,     pattern=f"^{CB_REC_ONCE}$"),
                 CallbackQueryHandler(cb_rec_interval, pattern=f"^{CB_REC_INTERVAL}$"),
                 CallbackQueryHandler(cb_rec_dow,      pattern=f"^{CB_REC_DOW}$"),
