@@ -1751,6 +1751,102 @@ async def _show_summary_from_message(update: Update, context: ContextTypes.DEFAU
     return WIZARD_SUMMARY
 
 
+def _validate_schedule_draft(w: dict[str, Any]) -> str | None:
+    """Validate the whole draft before performing the database write."""
+    chat_id = w.get("chat_id")
+    if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id >= 0:
+        return "Choose a valid group or channel destination."
+    if not (str(w.get("content_text") or "").strip() or w.get("media_file_id")):
+        return "Add the post text or media before continuing."
+    if w.get("media_type") and not w.get("media_file_id"):
+        return "The selected media is incomplete. Please send it again."
+    if w.get("media_file_id") and w.get("media_type") not in {
+        "photo", "video", "document", "audio", "animation", "voice"
+    }:
+        return "The selected media type is not supported."
+
+    recurrence = w.get("recurrence_type")
+    if recurrence not in {"once", "interval", "days_of_week"}:
+        return "Choose a valid repeat schedule."
+    if recurrence == "interval":
+        value, unit = w.get("interval_value"), w.get("interval_unit")
+        limits = {"minutes": 525600, "hours": 8760, "days": 365}
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            return "Enter a valid repeat interval."
+        if unit not in limits or value > limits[unit]:
+            return "The repeat interval is outside the supported range."
+    elif recurrence == "days_of_week":
+        days = w.get("days_of_week")
+        if not isinstance(days, (set, list, tuple)) or not days or any(
+            not isinstance(day, int) or isinstance(day, bool) or day not in range(7)
+            for day in days
+        ):
+            return "Select at least one valid weekday."
+
+    if w.get("time_window_enabled"):
+        start = _parse_hhmm(w.get("tw_start") or "")
+        end = _parse_hhmm(w.get("tw_end") or "")
+        if not start or not end or start == end:
+            return "Complete both Posting Window times. Start and end must be different."
+    if w.get("auto_delete") and w.get("self_destruct"):
+        return "Choose either Auto-Delete or Self-Destruct, not both."
+    if w.get("auto_delete"):
+        value = w.get("ad_hours")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            return "Complete the Auto-Delete duration before confirming."
+    if w.get("self_destruct"):
+        value = w.get("sd_secs")
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 31536000:
+            return "Complete the Self-Destruct duration before confirming."
+    if w.get("auto_pin"):
+        if "ap_hours" not in w:
+            return "Choose an Auto-Pin duration or Keep Pinned before confirming."
+        value = w.get("ap_hours")
+        if value is not None and (
+            not isinstance(value, (int, float)) or isinstance(value, bool)
+            or not math.isfinite(value) or not 0 < value <= 87600
+        ):
+            return "Choose a valid Auto-Pin duration."
+
+    try:
+        pytz.timezone(w.get("timezone", "UTC"))
+    except (pytz.exceptions.UnknownTimeZoneError, TypeError):
+        return "Choose a valid timezone."
+    first_run = w.get("first_run")
+    if (
+        not isinstance(first_run, datetime)
+        or first_run.tzinfo is None
+        or first_run.utcoffset() is None
+        or first_run.astimezone(timezone.utc) <= datetime.now(tz=timezone.utc)
+    ):
+        return "The first posting time is no longer in the future. Choose a new time."
+
+    if recurrence == "once":
+        w["max_runs"] = 1
+    else:
+        value = w.get("max_runs")
+        if value is not None and (
+            not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 100000
+        ):
+            return "Choose a valid delivery limit."
+
+    buttons = w.get("inline_buttons") or []
+    if len(buttons) > 10:
+        return "A post can have no more than 10 buttons."
+    for row in buttons:
+        if not isinstance(row, list):
+            return "One of the post-button rows is invalid."
+        for button in row:
+            if not isinstance(button, dict):
+                return "One of the post buttons is invalid."
+            label = str(button.get("text") or "").strip()
+            url = str(button.get("url") or "").strip()
+            if not label or len(label) > 64 or not url.startswith(("http://", "https://", "tg://")) or " " in url:
+                return "One of the post buttons has an invalid label or destination."
+    return None
+
+
+
 async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Save the post to MongoDB and end the wizard."""
     query = update.callback_query
