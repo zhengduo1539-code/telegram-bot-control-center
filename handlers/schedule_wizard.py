@@ -1066,7 +1066,7 @@ async def cb_dow_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     language = context.user_data.get("language", "en")
     await _edit(
         query,
-        f"✅ Days: \`{', '.join(DOW_LABELS[d] for d in sorted(selected))}\`\n\n{tr(language, 'timezone_prompt')}",
+        f"✅ Days: `{', '.join(DOW_LABELS[d] for d in sorted(selected))}`\n\n{tr(language, 'timezone_prompt')}",
         _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
