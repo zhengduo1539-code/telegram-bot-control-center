@@ -1587,72 +1587,76 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ---------------------------------------------------------------------------
 
 async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    val = _parse_auto_delete_duration(update.message.text or "")
+    raw = (update.message.text or "").strip()
+    val = _parse_auto_delete_duration(raw)
     if val is None:
         await update.message.reply_text(
-            "⚠️ Enter a valid duration: `5 minutes` or `2 hours`. Minimum is 5 minutes.",
-            parse_mode=ParseMode.MARKDOWN,
+            "⚠️ Enter a valid duration such as 5 minutes or 2 hours. Minimum: 5 minutes; maximum: 365 days.",
+            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
-    _w(context)["ad_hours"] = val
-    _w(context)["ad_duration_label"] = (update.message.text or "").strip()
     w = _w(context)
-    if w.get("self_destruct"):
-        await update.message.reply_text(
-            f"✅ Auto-delete: `{update.message.text.strip()}`\n\n"
-            "💣 *Self-Destruct — After how many seconds?*\n\n"
-            "Type a positive integer:",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_LIFECYCLE),
-        )
-        return WIZARD_SD_SECS
+    w["ad_hours"] = val
+    w["ad_duration_label"] = raw
     if w.get("auto_pin"):
         await update.message.reply_text(
-            f"✅ Auto-delete: `{val}h`\n\n"
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number:",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_LIFECYCLE),
+            f"✅ Auto-Delete: {raw}.\n\n"
+            "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
+            reply_markup=_auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
-
-
 async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    if not text.isdigit() or int(text) <= 0:
-        await update.message.reply_text("⚠️ Please enter a positive integer, e.g. `60`.", parse_mode=ParseMode.MARKDOWN)
+    raw = (update.message.text or "").strip()
+    if not raw.isdecimal() or not (1 <= int(raw) <= 31536000):
+        await update.message.reply_text(
+            "⚠️ Enter a whole number from 1 to 31,536,000 seconds (for example, 60).",
+            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+        )
         return WIZARD_SD_SECS
-    _w(context)["sd_secs"] = int(text)
     w = _w(context)
+    w["sd_secs"] = int(raw)
     if w.get("auto_pin"):
         await update.message.reply_text(
-            f"✅ Self-destruct: `{text}s`\n\n"
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number:",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_LIFECYCLE),
+            f"✅ Self-Destruct: {raw} seconds.\n\n"
+            "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
+            reply_markup=_auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
+def _auto_pin_keyboard() -> InlineKeyboardMarkup:
+    """Choose a timed unpin or leave published posts pinned."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📌 Keep Pinned (No Auto-Unpin)", style="primary", callback_data=CB_AP_FOREVER)],
+        [
+            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_LIFECYCLE),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+        ],
+    ])
+
+
+async def cb_ap_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Save permanent pinning and display the full review screen."""
+    query = update.callback_query
+    _w(context)["ap_hours"] = None
+    await query.answer("Posts will stay pinned until manually unpinned.")
+    return await _show_summary(update, context)
 
 
 async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
     try:
-        val = float(update.message.text.strip())
-        if val <= 0:
+        value = float(raw)
+        if not math.isfinite(value) or value <= 0 or value > 87600:
             raise ValueError
-    except ValueError:
-        await update.message.reply_text("⚠️ Please enter a positive number, e.g. `12`.", parse_mode=ParseMode.MARKDOWN)
+    except (TypeError, ValueError):
+        await update.message.reply_text(
+            "⚠️ Enter a finite number greater than 0 and no more than 87,600 hours (for example, 12), or choose Keep Pinned.",
+            reply_markup=_auto_pin_keyboard(),
+        )
         return WIZARD_AP_HOURS
-    _w(context)["ap_hours"] = val
+    _w(context)["ap_hours"] = value
     return await _show_summary_from_message(update, context)
-
-
-# ---------------------------------------------------------------------------
-# Step 9 — Summary + Confirm
-# ---------------------------------------------------------------------------
-
 def _build_summary(w: dict[str, Any]) -> str:
     rec = w.get("recurrence_type", "once")
     if rec == "interval":
