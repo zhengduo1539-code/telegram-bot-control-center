@@ -1,8 +1,9 @@
-"""Render all bot navigation actions as native Telegram Reply Keyboards.
+"""Bridge callback navigation to Reply Keyboards while preserving native URL buttons.
 
-Inline button definitions are retained internally as route definitions only.
-Their actions are dispatched to existing conversation handlers through
-synthetic callback updates. Private-chat button taps are deleted best-effort.
+Callback actions are dispatched to existing conversation handlers through
+synthetic callback updates. Telegram start links and selected welcome URLs stay
+native Inline Keyboard buttons. Private-chat Reply Keyboard taps are deleted
+best-effort.
 """
 from __future__ import annotations
 
@@ -29,10 +30,11 @@ def is_private_chat(chat_id: Any) -> bool:
 def split_inline_keyboard(
     markup: InlineKeyboardMarkup | None,
 ) -> tuple[None, ReplyKeyboardMarkup | None, dict[str, dict[str, str]]]:
-    """Convert every inline-button definition into a Reply Keyboard and route map.
+    """Convert callback actions into a Reply Keyboard and route map.
 
-    The first tuple item remains None for compatibility with existing callers.
-    No Inline Keyboard is ever returned for display.
+    Supported URL actions (group add, share, and bot start links) remain native
+    Inline Keyboard buttons. The returned first item contains those retained
+    buttons; the second item contains converted callback choices.
     """
     if not isinstance(markup, InlineKeyboardMarkup):
         return None, None, {}
