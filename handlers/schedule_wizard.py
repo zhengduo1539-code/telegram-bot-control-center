@@ -517,7 +517,7 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Continue from onboarding into destination selection or a linked group."""
+    """Continue from localized onboarding into destination selection or a linked group."""
     query = update.callback_query
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
@@ -530,20 +530,19 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
             target_chat = await ensure_chat_access(context.bot, launch_chat_id, user_id)
         except (TypeError, ValueError, ChatAccessError) as exc:
             logger.info("Deep-linked group is unavailable for user %s: %s", user_id, exc)
-            await query.answer(
-                "The linked group is unavailable or your admin permissions changed. Please select a group manually.",
-                show_alert=True,
-            )
+            await query.answer(flow_tr(language, "linked_unavailable"), show_alert=True)
             answered = True
         else:
-            w = _w(context)
-            w["chat_id"] = launch_chat_id
-            w["chat_title"] = target_chat.title or str(launch_chat_id)
+            draft = _w(context)
+            draft["chat_id"] = launch_chat_id
+            draft["chat_title"] = target_chat.title or str(launch_chat_id)
             await query.answer()
             await query.edit_message_text(
-                _content_prompt_text(w, language),
+                _content_prompt_text(draft, language),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+                reply_markup=_content_step_keyboard(
+                    bool(draft.get("content_text") or draft.get("media_file_id")), language
+                ),
             )
             return WIZARD_CONTENT
 
@@ -551,84 +550,85 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
     groups = await list_groups_for_user(user_id)
     if not answered:
         await query.answer()
+    header = f"▰▱▱▱▱▱▱▱ 1/8\n*{flow_tr(language, 'destination_title')}*\n\n{tr(language, 'choose_group')}"
     if groups:
-        await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
-            f"_(Showing {min(_CHAT_PAGE_SIZE, len(groups))} of {len(groups)} saved chats)_",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
+        text = (
+            f"{header}\n\n"
+            f"{flow_tr(language, 'destination_count', shown=min(_CHAT_PAGE_SIZE, len(groups)), total=len(groups))}"
         )
+        keyboard = _chat_list_keyboard(groups, 0, bot_username, language)
     else:
-        await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
-            "No saved groups were found. Add the bot to a group or enter a Chat ID manually.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_no_groups_keyboard(bot_username, language),
-        )
+        text = f"{header}\n\n{flow_tr(language, 'no_groups')}"
+        keyboard = _no_groups_keyboard(bot_username, language)
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
     return WIZARD_CHAT_ID
+
 async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Validate the chosen destination and proceed to the content step."""
+    """Validate the chosen destination and proceed to localized content instructions."""
     query = update.callback_query
     raw = (query.data or "").replace(CB_CHAT_PICK_PREFIX, "", 1)
+    user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
     try:
         chat_id = int(raw)
     except ValueError:
-        await query.answer("Invalid destination selection.", show_alert=True)
+        await query.answer(flow_tr(language, "invalid_chat_id"), show_alert=True)
         return WIZARD_CHAT_ID
-    user_id = query.from_user.id if query.from_user else None
-    language = await resolve_user_language(context, user_id)
     groups = await list_groups_for_user(user_id) if user_id is not None else []
-    titles = {g["chat_id"]: (g.get("title") or str(g["chat_id"])) for g in groups}
+    titles = {group["chat_id"]: (group.get("title") or str(group["chat_id"])) for group in groups}
     try:
         target_chat = await ensure_chat_access(query.get_bot(), chat_id, user_id)
-    except ChatAccessError as exc:
-        await query.answer(str(exc), show_alert=True)
+    except ChatAccessError:
+        await query.answer(flow_tr(language, "linked_unavailable"), show_alert=True)
         return WIZARD_CHAT_ID
-    w = _w(context)
-    w["chat_id"] = chat_id
-    w["chat_title"] = target_chat.title or titles.get(chat_id, str(chat_id))
+    draft = _w(context)
+    draft["chat_id"] = chat_id
+    draft["chat_title"] = target_chat.title or titles.get(chat_id, str(chat_id))
     await query.answer()
     await query.edit_message_text(
-        _content_prompt_text(w, language),
+        _content_prompt_text(draft, language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+        reply_markup=_content_step_keyboard(
+            bool(draft.get("content_text") or draft.get("media_file_id")), language
+        ),
     )
     return WIZARD_CONTENT
-def _content_step_keyboard(has_content: bool = False) -> InlineKeyboardMarkup:
-    """Content actions with an explicit route back to the destination."""
+
+def _content_step_keyboard(
+    has_content: bool = False, language: str = "en"
+) -> InlineKeyboardMarkup:
+    """Content actions with localized labels and an explicit route to the destination."""
     rows: list[list[InlineKeyboardButton]] = []
     if has_content:
-        rows.append([InlineKeyboardButton("✅ Keep Current Content", style="success", callback_data=CB_CONTENT_KEEP)])
+        rows.append([InlineKeyboardButton(
+            flow_tr(language, "keep_content"), style="success", callback_data=CB_CONTENT_KEEP
+        )])
     rows.append([
-        InlineKeyboardButton("⬅️ Back to Destination", callback_data=CB_BACK_CHAT),
-        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+        InlineKeyboardButton(flow_tr(language, "back_content"), callback_data=CB_BACK_CHAT),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
 
-
 def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
-    """Use the existing 20-language catalogue for the core content instructions."""
+    """Build the localized content step without changing the message-storage contract."""
     title = escape_markdown(str(w.get("chat_title") or w.get("chat_id") or "Selected chat"), version=1)
     return (
         "▰▱▱▱▱▱▱▱ 2/8\n"
         f"{tr(language, 'schedule_content_title')}\n\n"
-        f"📍 *Destination:* {title}\n\n"
+        f"📍 *{flow_tr(language, 'destination_title').split('—')[-1].strip()}:* {title}\n\n"
         f"{tr(language, 'schedule_content_prompt')}\n\n"
-        "Each Telegram message becomes one scheduled post. Send media with a caption to include text. Albums and forwarded message bundles are not combined."
+        f"{flow_tr(language, 'content_rules')}"
     )
-def _inline_buttons_prompt(w: dict[str, Any]) -> str:
+
+def _inline_buttons_prompt(w: dict[str, Any], language: str = "en") -> str:
+    """Explain the optional button flow in the user's selected language."""
     count = len(w.get("inline_buttons", []))
-    media = w.get("media_type")
-    kind = "Media with caption" if media and w.get("content_text") else ("Media" if media else "Text")
     return (
-        f"✅ Content saved ({kind}).\n\n"
-        "🔘 *Optional — Post Buttons*\n\n"
-        "Add clickable buttons below your post. Each button needs a short label and a destination link.\n\n"
-        "1. Tap Add Button.\n"
-        "2. Send the label people will see, such as Visit Website.\n"
-        "3. Send a full URL, such as https://example.com, or a Telegram @username.\n\n"
-        f"Added: *{count}/10*. Choose Skip or Done when you are ready."
+        f"{flow_tr(language, 'buttons_intro')}\n\n"
+        f"{flow_tr(language, 'button_guide')}\n\n"
+        f"*{count}/10*"
     )
+
 async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return to destination selection without discarding saved draft data."""
     query = update.callback_query
@@ -636,241 +636,248 @@ async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     language = await resolve_user_language(context, user_id)
     bot_username = (await query.get_bot().get_me()).username
     groups = await list_groups_for_user(user_id) if user_id is not None else []
-    await query.answer()
+    header = f"▰▱▱▱▱▱▱▱ 1/8\n*{flow_tr(language, 'destination_title')}*\n\n{tr(language, 'choose_group')}"
     if groups:
-        await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
-        )
+        text = header
+        keyboard = _chat_list_keyboard(groups, 0, bot_username, language)
     else:
-        await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_no_groups_keyboard(bot_username, language),
-        )
+        text = f"{header}\n\n{flow_tr(language, 'no_groups')}"
+        keyboard = _no_groups_keyboard(bot_username, language)
+    await query.answer()
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
     return WIZARD_CHAT_ID
 
 async def cb_back_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Return to saved content; user can keep it or replace it."""
+    """Return to saved content; users can keep it or replace it."""
     query = update.callback_query
-    w = _w(context)
-    w.pop("pending_inline_button_label", None)
-    has_content = bool(w.get("content_text") or w.get("media_file_id"))
-    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
-    prompt = _content_prompt_text(w, language)
+    draft = _w(context)
+    draft.pop("pending_inline_button_label", None)
+    has_content = bool(draft.get("content_text") or draft.get("media_file_id"))
+    language = await resolve_user_language(
+        context, query.from_user.id if query.from_user else None
+    )
+    prompt = _content_prompt_text(draft, language)
     if has_content:
-        prompt += "\n\nYour content is saved. Choose Keep Current Content to continue, or send a new message to replace it."
+        prompt += f"\n\n✅ {flow_tr(language, 'keep_content')}"
     await query.answer()
     await query.edit_message_text(
         prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(has_content),
+        reply_markup=_content_step_keyboard(has_content, language),
     )
     return WIZARD_CONTENT
 
-
 async def cb_content_keep(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Continue with saved content without sending it again."""
+    """Continue with saved content without asking the user to send it again."""
     query = update.callback_query
-    w = _w(context)
-    if not (w.get("content_text") or w.get("media_file_id")):
-        await query.answer("Send the post content first.", show_alert=True)
+    draft = _w(context)
+    language = await resolve_user_language(
+        context, query.from_user.id if query.from_user else None
+    )
+    if not (draft.get("content_text") or draft.get("media_file_id")):
+        await query.answer(tr(language, "schedule_content_prompt"), show_alert=True)
         return WIZARD_CONTENT
-    w.setdefault("inline_buttons", [])
+    draft.setdefault("inline_buttons", [])
     await query.answer()
     await query.edit_message_text(
-        _inline_buttons_prompt(w),
+        _inline_buttons_prompt(draft, language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
+        reply_markup=_inline_btns_keyboard(len(draft["inline_buttons"]), language),
     )
     return WIZARD_INLINE_BTNS
 
 async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Paginate the group list."""
+    """Paginate the localized group list."""
     query = update.callback_query
     raw = (query.data or "").replace(CB_CHAT_PAGE_PREFIX, "", 1)
     page = int(raw) if raw.isdigit() else 0
-    user_id      = query.from_user.id  # type: ignore[union-attr]
+    user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
     bot_username = (await query.get_bot().get_me()).username
     groups = await list_groups_for_user(user_id)
-    total  = len(groups)
-    start  = page * _CHAT_PAGE_SIZE
-    shown  = min(_CHAT_PAGE_SIZE, total - start)
+    total = len(groups)
+    shown = min(_CHAT_PAGE_SIZE, max(0, total - page * _CHAT_PAGE_SIZE))
+    text = (
+        f"▰▱▱▱▱▱▱▱ 1/8\n*{flow_tr(language, 'destination_title')}*\n\n"
+        f"{tr(language, 'choose_group')}\n\n"
+        f"{flow_tr(language, 'destination_count', shown=shown, total=total)}"
+    )
     await query.answer()
     await query.edit_message_text(
-        f"▰▱▱▱▱▱▱▱ 1/8\n*Chat* › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📅 *Step 1/8 — Target Chat*\n\n"
-        f"🗂 Choose the group or channel to post to:\n"
-        f"_(Showing {shown} of {total} known chats)_",
+        text,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_chat_list_keyboard(groups, page, bot_username),
+        reply_markup=_chat_list_keyboard(groups, page, bot_username, language),
     )
     return WIZARD_CHAT_ID
 
-
 async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Offer manual destination entry without leaving the destination step."""
+    """Offer translated manual destination entry."""
     query = update.callback_query
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
     await query.answer()
     await query.edit_message_text(
-        f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — {tr(language, 'manual_chat_id')}*\n\n"
-        "Enter the numeric Telegram ID of the group or channel where the bot can publish.\n\n"
-        "Example: -1001234567890\n\n"
-        "To find an ID, forward a message from that chat to a trusted ID helper.",
+        f"▰▱▱▱▱▱▱▱ 1/8\n*{flow_tr(language, 'destination_title')}*\n\n"
+        f"{flow_tr(language, 'manual_guide')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+        reply_markup=_wizard_nav_keyboard(context, CB_BACK_CHAT),
     )
     return WIZARD_CHAT_ID
+
 async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
+    language = _language(context)
     try:
         chat_id = int(raw)
     except ValueError:
         await update.message.reply_text(
-            "⚠️ Enter a valid Telegram group or channel ID, for example -1001234567890.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+            flow_tr(language, "invalid_chat_id"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
     if chat_id >= 0:
         await update.message.reply_text(
-            "⚠️ Group and channel IDs must be negative. Check the ID and try again.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+            flow_tr(language, "negative_chat_id"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
     try:
         target_chat = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
-    except ChatAccessError as exc:
+    except ChatAccessError:
         await update.message.reply_text(
-            f"⚠️ {exc}",
-            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+            flow_tr(language, "linked_unavailable"),
+            reply_markup=_wizard_nav_keyboard(context, CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
-    w = _w(context)
-    w["chat_id"] = chat_id
-    w["chat_title"] = target_chat.title or str(chat_id)
+    draft = _w(context)
+    draft["chat_id"] = chat_id
+    draft["chat_title"] = target_chat.title or str(chat_id)
     await update.message.reply_text(
-        _content_prompt_text(w, context.user_data.get("language", "en")),
-        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+        _content_prompt_text(draft, language),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_content_step_keyboard(
+            bool(draft.get("content_text") or draft.get("media_file_id")), language
+        ),
     )
     return WIZARD_CONTENT
+
 async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Save one supported Telegram message as the scheduled post content."""
-    msg: Message = update.message
-    w = _w(context)
+    """Save one supported Telegram message as scheduled post content."""
+    message: Message = update.message
+    draft = _w(context)
+    language = _language(context)
     media_file_id = None
     media_type = None
     content_text = None
-    if msg.photo:
-        media_file_id, media_type, content_text = msg.photo[-1].file_id, "photo", msg.caption
-    elif msg.video:
-        media_file_id, media_type, content_text = msg.video.file_id, "video", msg.caption
-    elif msg.document:
-        media_file_id, media_type, content_text = msg.document.file_id, "document", msg.caption
-    elif msg.audio:
-        media_file_id, media_type, content_text = msg.audio.file_id, "audio", msg.caption
-    elif msg.animation:
-        media_file_id, media_type, content_text = msg.animation.file_id, "animation", msg.caption
-    elif msg.voice:
-        media_file_id, media_type, content_text = msg.voice.file_id, "voice", msg.caption
-    elif msg.text and msg.text.strip():
-        content_text = msg.text
+    if message.photo:
+        media_file_id, media_type, content_text = message.photo[-1].file_id, "photo", message.caption
+    elif message.video:
+        media_file_id, media_type, content_text = message.video.file_id, "video", message.caption
+    elif message.document:
+        media_file_id, media_type, content_text = message.document.file_id, "document", message.caption
+    elif message.audio:
+        media_file_id, media_type, content_text = message.audio.file_id, "audio", message.caption
+    elif message.animation:
+        media_file_id, media_type, content_text = message.animation.file_id, "animation", message.caption
+    elif message.voice:
+        media_file_id, media_type, content_text = message.voice.file_id, "voice", message.caption
+    elif message.text and message.text.strip():
+        content_text = message.text
     else:
-        await msg.reply_text(
-            "⚠️ This message type cannot be scheduled. Send text, photo, video, document, audio, animation, or voice message.",
-            reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+        await message.reply_text(
+            f"⚠️ {tr(language, 'schedule_content_prompt')}",
+            reply_markup=_content_step_keyboard(
+                bool(draft.get("content_text") or draft.get("media_file_id")), language
+            ),
         )
         return WIZARD_CONTENT
 
-    # Replace related fields only after the new message is known to be valid.
-    w["media_file_id"] = media_file_id
-    w["media_type"] = media_type
-    w["content_text"] = content_text
-    w.setdefault("inline_buttons", [])
-    await msg.reply_text(
-        _inline_buttons_prompt(w),
-        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
+    draft["media_file_id"] = media_file_id
+    draft["media_type"] = media_type
+    draft["content_text"] = content_text
+    draft.setdefault("inline_buttons", [])
+    await message.reply_text(
+        _inline_buttons_prompt(draft, language),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_inline_btns_keyboard(len(draft["inline_buttons"]), language),
     )
     return WIZARD_INLINE_BTNS
-def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
-    """Optional post-button controls with a direct route back to saved content."""
+
+def _inline_btns_keyboard(count: int, language: str = "en") -> InlineKeyboardMarkup:
+    """Localized optional post-button controls."""
     rows: list[list[InlineKeyboardButton]] = []
     if count == 0:
         rows.append([
-            InlineKeyboardButton("➕ Add Button", style="primary", callback_data=CB_IB_ADD),
-            InlineKeyboardButton("⏭ Skip", style="primary", callback_data=CB_IB_SKIP),
+            InlineKeyboardButton(flow_tr(language, "add_button"), style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton(flow_tr(language, "skip"), style="primary", callback_data=CB_IB_SKIP),
         ])
     elif count >= 10:
-        rows.append([InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE)])
+        rows.append([InlineKeyboardButton(
+            flow_tr(language, "done"), style="success", callback_data=CB_IB_DONE
+        )])
     else:
         rows.append([
-            InlineKeyboardButton("➕ Add Another", style="primary", callback_data=CB_IB_ADD),
-            InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
+            InlineKeyboardButton(flow_tr(language, "add_another"), style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton(flow_tr(language, "done"), style="success", callback_data=CB_IB_DONE),
         ])
     rows.append([
-        InlineKeyboardButton("⬅️ Back to Content", callback_data=CB_BACK_CONTENT),
-        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+        InlineKeyboardButton(flow_tr(language, "back_content"), callback_data=CB_BACK_CONTENT),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
+
 async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User skips inline buttons — go straight to recurrence."""
+    """Skip optional post buttons and continue to localized recurrence choices."""
     query = update.callback_query
+    language = _language(context)
     _w(context).pop("pending_inline_button_label", None)
     _w(context).setdefault("inline_buttons", [])
-    await _edit(query,
-        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
-        _recurrence_keyboard(context.user_data.get("language", "en")),
-    )
+    await _edit(query, tr(language, "recurrence_prompt"), _recurrence_keyboard(language))
     return WIZARD_RECURRENCE
-
 
 async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the guided two-step post-button entry flow."""
     query = update.callback_query
-    w = _w(context)
-    if len(w.get("inline_buttons", [])) >= 10:
-        await query.answer("You can add up to 10 buttons.", show_alert=True)
+    draft = _w(context)
+    language = _language(context)
+    if len(draft.get("inline_buttons", [])) >= 10:
+        await query.answer(flow_tr(language, "button_limit"), show_alert=True)
         return WIZARD_INLINE_BTNS
-    w.pop("pending_inline_button_label", None)
+    draft.pop("pending_inline_button_label", None)
     await _edit(
         query,
-        "➕ *Add a Post Button*\n\n"
-        "📝 *Step 1 of 2 — Button label*\n"
-        "Send the short text people will see on the button, such as Visit Website or Join Channel.\n\n"
-        "Next, the bot will ask for its destination link.",
-        nav_keyboard(back_data=CB_BACK_CONTENT),
+        flow_tr(language, "button_guide"),
+        _wizard_nav_keyboard(context, CB_BACK_CONTENT),
     )
     return WIZARD_INLINE_BTNS
+
 async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Accept a guided label/link pair or the legacy Label | URL shortcut."""
     text = (update.message.text or "").strip()
-    w = _w(context)
-    w.setdefault("inline_buttons", [])
-    pending_label = w.get("pending_inline_button_label")
+    draft = _w(context)
+    language = _language(context)
+    draft.setdefault("inline_buttons", [])
+    pending_label = draft.get("pending_inline_button_label")
 
     if "|" not in text:
         if pending_label is None:
             if not text or "\n" in text or "\r" in text:
                 await update.message.reply_text(
-                    "Send one short button label at a time, such as Join Channel.",
-                    reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                    flow_tr(language, "button_label_invalid"),
+                    reply_markup=_wizard_nav_keyboard(context, CB_BACK_CONTENT),
                 )
                 return WIZARD_INLINE_BTNS
             if len(text) > 64:
                 await update.message.reply_text(
-                    "Button labels must be 64 characters or fewer. Please send a shorter label.",
-                    reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                    flow_tr(language, "button_label_long"),
+                    reply_markup=_wizard_nav_keyboard(context, CB_BACK_CONTENT),
                 )
                 return WIZARD_INLINE_BTNS
-            w["pending_inline_button_label"] = text
+            draft["pending_inline_button_label"] = text
             await update.message.reply_text(
-                f"✅ Button label saved: *{escape_markdown(text, version=1)}*\n\n"
-                "🔗 *Step 2 of 2 — Destination link*\n"
-                "Send a full website URL or a Telegram @username.\n\n"
-                "Examples:\n• https://example.com\n• https://t.me/mychannel\n• @mychannel",
+                f"✅ {escape_markdown(text, version=1)}\n\n{flow_tr(language, 'button_link_prompt')}",
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                reply_markup=_wizard_nav_keyboard(context, CB_BACK_CONTENT),
             )
             return WIZARD_INLINE_BTNS
 
@@ -882,31 +889,31 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             url = "https://" + url
         if not url or " " in url or not url.startswith(("http://", "https://", "tg://")):
             await update.message.reply_text(
-                "⚠️ I couldn't recognize that link. Send a full URL or a Telegram @username, then try again. Your label is saved.",
-                reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                flow_tr(language, "button_link_invalid"),
+                reply_markup=_wizard_nav_keyboard(context, CB_BACK_CONTENT),
             )
             return WIZARD_INLINE_BTNS
-        if len(w["inline_buttons"]) >= 10:
-            w.pop("pending_inline_button_label", None)
+        if len(draft["inline_buttons"]) >= 10:
+            draft.pop("pending_inline_button_label", None)
             await update.message.reply_text(
-                "You have reached the 10-button limit. Tap Done to continue.",
-                reply_markup=_inline_btns_keyboard(10),
+                flow_tr(language, "button_limit"),
+                reply_markup=_inline_btns_keyboard(10, language),
             )
             return WIZARD_INLINE_BTNS
 
-        w["inline_buttons"].append([{"text": pending_label, "url": url}])
-        w.pop("pending_inline_button_label", None)
-        count = len(w["inline_buttons"])
+        draft["inline_buttons"].append([{"text": pending_label, "url": url}])
+        draft.pop("pending_inline_button_label", None)
+        count = len(draft["inline_buttons"])
         next_step = (
-            "You have reached the 10-button limit. Tap Done to continue."
-            if count == 10 else
-            "Add another button or tap Done to continue."
+            flow_tr(language, "button_limit") if count == 10
+            else f"{flow_tr(language, 'add_another')} / {flow_tr(language, 'done')}"
         )
         await update.message.reply_text(
-            f"✅ *Button added ({count}/10).*\n\n"
-            f"*Buttons saved:*\n{_inline_btns_list_text(w['inline_buttons'])}\n\n{next_step}",
+            f"{flow_tr(language, 'button_added', count=count)}\n\n"
+            f"*{flow_tr(language, 'done')}:*\n{_inline_btns_list_text(draft['inline_buttons'], language)}\n\n"
+            f"{next_step}",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_inline_btns_keyboard(count),
+            reply_markup=_inline_btns_keyboard(count, language),
         )
         return WIZARD_INLINE_BTNS
 
@@ -917,12 +924,12 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not line:
             continue
         if "|" not in line:
-            errors.append("A line is missing the Label | URL separator.")
+            errors.append(flow_tr(language, "button_label_invalid"))
             continue
         label, _, url = line.partition("|")
         label, url = label.strip(), url.strip()
         if not label or len(label) > 64:
-            errors.append("Each button label must contain 1–64 characters.")
+            errors.append(flow_tr(language, "button_label_long"))
             continue
         if url.startswith("@"):
             username = url[1:]
@@ -930,49 +937,50 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         elif not url.startswith(("http://", "https://", "tg://")) and "." in url and " " not in url:
             url = "https://" + url
         if not url or " " in url or not url.startswith(("http://", "https://", "tg://")):
-            errors.append(f"Invalid destination for button: {escape_markdown(label, version=1)}.")
+            errors.append(flow_tr(language, "button_link_invalid"))
             continue
-        if len(w["inline_buttons"]) >= 10:
-            errors.append("Maximum 10 buttons reached.")
+        if len(draft["inline_buttons"]) >= 10:
+            errors.append(flow_tr(language, "button_limit"))
             break
-        w["inline_buttons"].append([{"text": label, "url": url}])
+        draft["inline_buttons"].append([{"text": label, "url": url}])
         added += 1
 
-    error_block = "\n\n⚠️ Skipped:\n" + "\n".join(errors) if errors else ""
+    result = [flow_tr(language, "button_added", count=added)]
+    if errors:
+        result.append("⚠️\n" + "\n".join(errors))
+    result.append(f"*{len(draft['inline_buttons'])}/10*")
+    result.append(_inline_btns_list_text(draft["inline_buttons"], language))
+    result.append(f"{flow_tr(language, 'add_another')} / {flow_tr(language, 'done')}")
     await update.message.reply_text(
-        f"✅ Added {added} button(s).{error_block}\n\n"
-        f"Buttons saved: {len(w['inline_buttons'])}/10\n"
-        f"{_inline_btns_list_text(w['inline_buttons'])}\n\n"
-        "Add another or tap Done.",
+        "\n\n".join(result),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
+        reply_markup=_inline_btns_keyboard(len(draft["inline_buttons"]), language),
     )
     return WIZARD_INLINE_BTNS
+
 async def cb_back_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return from recurrence selection to the optional post-button step."""
     query = update.callback_query
-    w = _w(context)
-    w.pop("pending_inline_button_label", None)
+    draft = _w(context)
+    language = _language(context)
+    draft.pop("pending_inline_button_label", None)
     await query.answer()
     await query.edit_message_text(
-        _inline_buttons_prompt(w),
+        _inline_buttons_prompt(draft, language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(len(w.get("inline_buttons", []))),
+        reply_markup=_inline_btns_keyboard(len(draft.get("inline_buttons", [])), language),
     )
     return WIZARD_INLINE_BTNS
 
 async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Finished adding buttons — move to recurrence."""
+    """Finish optional post buttons and move to recurrence selection."""
     query = update.callback_query
+    language = _language(context)
     _w(context).pop("pending_inline_button_label", None)
-    await _edit(query,
-        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
-        _recurrence_keyboard(context.user_data.get("language", "en")),
-    )
+    await _edit(query, tr(language, "recurrence_prompt"), _recurrence_keyboard(language))
     return WIZARD_RECURRENCE
 
-
-def _inline_btns_list_text(buttons: list) -> str:
+def _inline_btns_list_text(buttons: list, language: str = "en") -> str:
     """Render button labels and URLs safely in a Markdown message."""
     lines: list[str] = []
     for row in buttons:
@@ -980,7 +988,8 @@ def _inline_btns_list_text(buttons: list) -> str:
             label = escape_markdown(str(button.get("text", "")), version=1)
             url = escape_markdown(str(button.get("url", "")), version=1)
             lines.append(f"• {label} → {url}")
-    return "\n".join(lines) if lines else "None"
+    return "\n".join(lines) if lines else flow_tr(language, "review_not_set")
+
 async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Set one-time recurrence and force the matching one-send limit."""
     w = _w(context)
