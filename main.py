@@ -42,7 +42,7 @@ from handlers import chat_cleanup
 from handlers.base import CB_LANGUAGE, build_base_conversation
 from handlers.language import cmd_lang, handle_language_choice, language_selection_filter
 from handlers.owner_panel import build_owner_panel
-from handlers.schedule_wizard import build_schedule_wizard
+from handlers.schedule_post_flow import build_schedule_wizard
 from keep_alive import app as health_app
 from keep_alive import set_readiness, start_keep_alive
 from scheduler import setup_scheduler
@@ -59,7 +59,7 @@ from reply_keyboard import (
 
 logger = logging.getLogger(__name__)
 
-BOT_VERSION = "Schedule Bot | Guided Scheduling | Permission Checks | 2026-11"
+BOT_VERSION = "Schedule Bot | Post Composer | Permission Checks | 2026-11"
 ALLOWED_UPDATES = ["message", "callback_query", "my_chat_member"]
 
 _scheduler = None
