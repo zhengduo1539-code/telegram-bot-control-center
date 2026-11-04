@@ -374,7 +374,7 @@ def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
 def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
     """Combined Step 7 keyboard: silent-hours toggle + all lifecycle toggles."""
     tw_btn = InlineKeyboardButton(
-        "🟢 Silent Hours: ON ✅" if tw else "🔘 Silent Hours: OFF",
+        "🟢 Posting Window: ON ✅" if tw else "🔘 Posting Window: OFF",
         style="success" if tw else "primary",
         callback_data=CB_TW_OFF if tw else CB_TW_ON,
     )
@@ -1512,7 +1512,7 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await _edit(query,
             "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
             "Type a positive number (e.g. `12`):",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary(update, context)
@@ -1585,7 +1585,7 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
             "Type a positive number (e.g. `12`):",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            reply_markup=_auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
@@ -1596,17 +1596,32 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 # ---------------------------------------------------------------------------
 
 async def cb_lc_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Toggle a lifecycle option on the Advanced Options screen; refresh keyboard in-place."""
+    """Toggle optional actions; prevent conflicting delete modes."""
     query = update.callback_query
     w = _w(context)
     key_map = {CB_LC_AD: "auto_delete", CB_LC_SD: "self_destruct", CB_LC_AP: "auto_pin"}
-    key = key_map[query.data]
+    key = key_map.get(query.data)
+    if key is None:
+        await query.answer("Unknown option.", show_alert=True)
+        return WIZARD_TIME_WINDOW
+
     w[key] = not w.get(key, False)
+    if w[key] and key == "auto_delete":
+        w["self_destruct"] = False
+        w.pop("sd_secs", None)
+    elif w[key] and key == "self_destruct":
+        w["auto_delete"] = False
+        w.pop("ad_hours", None)
+        w.pop("ad_duration_label", None)
+
     await query.answer(f"{'✅ Enabled' if w[key] else '☐ Disabled'}: {key.replace('_', ' ').title()}")
     await query.edit_message_reply_markup(
-        _advanced_keyboard(w.get("time_window_enabled", False),
-                           w.get("auto_delete", False), w.get("self_destruct", False),
-                           w.get("auto_pin", False))
+        _advanced_keyboard(
+            w.get("time_window_enabled", False),
+            w.get("auto_delete", False),
+            w.get("self_destruct", False),
+            w.get("auto_pin", False),
+        )
     )
     return WIZARD_TIME_WINDOW
 
@@ -1634,7 +1649,7 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await _edit(query,
             "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
             "Type a positive number (e.g. `12`):",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary(update, context)
@@ -1670,7 +1685,7 @@ async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
             "Type a positive number:",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_LIFECYCLE),
+            reply_markup=_auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
@@ -1689,19 +1704,45 @@ async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
             "Type a positive number:",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_LIFECYCLE),
+            reply_markup=_auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
 
 
+def _auto_pin_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📌 Keep Pinned (No Auto-Unpin)", style="primary", callback_data=CB_AP_FOREVER)],
+        [
+            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_LIFECYCLE),
+            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+        ],
+    ])
+
+
+async def cb_ap_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Pin every sent copy and leave it pinned until manually unpinned."""
+    query = update.callback_query
+    _w(context)["ap_hours"] = None
+    await query.answer()
+    await query.edit_message_text(
+        "✅ Auto-Pin is enabled. Each published post will remain pinned until you unpin it manually.",
+        reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+    )
+    return WIZARD_SUMMARY
+
+
 async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = (update.message.text or "").strip()
     try:
-        val = float(update.message.text.strip())
-        if val <= 0:
+        val = float(raw)
+        if not math.isfinite(val) or val <= 0 or val > 87600:
             raise ValueError
-    except ValueError:
-        await update.message.reply_text("⚠️ Please enter a positive number, e.g. `12`.", parse_mode=ParseMode.MARKDOWN)
+    except (TypeError, ValueError):
+        await update.message.reply_text(
+            "⚠️ Enter a valid number greater than 0 and no more than 87,600 hours (for example, 12).",
+            reply_markup=_auto_pin_keyboard(),
+        )
         return WIZARD_AP_HOURS
     _w(context)["ap_hours"] = val
     return await _show_summary_from_message(update, context)
