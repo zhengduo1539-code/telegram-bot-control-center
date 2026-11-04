@@ -680,15 +680,13 @@ async def cb_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def cb_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     w = _w(context)
-    existing = bool(w.get("content_text") or w.get("media_file_id"))
-    text = "📝 *Post Content*\n\n"
-    if existing:
-        text += "Your current content is saved. Send a new message to replace it.\n\n"
-    text += "Send one text or one supported media message. Captions are included automatically.\nSupported: photo, video, document, audio, animation and voice."
+    text = f"📝 *{_t(w, 'content_title')}*\n\n"
+    if w.get("content_text") or w.get("media_file_id"):
+        text += f"{_t(w, 'content_existing')}\n\n"
+    text += f"{_t(w, 'content_prompt')}\n\n{_t(w, 'content_supported')}"
     await _answer(query)
-    await _show(context, w, text, _nav(language=_lang(_w(context))))
+    await _show(context, w, text, _nav(language=_lang(w)))
     return CONTENT
-
 
 async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg: Message = update.message
@@ -709,79 +707,74 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     elif msg.text and msg.text.strip():
         content_text = msg.text
     else:
-        await msg.reply_text(_t(_w(context), "content_unsupported"))
+        await msg.reply_text(_t(w, "content_unsupported"))
         return CONTENT
     w["content_text"], w["media_file_id"], w["media_type"] = content_text, file_id, media_type
     return await _home(context, w, _t(w, "content_updated"))
 
-
 async def cb_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     groups = await list_groups_for_user(query.from_user.id if query.from_user else None)
     username = (await query.get_bot().get_me()).username
     await _answer(query)
-    await _show(context, _w(context),
-        f"{_t(_w(context), 'destination_title')}\n\n{_t(_w(context), 'destination_prompt')}",
-        _destination_keyboard(groups, 0, username, _lang(_w(context))))
+    await _show(context, w, f"📍 *{_t(w, 'destination_title')}*\n\n{_t(w, 'destination_prompt')}", _destination_keyboard(groups, 0, username, _lang(w)))
     return DESTINATION
-
 
 async def cb_destination_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     raw = (query.data or "").replace(CB_CHAT_PAGE, "", 1)
     page = int(raw) if raw.isdigit() else 0
     groups = await list_groups_for_user(query.from_user.id if query.from_user else None)
     username = (await query.get_bot().get_me()).username
     await _answer(query)
-    await _show(context, _w(context), _t(_w(context), "destination_title"), _destination_keyboard(groups, page, username, _lang(_w(context))))
+    await _show(context, w, f"📍 *{_t(w, 'destination_title')}*", _destination_keyboard(groups, page, username, _lang(w)))
     return DESTINATION
-
 
 async def cb_choose_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     try:
         chat_id = int((query.data or "").replace(CB_CHAT, "", 1))
     except ValueError:
-        await _answer(query, _flow(_w(context), "invalid_chat_id"), alert=True)
+        await _answer(query, _flow(w, "invalid_chat_id"), alert=True)
         return DESTINATION
     user_id = query.from_user.id if query.from_user else None
     try:
         target = await ensure_chat_access(query.get_bot(), chat_id, user_id)
-    except ChatAccessError as exc:
-        await _answer(query, str(exc), alert=True)
+    except ChatAccessError:
+        await _answer(query, _flow(w, "access_failed"), alert=True)
         return DESTINATION
-    w = _w(context)
     w["chat_id"], w["chat_title"] = chat_id, target.title or str(chat_id)
     await _answer(query, _t(w, "destination_verified"))
     return await _home(context, w, _t(w, "destination_updated"))
 
-
 async def cb_manual_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     await _answer(query)
-    await _show(context, _w(context), f"{_t(_w(context), 'enter_chat_id')}\n\n{_t(_w(context), 'enter_chat_id_prompt')}", _nav(CB_DESTINATION, _lang(_w(context))))
+    await _show(context, w, f"✏️ *{_t(w, 'enter_chat_id')}*\n\n{_t(w, 'enter_chat_id_prompt')}", _nav(CB_DESTINATION, _lang(w)))
     return MANUAL_DESTINATION
-
 
 async def recv_manual_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg = update.message
+    w = _w(context)
     try:
         chat_id = int((msg.text or "").strip())
     except ValueError:
-        await msg.reply_text(_flow(_w(context), "invalid_chat_id"))
+        await msg.reply_text(_flow(w, "invalid_chat_id"))
         return MANUAL_DESTINATION
     if chat_id >= 0:
-        await msg.reply_text(_flow(_w(context), "negative_chat_id"))
+        await msg.reply_text(_flow(w, "negative_chat_id"))
         return MANUAL_DESTINATION
     try:
         target = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
-    except ChatAccessError as exc:
-        await msg.reply_text(str(exc))
+    except ChatAccessError:
+        await msg.reply_text(_flow(w, "access_failed"))
         return MANUAL_DESTINATION
-    w = _w(context)
     w["chat_id"], w["chat_title"] = chat_id, target.title or str(chat_id)
     return await _home(context, w, _t(w, "destination_updated"))
-
 
 async def cb_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -800,7 +793,6 @@ async def cb_mode_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
-
 async def cb_mode_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     w["recurrence_type"] = "interval"
@@ -810,16 +802,15 @@ async def cb_mode_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     w.pop("interval_value", None)
     w.pop("interval_unit", None)
     await _answer(query)
-    await _show(context, w, _flow(w, "interval_value_prompt"), _nav(CB_SCHEDULE, _lang(_w(context))))
+    await _show(context, w, _flow(w, "interval_value_prompt"), _nav(CB_SCHEDULE, _lang(w)))
     return INTERVAL_VALUE
-
 
 async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
-    if not raw.isdecimal() or not 1 <= int(raw) <= 525600:
-        await update.message.reply_text(_flow(_w(context), "interval_invalid"))
-        return INTERVAL_VALUE
     w = _w(context)
+    if not raw.isdecimal() or not 1 <= int(raw) <= 525600:
+        await update.message.reply_text(_flow(w, "interval_invalid"))
+        return INTERVAL_VALUE
     w["interval_value"] = int(raw)
     keyboard = InlineKeyboardMarkup([
         [
@@ -827,27 +818,25 @@ async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE
             InlineKeyboardButton(_flow(w, "unit_hours"), style="primary", callback_data=CB_UNIT + "hours"),
             InlineKeyboardButton(_flow(w, "unit_days"), style="primary", callback_data=CB_UNIT + "days"),
         ],
-        [InlineKeyboardButton("⬅️ " + _t(w, "schedule_title"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton("⬅️ " + tr(_lang(w), "back"), callback_data=CB_SCHEDULE)],
         [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
-    await _show(context, w, f"🔁 *Repeat every {raw} …*\n\nChoose the interval unit.", keyboard)
+    await _show(context, w, f"{_flow(w, 'interval_unit_prompt')}\n\n{_flow(w, 'interval_confirm', value=raw, unit='…')}", keyboard)
     return INTERVAL_UNIT
-
 
 async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     unit = (query.data or "").replace(CB_UNIT, "", 1)
-    value = _w(context).get("interval_value")
+    value = w.get("interval_value")
     limits = {"minutes": 525600, "hours": 8760, "days": 365}
     if unit not in limits or not isinstance(value, int) or not 1 <= value <= limits[unit]:
-        await _answer(query, _flow(_w(context), "interval_invalid"), alert=True)
+        await _answer(query, _flow(w, "unit_invalid"), alert=True)
         return INTERVAL_UNIT
-    w = _w(context)
     w["interval_unit"] = unit
     await _answer(query, _flow(w, "interval_confirm", value=value, unit=_flow(w, f"unit_{unit}")))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
-
 
 async def cb_mode_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -861,80 +850,76 @@ async def cb_mode_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _show(context, w, _flow(w, "days_prompt"), _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
 
-
 async def cb_day_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     raw = (query.data or "").replace(CB_DAY, "", 1)
     if not raw.isdigit() or int(raw) not in range(7):
-        await _answer(query, _flow(_w(context), "day_required"), alert=True)
+        await _answer(query, _flow(w, "day_required"), alert=True)
         return WEEKDAYS
-    day, w = int(raw), _w(context)
+    day = int(raw)
     selected = w.setdefault("days_of_week", set())
     selected.symmetric_difference_update({day})
     await _answer(query, _flow(w, "done"))
     await _show(context, w, _flow(w, "days_prompt"), _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
 
-
 async def cb_days_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     w = _w(context)
     if not w.get("days_of_week"):
-        await _answer(query, _flow(_w(context), "day_required"), alert=True)
+        await _answer(query, _flow(w, "day_required"), alert=True)
         return WEEKDAYS
-    await _answer(query, _flow(_w(context), "done"))
+    await _answer(query, _flow(w, "done"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
-
 async def cb_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     await _answer(query)
-    await _show(context, _w(context), "🌍 *Choose a Timezone*\n\nThe first publish time is interpreted in this timezone.", _timezone_keyboard(0, _lang(_w(context))))
+    await _show(context, w, tr(_lang(w), "timezone_prompt"), _timezone_keyboard(0, _lang(w)))
     return TIMEZONE
-
 
 async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     raw = (query.data or "").replace(CB_TZ_PAGE, "", 1)
     page = int(raw) if raw.isdigit() else 0
     await _answer(query)
-    await _show(context, _w(context), tr(_lang(_w(context)), "timezone_prompt"), _timezone_keyboard(page, _lang(_w(context))))
+    await _show(context, w, tr(_lang(w), "timezone_prompt"), _timezone_keyboard(page, _lang(w)))
     return TIMEZONE
-
 
 async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     zone = (query.data or "").replace(CB_TZ, "", 1)
     try:
         pytz.timezone(zone)
     except pytz.exceptions.UnknownTimeZoneError:
-        await _answer(query, _flow(_w(context), "timezone_invalid"), alert=True)
+        await _answer(query, _flow(w, "timezone_invalid"), alert=True)
         return TIMEZONE
-    w = _w(context)
     w["timezone"] = zone
-    await _answer(query, f"{_t(_w(context), 'timezone')}: {zone}")
+    await _answer(query, f"{_t(w, 'timezone')}: {zone}")
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
-
 
 async def cb_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     zone = w.get("timezone", "UTC")
     await _answer(query)
-    await _show(context, w, f"🗓 *Set First Publish*\n\nTimezone: {escape_markdown(zone, version=1)}\n\nSend HH:MM for the next occurrence or DD/MM/YYYY HH:MM for an exact date.\nExamples: 14:30 or 25/12/2027 09:00.", _nav(CB_SCHEDULE, _lang(_w(context))))
+    await _show(context, w, f"{tr(_lang(w), 'first_run_prompt')}\n\n🌍 {escape_markdown(zone, version=1)}", _nav(CB_SCHEDULE, _lang(w)))
     return FIRST_RUN
 
-
 async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw, w = (update.message.text or "").strip(), _w(context)
+    w = _w(context)
+    raw = (update.message.text or "").strip()
     parsed = parse_schedule_datetime(raw, w.get("timezone", "UTC"))
     if parsed is None:
-        await update.message.reply_text(_flow(_w(context), "invalid_first_time"))
+        await update.message.reply_text(_flow(w, "invalid_first_time"))
         return FIRST_RUN
     w["first_run"], w["first_run_raw"] = parsed, raw
     return await _home(context, w, _t(w, "time_updated"))
-
 
 async def cb_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -945,29 +930,27 @@ async def cb_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             InlineKeyboardButton(_flow(w, "sends", value=10), style="success" if w.get("max_runs") == 10 else "primary", callback_data=CB_LIMIT + "10"),
             InlineKeyboardButton(_flow(w, "sends", value=30), style="success" if w.get("max_runs") == 30 else "primary", callback_data=CB_LIMIT + "30"),
         ],
-        [InlineKeyboardButton("✏️ " + _t(w, "delivery_limit"), style="primary", callback_data=CB_LIMIT + "custom")],
-        [InlineKeyboardButton("⬅️ " + _t(w, "schedule_title"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton(_t(w, "custom_amount"), style="primary", callback_data=CB_LIMIT + "custom")],
+        [InlineKeyboardButton("⬅️ " + tr(_lang(w), "back"), callback_data=CB_SCHEDULE)],
         [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
-    await _show(context, w, "🔢 *Delivery Limit*\n\nChoose how many times this recurring post may be sent. Unlimited is the default.", keyboard)
+    await _show(context, w, tr(_lang(w), "max_runs_prompt"), keyboard)
     return RUN_LIMIT
 
-
 async def cb_limit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    value, w = (query.data or "").replace(CB_LIMIT, "", 1), _w(context)
+    query, w = update.callback_query, _w(context)
+    value = (query.data or "").replace(CB_LIMIT, "", 1)
     if value == "custom":
         await _answer(query)
-        await _show(context, w, _flow(_w(context), "count_invalid"), _nav(CB_SCHEDULE, _lang(_w(context))))
+        await _show(context, w, _flow(w, "count_invalid"), _nav(CB_SCHEDULE, _lang(w)))
         return RUN_LIMIT
     if not value.isdecimal() or not 1 <= int(value) <= 100000:
-        await _answer(query, _flow(_w(context), "count_invalid"), alert=True)
+        await _answer(query, _flow(w, "count_invalid"), alert=True)
         return RUN_LIMIT
     w["max_runs"] = int(value)
     await _answer(query, _flow(w, "delivery_confirm", value=value))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
-
 
 async def cb_limit_unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -976,16 +959,14 @@ async def cb_limit_unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
-
 async def recv_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    w = _w(context)
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not 1 <= int(raw) <= 100000:
-        await update.message.reply_text(_flow(_w(context), "count_invalid"))
+        await update.message.reply_text(_flow(w, "count_invalid"))
         return RUN_LIMIT
-    w = _w(context)
     w["max_runs"] = int(raw)
     return await _home(context, w, _flow(w, "delivery_confirm", value=w.get("max_runs")))
-
 
 async def cb_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -1004,9 +985,8 @@ async def cb_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     await _answer(query)
-    await _show(context, w, "🕒 *Posting Window*\n\nEnter a start and end time in 24-hour format, separated by a hyphen.\nExample: 09:00-21:00. Overnight windows such as 22:00-06:00 are supported.", _nav(CB_OPTIONS, _lang(_w(context))))
+    await _show(context, w, f"{_t(w, 'window_title')}\n\n{_t(w, 'window_prompt')}", _nav(CB_OPTIONS, _lang(w)))
     return POSTING_WINDOW
-
 
 async def recv_posting_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
@@ -1020,7 +1000,6 @@ async def recv_posting_window(update: Update, context: ContextTypes.DEFAULT_TYPE
     w.update(time_window_enabled=True, tw_start=start, tw_end=end)
     return await _home(context, w, _t(w, "window_updated"))
 
-
 async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     if w.get("auto_delete"):
@@ -1033,9 +1012,8 @@ async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     w["self_destruct"] = False
     w.pop("sd_secs", None)
     await _answer(query)
-    await _show(context, w, "🗑 *Auto-Delete*\n\nSend a duration such as 5 minutes, 30m, 2 hours or 12h. Minimum: 5 minutes; maximum: 365 days.", _nav(CB_OPTIONS, _lang(_w(context))))
+    await _show(context, w, _flow(w, "delete_prompt"), _nav(CB_OPTIONS, _lang(w)))
     return AUTO_DELETE
-
 
 async def recv_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
@@ -1067,9 +1045,8 @@ async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w.pop("ad_hours", None)
     w.pop("ad_duration_label", None)
     await _answer(query)
-    await _show(context, w, "💣 *Self-Destruct*\n\nSend the number of seconds after publishing. Enter a whole number from 1 to 31,536,000.", _nav(CB_OPTIONS, _lang(_w(context))))
+    await _show(context, w, _flow(w, "destruct_prompt"), _nav(CB_OPTIONS, _lang(w)))
     return SELF_DESTRUCT
-
 
 async def recv_self_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
@@ -1099,20 +1076,14 @@ async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         [InlineKeyboardButton("⬅️ " + _t(w, "options_title"), callback_data=CB_OPTIONS)],
         [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
-    await _show(context, w, "📌 *Auto-Pin*\n\nChoose a duration or keep the post pinned until someone manually unpins it.", keyboard)
+    await _show(context, w, _flow(w, "pin_prompt"), keyboard)
     return AUTO_PIN
-
 
 async def cb_pin_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     await _answer(query)
-    await _show(
-        context, w,
-        "📌 *Set Auto-Unpin Time*\n\nEnter the number of hours the post should remain pinned. Use a number greater than 0 and no more than 87,600.",
-        _nav(CB_OPTIONS, _lang(_w(context))),
-    )
+    await _show(context, w, _flow(w, "pin_prompt"), _nav(CB_OPTIONS, _lang(w)))
     return AUTO_PIN
-
 
 def _duration_to_hours(raw: str, *, max_minutes: int) -> float | None:
     match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.I)
@@ -1165,11 +1136,9 @@ async def cb_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def cb_button_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
-    remaining = 10 - len(w.get("inline_buttons") or [])
     await _answer(query)
-    await _show(context, w, f"🔘 *Add Post Buttons*\n\nSend up to {remaining} button(s), one per line.\nFormat: Button label | https://example.com\nTelegram username example: Join Channel | @mychannel.", _nav(CB_BUTTONS, _lang(_w(context))))
+    await _show(context, w, f"🔘 *{_t(w, 'buttons_title')}*\n\n{_t(w, 'buttons_instructions')}", _nav(CB_BUTTONS, _lang(w)))
     return BUTTON_ENTRY
-
 
 async def recv_button_batch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     w = _w(context)
@@ -1205,9 +1174,9 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     errors = _validate(w)
     if errors:
-        await _answer(query, _flow(_w(context), "validation_generic"), alert=True)
+        await _answer(query, _flow(w, "validation_generic"), alert=True)
         detail = "\n".join("• " + escape_markdown(error, version=1) for error in errors)
-        await _show(context, w, "⚠️ *A few details need attention*\n\n" + detail + "\n\nReturn to the workspace and open the relevant section.", InlineKeyboardMarkup([
+        await _show(context, w, f"⚠️ *{_flow(w, 'validation_generic')}*\n\n{detail}\n\n{_t(w, 'review_open_workspace')}", InlineKeyboardMarkup([
             [InlineKeyboardButton(_t(w, "review_open_workspace"), style="primary", callback_data=CB_HOME)],
             [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
         ]))
@@ -1223,7 +1192,6 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     ])
     await _show(context, w, _preview_text(w), keyboard)
     return REVIEW
-
 
 async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
