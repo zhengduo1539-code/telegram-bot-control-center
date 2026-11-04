@@ -160,9 +160,9 @@ def test_schedule_choice_buttons_use_primary_and_selected_options_use_success():
 
 def test_owner_panel_and_my_posts_actions_are_semantically_styled():
     owner_buttons = _buttons(_owner_menu_keyboard())
-    assert all(button.style == "primary" for button in owner_buttons[:4])
-    assert owner_buttons[4].style == "danger"
-    assert owner_buttons[5].style == "primary"
+    assert all(button.style == "primary" for button in owner_buttons[:5])
+    assert owner_buttons[5].style == "danger"
+    assert owner_buttons[6].style == "primary"
 
     posts = [
         {"_id": "post-1", "status": "pending"},
