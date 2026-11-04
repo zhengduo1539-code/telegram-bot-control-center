@@ -220,29 +220,34 @@ async def replace_with_main_menu_message(
     return new_message
 
 
-def nav_keyboard(back_data: str | None = None) -> InlineKeyboardMarkup:
+def nav_keyboard(
+    back_data: str | None = None,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
     """
-    Universal navigation row.  Pass `back_data` to enable the Back button;
-    omit it (or pass None) to hide Back (e.g. on the first wizard step).
+    Universal localized navigation row. Existing callers may omit language
+    and retain the English default; localized workflows pass the selected locale.
     """
     row: list[InlineKeyboardButton] = []
     if back_data:
-        row.append(InlineKeyboardButton("⬅️ Back", callback_data=back_data))
-    row.append(InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL))
+        row.append(InlineKeyboardButton(tr(language, "back"), callback_data=back_data))
+    row.append(InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL))
     return InlineKeyboardMarkup([row])
 
 
-def confirm_keyboard(confirm_data: str, back_data: str) -> InlineKeyboardMarkup:
-    """
-    Final summary confirmation keyboard shown before any database write.
-    """
+def confirm_keyboard(
+    confirm_data: str,
+    back_data: str,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
+    """Localized final review controls, shown before any database write."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Confirm", style="success", callback_data=confirm_data),
-            InlineKeyboardButton("⬅️ Back",   callback_data=back_data),
+            InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=confirm_data),
+            InlineKeyboardButton(tr(language, "back"), callback_data=back_data),
         ],
         [
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
