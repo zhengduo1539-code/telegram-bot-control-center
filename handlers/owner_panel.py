@@ -108,7 +108,7 @@ def _back_only_keyboard() -> InlineKeyboardMarkup:
 
 def _cancel_only_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel", callback_data=CB_OWNER_BACK)],
+        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_OWNER_BACK)],
     ])
 
 
