@@ -510,11 +510,9 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
             w["chat_title"] = selected_title
             await query.answer()
             await query.edit_message_text(
-                f"✅ {tr(language, 'private_setup_body', group=escape_markdown(selected_title, version=1))}\n\n"
-                f"{tr(language, 'schedule_content_title')}\n\n"
-                f"{tr(language, 'schedule_content_prompt')}",
+                _content_prompt_text(w, language),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=_content_step_keyboard(),
+                reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
             )
             return WIZARD_CONTENT
 
@@ -575,11 +573,9 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     await query.answer()
     await query.edit_message_text(
-        f"✅ Selected: *{escape_markdown(title, version=1)}* ({chat_id})\n\n"
-        f"{tr(language, 'schedule_content_title')}\n\n"
-        f"{tr(language, 'schedule_content_prompt')}",
+        _content_prompt_text(w, language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(),
+        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
     )
     return WIZARD_CONTENT
 
@@ -692,15 +688,9 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     _w(context)["chat_id"] = chat_id
     _w(context)["chat_title"] = target_chat.title or str(chat_id)
     await update.message.reply_text(
-        f"✅ Chat ID saved: `{chat_id}`\n\n"
-        "▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📝 *Step 2/8 — Post Content*\n\n"
-        "Now send the content you want to post. This can be:\n"
-        "• Plain text\n"
-        "• A photo, video, document, or audio\n"
-        "• Text + media together (send media with a caption)\n\n"
-        "Send your content now:",
+        _content_prompt_text(_w(context), context.user_data.get("language", "en")),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(),
+        reply_markup=_content_step_keyboard(bool(_w(context).get("content_text") or _w(context).get("media_file_id"))),
     )
     return WIZARD_CONTENT
 
@@ -713,6 +703,12 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg: Message = update.message
     w = _w(context)
+
+    # Replace the previous draft atomically so a new message cannot retain
+    # stale media metadata or stale text from the previous content.
+    w.pop("content_text", None)
+    w.pop("media_file_id", None)
+    w.pop("media_type", None)
 
     if msg.photo:
         w["media_file_id"]   = msg.photo[-1].file_id
@@ -746,18 +742,11 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await msg.reply_text("⚠️ Unsupported content type. Please send text, a photo, video, document, or audio.")
         return WIZARD_CONTENT
 
+    w.setdefault("inline_buttons", [])
     await msg.reply_text(
-        "✅ Content saved.\n\n"
-        "🔘 *Step 2.5 — Post Buttons (optional)*\n\n"
-        "Add clickable buttons that will appear underneath your published post. "
-        "People can tap them to open your website or Telegram channel.\n\n"
-        "*How to add a button:*\n"
-        "1. Tap *➕ Add Button* or simply type the button text here.\n"
-        "2. Send the short label people should see (e.g. `Visit Website` or `Join Channel`).\n"
-        "3. Send its destination link (a full URL such as `https://example.com` or a Telegram `@username`).\n\n"
-        "You can add up to 10 buttons. Tap *⏭ Skip* to continue without buttons.",
+        _inline_buttons_prompt(w),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(0),
+        reply_markup=_inline_btns_keyboard(len(w.get("inline_buttons", []))),
     )
     return WIZARD_INLINE_BTNS
 
