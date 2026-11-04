@@ -116,6 +116,9 @@ CB_IB_SKIP       = "ib:skip"
 CB_IB_ADD        = "ib:add"
 CB_IB_DONE       = "ib:done"
 CB_BACK_INLINE_BTNS = "back:inline_btns"
+CB_BACK_CHAT = "back:chat"
+CB_CONTENT_KEEP = "content:keep"
+CB_AP_FOREVER = "ap:forever"
 
 # Day-of-week toggle: "dow:0" … "dow:6"
 def _dow_cb(day: int) -> str:
@@ -478,115 +481,121 @@ async def enter_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Continue from onboarding into the existing destination-selection flow."""
+    """Continue from onboarding into destination selection or a linked group."""
     query = update.callback_query
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
-
-    # A private-chat deep-link may carry the group that initiated setup.
-    # Consume it only after the user chooses Continue.
     launch_chat = context.user_data.pop("launch_chat", None)
     answered = False
+
     if isinstance(launch_chat, dict):
         try:
             launch_chat_id = int(launch_chat.get("chat_id"))
             target_chat = await ensure_chat_access(context.bot, launch_chat_id, user_id)
         except (TypeError, ValueError, ChatAccessError) as exc:
-            logger.info("Deep-linked group is no longer available to user %s: %s", user_id, exc)
+            logger.info("Deep-linked group is unavailable for user %s: %s", user_id, exc)
             await query.answer(
-                "The linked group is unavailable or your admin permissions changed. "
-                "Please select a group manually.",
+                "The linked group is unavailable or your admin permissions changed. Please select a group manually.",
                 show_alert=True,
             )
             answered = True
         else:
-            selected_title = target_chat.title or str(launch_chat_id)
             w = _w(context)
             w["chat_id"] = launch_chat_id
-            w["chat_title"] = selected_title
+            w["chat_title"] = target_chat.title or str(launch_chat_id)
             await query.answer()
             await query.edit_message_text(
-                f"✅ {tr(language, 'private_setup_body', group=escape_markdown(selected_title, version=1))}\n\n"
-                f"{tr(language, 'schedule_content_title')}\n\n"
-                f"{tr(language, 'schedule_content_prompt')}",
+                _content_prompt_text(w, language),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=_content_step_keyboard(),
+                reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
             )
             return WIZARD_CONTENT
 
     bot_username = (await query.get_bot().get_me()).username
     groups = await list_groups_for_user(user_id)
+    if not answered:
+        await query.answer()
     if groups:
-        shown = min(_CHAT_PAGE_SIZE, len(groups))
-        if not answered:
-            await query.answer()
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
-            f"_(Showing {shown} of {len(groups)} known chats)_",
+            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
+            f"_(Showing {min(_CHAT_PAGE_SIZE, len(groups))} of {len(groups)} saved chats)_",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_chat_list_keyboard(groups, 0, bot_username, language),
         )
     else:
-        if not answered:
-            await query.answer()
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n{tr(language, 'choose_group')}\n\n"
-            "⚠️ No groups or channels found. Add the bot to a group first, then return here to schedule a post.",
+            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}\n\n"
+            "No saved groups were found. Add the bot to a group or enter a Chat ID manually.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_no_groups_keyboard(bot_username, language),
         )
     return WIZARD_CHAT_ID
-
-
-# ---------------------------------------------------------------------------
-# Step 1 — Chat picker callbacks
-# ---------------------------------------------------------------------------
-
 async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User tapped a group button — save chat_id and title, move to content step."""
+    """Validate the chosen destination and proceed to the content step."""
     query = update.callback_query
     raw = (query.data or "").replace(CB_CHAT_PICK_PREFIX, "", 1)
     try:
         chat_id = int(raw)
     except ValueError:
-        await query.answer("Invalid selection.", show_alert=True)
+        await query.answer("Invalid destination selection.", show_alert=True)
         return WIZARD_CHAT_ID
-
-    # Look up the title from DB record so we can show it in the summary
-    user_id = query.from_user.id  # type: ignore[union-attr]
+    user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
-    groups = await list_groups_for_user(user_id)
-    title_map = {g["chat_id"]: (g.get("title") or str(g["chat_id"])) for g in groups}
-    title = title_map.get(chat_id, str(chat_id))
-
+    groups = await list_groups_for_user(user_id) if user_id is not None else []
+    titles = {g["chat_id"]: (g.get("title") or str(g["chat_id"])) for g in groups}
     try:
         target_chat = await ensure_chat_access(query.get_bot(), chat_id, user_id)
     except ChatAccessError as exc:
         await query.answer(str(exc), show_alert=True)
         return WIZARD_CHAT_ID
-    title = target_chat.title or title
     w = _w(context)
-    w["chat_id"]    = chat_id
-    w["chat_title"] = title
-
+    w["chat_id"] = chat_id
+    w["chat_title"] = target_chat.title or titles.get(chat_id, str(chat_id))
     await query.answer()
     await query.edit_message_text(
-        f"✅ Selected: *{escape_markdown(title, version=1)}* ({chat_id})\n\n"
-        f"{tr(language, 'schedule_content_title')}\n\n"
-        f"{tr(language, 'schedule_content_prompt')}",
+        _content_prompt_text(w, language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(),
+        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
     )
     return WIZARD_CONTENT
-
-
-def _content_step_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard shown at the WIZARD_CONTENT step."""
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel",        style="danger", callback_data=CB_CANCEL)],
+def _content_step_keyboard(has_content: bool = False) -> InlineKeyboardMarkup:
+    """Content actions with an explicit route back to the destination."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if has_content:
+        rows.append([InlineKeyboardButton("✅ Keep Current Content", style="success", callback_data=CB_CONTENT_KEEP)])
+    rows.append([
+        InlineKeyboardButton("⬅️ Back to Destination", callback_data=CB_BACK_CHAT),
+        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
     ])
+    return InlineKeyboardMarkup(rows)
 
 
+def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
+    title = escape_markdown(str(w.get("chat_title") or w.get("chat_id") or "Selected chat"), version=1)
+    return (
+        "▰▱▱▱▱▱▱▱ 2/8\n"
+        "📝 *Step 2/8 — Post Content*\n\n"
+        f"📍 *Destination:* {title}\n\n"
+        "Send one message that you want the bot to publish.\n\n"
+        "Supported: text, photo, video, document, audio, animation, or voice message.\n"
+        "To publish text with media, send the media with a caption.\n"
+        "Each Telegram message becomes one scheduled post; albums and forwarded bundles are not combined."
+    )
+
+
+def _inline_buttons_prompt(w: dict[str, Any]) -> str:
+    count = len(w.get("inline_buttons", []))
+    media = w.get("media_type")
+    kind = "Media with caption" if media and w.get("content_text") else ("Media" if media else "Text")
+    return (
+        f"✅ Content saved ({kind}).\n\n"
+        "🔘 *Step 2.5 — Post Buttons (Optional)*\n\n"
+        "Add clickable buttons below your post. Each button needs a label and a destination.\n\n"
+        "1. Tap Add Button.\n"
+        "2. Send a short label, such as Visit Website.\n"
+        "3. Send a full URL, such as https://example.com, or a Telegram @username.\n\n"
+        f"Added: *{count}/10*. Choose Skip or Done when you are ready."
+    )
 async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Paginate the group list."""
     query = update.callback_query
@@ -628,101 +637,77 @@ async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 # ---------------------------------------------------------------------------
 
 async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
+    raw = (update.message.text or "").strip()
     try:
-        chat_id = int(text)
+        chat_id = int(raw)
     except ValueError:
         await update.message.reply_text(
-            "⚠️ That doesn't look like a valid Chat ID. Please send a number, "
-            "e.g. `-1001234567890`.",
-            parse_mode=ParseMode.MARKDOWN,
+            "⚠️ Enter a valid Telegram group or channel ID, for example -1001234567890.",
+            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
-
+    if chat_id >= 0:
+        await update.message.reply_text(
+            "⚠️ Group and channel IDs must be negative. Check the ID and try again.",
+            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+        )
+        return WIZARD_CHAT_ID
     try:
         target_chat = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
     except ChatAccessError as exc:
-        await update.message.reply_text(f"⚠️ {exc}")
+        await update.message.reply_text(
+            f"⚠️ {exc}",
+            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+        )
         return WIZARD_CHAT_ID
-    _w(context)["chat_id"] = chat_id
-    _w(context)["chat_title"] = target_chat.title or str(chat_id)
+    w = _w(context)
+    w["chat_id"] = chat_id
+    w["chat_title"] = target_chat.title or str(chat_id)
     await update.message.reply_text(
-        f"✅ Chat ID saved: `{chat_id}`\n\n"
-        "▰▰▱▱▱▱▱▱ 2/8\nChat › *Content* › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📝 *Step 2/8 — Post Content*\n\n"
-        "Now send the content you want to post. This can be:\n"
-        "• Plain text\n"
-        "• A photo, video, document, or audio\n"
-        "• Text + media together (send media with a caption)\n\n"
-        "Send your content now:",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(),
+        _content_prompt_text(w, context.user_data.get("language", "en")),
+        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
     )
     return WIZARD_CONTENT
-
-
-# ---------------------------------------------------------------------------
-# Step 2 — Content
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Save one supported Telegram message as the scheduled post content."""
     msg: Message = update.message
     w = _w(context)
-
+    media_file_id = None
+    media_type = None
+    content_text = None
     if msg.photo:
-        w["media_file_id"]   = msg.photo[-1].file_id
-        w["media_type"]      = "photo"
-        w["content_text"]    = msg.caption
+        media_file_id, media_type, content_text = msg.photo[-1].file_id, "photo", msg.caption
     elif msg.video:
-        w["media_file_id"]   = msg.video.file_id
-        w["media_type"]      = "video"
-        w["content_text"]    = msg.caption
+        media_file_id, media_type, content_text = msg.video.file_id, "video", msg.caption
     elif msg.document:
-        w["media_file_id"]   = msg.document.file_id
-        w["media_type"]      = "document"
-        w["content_text"]    = msg.caption
+        media_file_id, media_type, content_text = msg.document.file_id, "document", msg.caption
     elif msg.audio:
-        w["media_file_id"]   = msg.audio.file_id
-        w["media_type"]      = "audio"
-        w["content_text"]    = msg.caption
+        media_file_id, media_type, content_text = msg.audio.file_id, "audio", msg.caption
     elif msg.animation:
-        w["media_file_id"]   = msg.animation.file_id
-        w["media_type"]      = "animation"
-        w["content_text"]    = msg.caption
+        media_file_id, media_type, content_text = msg.animation.file_id, "animation", msg.caption
     elif msg.voice:
-        w["media_file_id"]   = msg.voice.file_id
-        w["media_type"]      = "voice"
-        w["content_text"]    = msg.caption
-    elif msg.text:
-        w["media_file_id"]   = None
-        w["media_type"]      = None
-        w["content_text"]    = msg.text
+        media_file_id, media_type, content_text = msg.voice.file_id, "voice", msg.caption
+    elif msg.text and msg.text.strip():
+        content_text = msg.text
     else:
-        await msg.reply_text("⚠️ Unsupported content type. Please send text, a photo, video, document, or audio.")
+        await msg.reply_text(
+            "⚠️ This message type cannot be scheduled. Send text, photo, video, document, audio, animation, or voice message.",
+            reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+        )
         return WIZARD_CONTENT
 
+    # Replace related fields only after the new message is known to be valid.
+    w["media_file_id"] = media_file_id
+    w["media_type"] = media_type
+    w["content_text"] = content_text
+    w.setdefault("inline_buttons", [])
     await msg.reply_text(
-        "✅ Content saved.\n\n"
-        "🔘 *Step 2.5 — Post Buttons (optional)*\n\n"
-        "Add clickable buttons that will appear underneath your published post. "
-        "People can tap them to open your website or Telegram channel.\n\n"
-        "*How to add a button:*\n"
-        "1. Tap *➕ Add Button* or simply type the button text here.\n"
-        "2. Send the short label people should see (e.g. `Visit Website` or `Join Channel`).\n"
-        "3. Send its destination link (a full URL such as `https://example.com` or a Telegram `@username`).\n\n"
-        "You can add up to 10 buttons. Tap *⏭ Skip* to continue without buttons.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(0),
+        _inline_buttons_prompt(w),
+        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
     )
     return WIZARD_INLINE_BTNS
-
-
-# ---------------------------------------------------------------------------
-# Step 2.5 — Inline Buttons (optional)
-# ---------------------------------------------------------------------------
-
 def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
-    """Keyboard shown at the inline-button collection step."""
+    """Optional post-button controls with a direct route back to saved content."""
     rows: list[list[InlineKeyboardButton]] = []
     if count == 0:
         rows.append([
@@ -730,18 +715,17 @@ def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("⏭ Skip", style="primary", callback_data=CB_IB_SKIP),
         ])
     elif count >= 10:
-        rows.append([
-            InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
-        ])
+        rows.append([InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE)])
     else:
         rows.append([
             InlineKeyboardButton("➕ Add Another", style="primary", callback_data=CB_IB_ADD),
             InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
         ])
-    rows.append([InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)])
+    rows.append([
+        InlineKeyboardButton("⬅️ Back to Content", callback_data=CB_BACK_CONTENT),
+        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+    ])
     return InlineKeyboardMarkup(rows)
-
-
 async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User skips inline buttons — go straight to recurrence."""
     query = update.callback_query
