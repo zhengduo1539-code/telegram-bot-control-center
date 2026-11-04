@@ -474,7 +474,7 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text(
                 _content_prompt_text(w, language),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+                reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id")), _language(context)),
             )
             return WIZARD_CONTENT
 
@@ -522,7 +522,7 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await query.edit_message_text(
         _content_prompt_text(w, language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id")), _language(context)),
     )
     return WIZARD_CONTENT
 def _content_step_keyboard(has_content: bool = False, language: str = "en") -> InlineKeyboardMarkup:
@@ -591,7 +591,7 @@ async def cb_back_content(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.edit_message_text(
         prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_content_step_keyboard(has_content),
+        reply_markup=_content_step_keyboard(has_content, language),
     )
     return WIZARD_CONTENT
 
@@ -608,7 +608,7 @@ async def cb_content_keep(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.edit_message_text(
         _inline_buttons_prompt(w),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
+        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"]), _language(context)),
     )
     return WIZARD_INLINE_BTNS
 
@@ -629,7 +629,7 @@ async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"🗂 Choose the group or channel to post to:\n"
         f"_(Showing {shown} of {total} known chats)_",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_chat_list_keyboard(groups, page, bot_username),
+        reply_markup=_chat_list_keyboard(groups, page, bot_username, _language(context)),
     )
     return WIZARD_CHAT_ID
 
@@ -678,7 +678,7 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w["chat_title"] = target_chat.title or str(chat_id)
     await update.message.reply_text(
         _content_prompt_text(w, context.user_data.get("language", "en")),
-        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+        reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id")), _language(context)),
     )
     return WIZARD_CONTENT
 async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -705,7 +705,7 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     else:
         await msg.reply_text(
             "⚠️ This message type cannot be scheduled. Send text, photo, video, document, audio, animation, or voice message.",
-            reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
+            reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id")), _language(context)),
         )
         return WIZARD_CONTENT
 
@@ -716,7 +716,7 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w.setdefault("inline_buttons", [])
     await msg.reply_text(
         _inline_buttons_prompt(w),
-        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
+        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"]), _language(context)),
     )
     return WIZARD_INLINE_BTNS
 def _inline_btns_keyboard(count: int, language: str = "en") -> InlineKeyboardMarkup:
@@ -819,7 +819,7 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             w.pop("pending_inline_button_label", None)
             await update.message.reply_text(
                 "You have reached the 10-button limit. Tap Done to continue.",
-                reply_markup=_inline_btns_keyboard(10),
+                reply_markup=_inline_btns_keyboard(10, _language(context)),
             )
             return WIZARD_INLINE_BTNS
 
@@ -835,7 +835,7 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             f"✅ *Button added ({count}/10).*\n\n"
             f"*Buttons saved:*\n{_inline_btns_list_text(w['inline_buttons'])}\n\n{next_step}",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_inline_btns_keyboard(count),
+            reply_markup=_inline_btns_keyboard(count, _language(context)),
         )
         return WIZARD_INLINE_BTNS
 
@@ -874,7 +874,7 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         f"{_inline_btns_list_text(w['inline_buttons'])}\n\n"
         "Add another or tap Done.",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
+        reply_markup=_inline_btns_keyboard(len(w["inline_buttons"]), _language(context)),
     )
     return WIZARD_INLINE_BTNS
 async def cb_back_inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -886,7 +886,7 @@ async def cb_back_inline_buttons(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(
         _inline_buttons_prompt(w),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_inline_btns_keyboard(len(w.get("inline_buttons", []))),
+        reply_markup=_inline_btns_keyboard(len(w.get("inline_buttons", [])), _language(context)),
     )
     return WIZARD_INLINE_BTNS
 
@@ -953,7 +953,7 @@ async def cb_rec_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"{tr(language, 'recurrence_days')}\n\n"
         "Select every day on which this post should be published. You can select more than one day.\n"
         "Tap Next when your selection is complete.",
-        _dow_keyboard(w["days_of_week"]),
+        _dow_keyboard(w["days_of_week"], _language(context)),
     )
     return WIZARD_DOW_SELECT
 async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -970,7 +970,7 @@ async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(
         f"✅ Interval value: {raw}\n\n"
         "Choose the unit for this interval.",
-        reply_markup=_interval_unit_keyboard(),
+        reply_markup=_interval_unit_keyboard(_language(context)),
     )
     return WIZARD_INTERVAL_UNIT
 async def cb_back_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1025,7 +1025,7 @@ async def cb_dow_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         selected.add(day)
     await query.answer(f"{'✅' if day in selected else '☐'} {DOW_LABELS[day]}")
-    await query.edit_message_reply_markup(_dow_keyboard(selected))
+    await query.edit_message_reply_markup(_dow_keyboard(selected, _language(context)))
     return WIZARD_DOW_SELECT
 
 
@@ -1059,7 +1059,7 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "⚠️ That time could not be validated as a future time or date.\n\n"
             "Enter a 24-hour time such as 14:30 for the next occurrence, or "
             "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.",
-            reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
+            reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE, _language(context)),
         )
         return WIZARD_FIRST_RUN
 
@@ -1083,14 +1083,14 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(
         prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(one_time=one_time),
+        reply_markup=_max_runs_keyboard(one_time=one_time, language=_language(context)),
     )
     return WIZARD_MAX_RUNS
 async def cb_back_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return to the First Run screen."""
     query = update.callback_query
     language = context.user_data.get("language", "en")
-    await _edit(query, tr(language, "first_run_prompt"), _first_run_keyboard(CB_BACK_TIMEZONE))
+    await _edit(query, tr(language, "first_run_prompt"), _first_run_keyboard(CB_BACK_TIMEZONE, _language(context)))
     return WIZARD_FIRST_RUN
 
 _MEDAL = ["🥇", "🥈", "🥉"]
@@ -1187,7 +1187,7 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await query.edit_message_text(
         prompt,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_max_runs_keyboard(one_time=one_time),
+        reply_markup=_max_runs_keyboard(one_time=one_time, language=_language(context)),
     )
     return WIZARD_MAX_RUNS
 async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1217,7 +1217,7 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "Enter a 24-hour time such as 14:30 for the next occurrence, or "
         "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.\n\n"
         "Or tap Suggest Best Time to choose from the group's recent activity.",
-        _first_run_keyboard(CB_BACK_TIMEZONE),
+        _first_run_keyboard(CB_BACK_TIMEZONE, _language(context)),
     )
     return WIZARD_FIRST_RUN
 async def cb_back_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1238,14 +1238,14 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if rec_type == "days_of_week":
         await _edit(query,
             "📆 *Step 3a — Days of Week*\n\nTap days to toggle, then ➡️ Next.",
-            _dow_keyboard(w.get("days_of_week", set())),
+            _dow_keyboard(w.get("days_of_week", set()), _language(context)),
         )
         return WIZARD_DOW_SELECT
     elif rec_type == "interval":
         await _edit(query,
             f"✅ Value: `{w.get('interval_value')}`\n\n"
             "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
-            _interval_unit_keyboard(),
+            _interval_unit_keyboard(_language(context)),
         )
         return WIZARD_INTERVAL_UNIT
     else:
@@ -1297,14 +1297,14 @@ async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         w["max_runs"] = 1
         await update.message.reply_text(
             "This is a one-time post, so its delivery limit is already set to one.",
-            reply_markup=_max_runs_keyboard(one_time=True),
+            reply_markup=_max_runs_keyboard(one_time=True, language=_language(context)),
         )
         return WIZARD_MAX_RUNS
     if not text.isdecimal() or not (1 <= int(text) <= 100000):
         await update.message.reply_text(
             "⚠️ Enter a whole number from 1 to 100,000 (for example, 7). "
             "Choose Unlimited below for an unlimited schedule.",
-            reply_markup=_max_runs_keyboard(),
+            reply_markup=_max_runs_keyboard(language=_language(context)),
         )
         return WIZARD_MAX_RUNS
 
@@ -1413,7 +1413,7 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             query,
             "📌 *Auto-Pin*\n\n"
             "Choose how long each post should stay pinned, or keep it pinned until you remove it manually.",
-            _auto_pin_keyboard(),
+            _auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
     return await _show_summary(update, context)
@@ -1471,7 +1471,7 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w.get("auto_pin"):
         await update.message.reply_text(
             prefix + "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
-            reply_markup=_auto_pin_keyboard(),
+            reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
@@ -1565,7 +1565,7 @@ async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.message.reply_text(
             f"✅ Auto-Delete: {raw}.\n\n"
             "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
-            reply_markup=_auto_pin_keyboard(),
+            reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
@@ -1583,7 +1583,7 @@ async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text(
             f"✅ Self-Destruct: {raw} seconds.\n\n"
             "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
-            reply_markup=_auto_pin_keyboard(),
+            reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
@@ -1613,7 +1613,7 @@ async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     except (TypeError, ValueError):
         await update.message.reply_text(
             "⚠️ Enter a finite number greater than 0 and no more than 87,600 hours (for example, 12), or choose Keep Pinned.",
-            reply_markup=_auto_pin_keyboard(),
+            reply_markup=_auto_pin_keyboard(_language(context)),
         )
         return WIZARD_AP_HOURS
     _w(context)["ap_hours"] = value
@@ -1916,7 +1916,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 context,
                 "⚠️ The selected first-post time is no longer in the future.\\n\\n"
                 "Enter a new 24-hour HH:MM time or an exact DD/MM/YYYY HH:MM date.",
-                _first_run_keyboard(CB_BACK_TIMEZONE),
+                _first_run_keyboard(CB_BACK_TIMEZONE, _language(context)),
             )
             return WIZARD_FIRST_RUN
         await _edit_confirm_result(
@@ -1956,7 +1956,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "⚠️ Posting access to the selected destination has changed. "
             "Restore the bot's administrator/posting permissions, then select the destination again.",
             _chat_list_keyboard(groups, 0, bot_username)
-            if groups else _no_groups_keyboard(bot_username),
+            if groups else _no_groups_keyboard(bot_username, _language(context)),
         )
         return WIZARD_CHAT_ID
     except Exception:
@@ -2062,7 +2062,7 @@ async def cb_back_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w = _w(context)
     await _edit(query,
         "📆 *Step 3a — Days of Week*\n\nTap days to toggle, then ➡️ Next.",
-        _dow_keyboard(w.get("days_of_week", set())),
+        _dow_keyboard(w.get("days_of_week", set()), _language(context)),
     )
     return WIZARD_DOW_SELECT
 
@@ -2073,7 +2073,7 @@ async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TY
     await _edit(query,
         f"✅ Value: `{w.get('interval_value')}`\n\n"
         "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
-        _interval_unit_keyboard(),
+        _interval_unit_keyboard(_language(context)),
     )
     return WIZARD_INTERVAL_UNIT
 
@@ -2089,7 +2089,7 @@ async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
     else:
         prompt = tr(context.user_data.get("language", "en"), "max_runs_prompt")
-    await _edit(query, prompt, _max_runs_keyboard(one_time=one_time))
+    await _edit(query, prompt, _max_runs_keyboard(one_time=one_time, language=_language(context)))
     return WIZARD_MAX_RUNS
 async def cb_back_tw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return to Advanced Options from a posting-window or lifecycle detail."""
