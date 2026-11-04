@@ -57,9 +57,11 @@ def test_wizard_continue_and_next_actions_use_success_style():
         _dow_keyboard(set()),
         _time_window_keyboard(False),
         _lifecycle_keyboard(False, False, False),
-        _advanced_keyboard(False, False, False, False),
     ):
         assert _button(markup, "➡️ Next").style == "success"
+
+    advanced = _advanced_keyboard(False, False, False, False)
+    assert _button(advanced, "➡️ Review Options").style == "success"
 
 
 def test_cancel_actions_use_danger_style_across_wizard_and_owner_flows():
@@ -192,11 +194,17 @@ def test_one_time_max_runs_preset_is_visible_and_success_styled():
     buttons = _buttons(_max_runs_keyboard())
     one_time = _button(_max_runs_keyboard(), "1× One time")
     assert one_time.callback_data == "mr:preset:1"
-    assert one_time.style == "success"
+    assert one_time.style == "primary"
+    once = _button(_max_runs_keyboard(one_time=True), "✅ One-Time Post — 1 Send")
+    assert once.style == "success"
     assert any(button.text == "∞ Unlimited" for button in buttons)
 
 
-def test_inline_button_limit_keeps_done_and_cancel_only():
+def test_inline_button_limit_keeps_done_back_and_cancel_actions():
     buttons = _buttons(_inline_btns_keyboard(10))
-    assert [button.text for button in buttons] == ["✅ Done", "❌ Cancel"]
-    assert [button.style for button in buttons] == ["success", "danger"]
+    assert [button.text for button in buttons] == [
+        "✅ Done",
+        "⬅️ Back to Content",
+        "❌ Cancel",
+    ]
+    assert [button.style for button in buttons] == ["success", None, "danger"]

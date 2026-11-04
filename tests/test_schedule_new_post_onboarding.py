@@ -99,9 +99,16 @@ def test_schedule_conversation_registers_intro_state():
 
 
 
-def test_schedule_content_step_is_manual_only():
+def test_schedule_content_step_has_clear_back_and_keep_actions():
     labels = [button.text for button in _buttons(wizard._content_step_keyboard())]
-    assert labels == ["❌ Cancel"]
+    assert labels == ["⬅️ Back to Destination", "❌ Cancel"]
+
+    saved_labels = [button.text for button in _buttons(wizard._content_step_keyboard(True))]
+    assert saved_labels == [
+        "✅ Keep Current Content",
+        "⬅️ Back to Destination",
+        "❌ Cancel",
+    ]
     assert not hasattr(wizard, "WIZARD_TMPL_PICK")
 
     conversation = wizard.build_schedule_wizard()
@@ -156,13 +163,19 @@ def test_confirm_post_requires_first_run_still_in_future():
         )
         context = SimpleNamespace(user_data={
             "language": "en",
-            "wizard": {"first_run": datetime.now(timezone.utc) - timedelta(minutes=1)},
+            "wizard": {
+                "chat_id": -1001234567890,
+                "content_text": "A scheduled post",
+                "recurrence_type": "once",
+                "timezone": "UTC",
+                "first_run": datetime.now(timezone.utc) - timedelta(minutes=1),
+            },
         })
 
         state = await wizard.cb_confirm_post(SimpleNamespace(callback_query=query), context)
 
         assert state == wizard.WIZARD_FIRST_RUN
-        assert "time has passed" in query.edit_message_text.await_args.args[0].lower()
+        assert "first-post time" in query.edit_message_text.await_args.args[0].lower()
         assert "reply_markup" in query.edit_message_text.await_args.kwargs
 
     asyncio.run(scenario())
@@ -191,7 +204,7 @@ def test_inline_button_plain_label_then_link_flow_is_easy_to_follow():
         result_text = link_message.reply_text.await_args.args[0]
         assert "Button added" in result_text
         assert "Join Channel" in result_text
-        assert "Add Another" in result_text
+        assert "add another" in result_text.lower()
         assert "Done" in result_text
         assert "pending_inline_button_label" not in context.user_data["wizard"]
 
@@ -243,14 +256,14 @@ def test_max_runs_custom_count_accepts_positive_integer_and_rejects_zero():
 
         assert state == wizard.WIZARD_MAX_RUNS
         assert "max_runs" not in context.user_data["wizard"]
-        assert "starting from" in invalid_message.reply_text.await_args.args[0].lower()
+        assert "whole number" in invalid_message.reply_text.await_args.args[0].lower()
 
         valid_message = SimpleNamespace(text="27", reply_text=AsyncMock())
         state = await wizard.recv_max_runs(SimpleNamespace(message=valid_message), context)
 
         assert state == wizard.WIZARD_TIME_WINDOW
         assert context.user_data["wizard"]["max_runs"] == 27
-        assert "Max runs: *27*" in valid_message.reply_text.await_args.args[0]
+        assert "27 sends" in valid_message.reply_text.await_args.args[0]
 
     asyncio.run(scenario())
 
@@ -262,13 +275,13 @@ def test_one_time_preset_stores_a_single_run():
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
         )
-        context = SimpleNamespace(user_data={"wizard": {}})
+        context = SimpleNamespace(user_data={"wizard": {"recurrence_type": "once"}})
 
         state = await wizard.cb_mr_preset(SimpleNamespace(callback_query=query), context)
 
         assert state == wizard.WIZARD_TIME_WINDOW
         assert context.user_data["wizard"]["max_runs"] == 1
-        assert "One time" in query.edit_message_text.await_args.args[0]
+        assert "One send" in query.edit_message_text.await_args.args[0]
 
     asyncio.run(scenario())
 
@@ -279,3 +292,143 @@ def test_max_runs_guidance_explains_all_three_choices_in_every_locale():
         assert "One time" in prompt
         assert "Unlimited" in prompt
         assert "1" in prompt
+
+
+
+def _valid_schedule_draft(**overrides):
+    draft = {
+        "chat_id": -1001234567890,
+        "chat_title": "Announcements",
+        "content_text": "A scheduled announcement",
+        "recurrence_type": "once",
+        "timezone": "UTC",
+        "first_run": datetime.now(timezone.utc) + timedelta(hours=2),
+        "max_runs": 1,
+        "time_window_enabled": False,
+        "auto_delete": False,
+        "self_destruct": False,
+        "auto_pin": False,
+        "inline_buttons": [],
+    }
+    draft.update(overrides)
+    return draft
+
+
+def test_schedule_draft_validation_accepts_complete_one_time_post():
+    draft = _valid_schedule_draft()
+    assert wizard._validate_schedule_draft(draft) is None
+    assert draft["max_runs"] == 1
+
+
+def test_schedule_draft_validation_rejects_conflicting_delete_modes():
+    draft = _valid_schedule_draft(
+        auto_delete=True,
+        ad_hours=2,
+        self_destruct=True,
+        sd_secs=60,
+    )
+    assert "either Auto-Delete or Self-Destruct" in wizard._validate_schedule_draft(draft)
+
+
+def test_schedule_draft_validation_rejects_non_finite_durations_and_incomplete_pin():
+    draft = _valid_schedule_draft(auto_delete=True, ad_hours=float("nan"))
+    assert "Auto-Delete duration" in wizard._validate_schedule_draft(draft)
+
+    draft = _valid_schedule_draft(auto_pin=True)
+    assert "Auto-Pin duration" in wizard._validate_schedule_draft(draft)
+
+    draft = _valid_schedule_draft(auto_pin=True, ap_hours=float("inf"))
+    assert "Auto-Pin duration" in wizard._validate_schedule_draft(draft)
+
+
+def test_schedule_draft_validation_accepts_permanent_pin_and_overnight_window():
+    draft = _valid_schedule_draft(
+        auto_pin=True,
+        ap_hours=None,
+        time_window_enabled=True,
+        tw_start="22:00",
+        tw_end="06:00",
+    )
+    assert wizard._validate_schedule_draft(draft) is None
+    summary = wizard._build_summary(draft)
+    assert "Keep pinned until manually unpinned" in summary
+    assert "22:00 to 06:00" in summary
+
+
+def test_schedule_summary_escapes_user_supplied_markdown_and_shows_one_send():
+    draft = _valid_schedule_draft(
+        chat_title="News_*[Group]",
+        content_text="Breaking_*[news]",
+        recurrence_type="once",
+        inline_buttons=[[{"text": "Open_*[link]", "url": "https://example.com"}]],
+    )
+    summary = wizard._build_summary(draft)
+    assert "1 send" in summary
+    assert "Breaking\\_\\*\\[news]" in summary
+    assert "News\\_\\*\\[Group]" in summary
+    assert "Open\\_\\*\\[link]" in summary
+
+
+def test_auto_delete_and_self_destruct_toggles_are_mutually_exclusive():
+    async def scenario():
+        query = SimpleNamespace(
+            data=wizard.CB_LC_SD,
+            answer=AsyncMock(),
+            edit_message_reply_markup=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={"wizard": {
+            "auto_delete": True,
+            "ad_hours": 2,
+            "ad_duration_label": "2 hours",
+            "self_destruct": False,
+            "auto_pin": False,
+        }})
+        state = await wizard.cb_lc_toggle(SimpleNamespace(callback_query=query), context)
+        draft = context.user_data["wizard"]
+        assert state == wizard.WIZARD_TIME_WINDOW
+        assert draft["self_destruct"] is True
+        assert draft["auto_delete"] is False
+        assert "ad_hours" not in draft
+        assert "ad_duration_label" not in draft
+        query.edit_message_reply_markup.assert_awaited_once()
+
+    asyncio.run(scenario())
+
+
+def test_permanent_auto_pin_choice_shows_review_and_stores_none():
+    async def scenario():
+        query = SimpleNamespace(
+            data=wizard.CB_AP_FOREVER,
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(user_data={"wizard": _valid_schedule_draft(auto_pin=True)})
+        state = await wizard.cb_ap_forever(SimpleNamespace(callback_query=query), context)
+        assert state == wizard.WIZARD_SUMMARY
+        assert context.user_data["wizard"]["ap_hours"] is None
+        assert "Keep pinned until manually unpinned" in query.edit_message_text.await_args.args[0]
+
+    asyncio.run(scenario())
+
+
+def test_schedule_save_failure_keeps_draft_for_recovery(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(wizard, "ensure_chat_access", AsyncMock())
+        monkeypatch.setattr(wizard, "build_scheduled_post", lambda **kwargs: kwargs)
+        monkeypatch.setattr(wizard, "insert_post", AsyncMock(side_effect=RuntimeError("database unavailable")))
+        query = SimpleNamespace(
+            from_user=SimpleNamespace(id=42),
+            message=SimpleNamespace(chat_id=42, message_id=99),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        context = SimpleNamespace(bot=object(), user_data={"wizard": _valid_schedule_draft()})
+
+        state = await wizard.cb_confirm_post(SimpleNamespace(callback_query=query), context)
+
+        assert state == wizard.WIZARD_SUMMARY
+        assert context.user_data["wizard"]["content_text"] == "A scheduled announcement"
+        assert "_saving" not in context.user_data["wizard"]
+        assert "check *My Posts*" in query.edit_message_text.await_args.args[0]
+
+    asyncio.run(scenario())
