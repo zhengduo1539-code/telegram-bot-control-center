@@ -69,69 +69,48 @@ def _wizard_confirm_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboa
     return confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE, language=_language(context))
 
 
-def _parse_auto_delete_duration(raw: str) -> float | None:
-    """Parse an explicit integer duration such as '5 minutes' or '2 hours'. Return hours."""
-    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.IGNORECASE)
+_AUTO_DELETE_UNIT_ALIASES: dict[str, dict[str, set[str]]] = {
+    "en": {"minutes": {"minute", "minutes", "min", "mins", "m"}, "hours": {"hour", "hours", "hr", "hrs", "h"}},
+    "my": {"minutes": {"မိနစ်"}, "hours": {"နာရီ"}},
+    "zh": {"minutes": {"分钟", "分鐘", "分"}, "hours": {"小时", "小時", "时", "時"}},
+    "es": {"minutes": {"minuto", "minutos", "min"}, "hours": {"hora", "horas"}},
+    "hi": {"minutes": {"मिनट", "मिनटों"}, "hours": {"घंटा", "घंटे", "घंटों"}},
+    "ar": {"minutes": {"دقيقة", "دقائق", "دقيقه"}, "hours": {"ساعة", "ساعات"}},
+    "pt": {"minutes": {"minuto", "minutos", "min"}, "hours": {"hora", "horas"}},
+    "fr": {"minutes": {"minute", "minutes", "min"}, "hours": {"heure", "heures"}},
+    "ru": {"minutes": {"минута", "минуты", "минут", "мин"}, "hours": {"час", "часа", "часов"}},
+    "bn": {"minutes": {"মিনিট"}, "hours": {"ঘণ্টা", "ঘন্টা"}},
+    "id": {"minutes": {"menit"}, "hours": {"jam"}},
+    "ja": {"minutes": {"分", "分間"}, "hours": {"時間", "時"}},
+    "ko": {"minutes": {"분"}, "hours": {"시간"}},
+    "th": {"minutes": {"นาที"}, "hours": {"ชั่วโมง"}},
+    "vi": {"minutes": {"phút"}, "hours": {"giờ"}},
+    "tr": {"minutes": {"dakika", "dk"}, "hours": {"saat"}},
+    "de": {"minutes": {"minute", "minuten", "min"}, "hours": {"stunde", "stunden", "std"}},
+    "it": {"minutes": {"minuto", "minuti", "min"}, "hours": {"ora", "ore"}},
+    "ur": {"minutes": {"منٹ"}, "hours": {"گھنٹہ", "گھنٹے", "گھنٹوں"}},
+    "sw": {"minutes": {"dakika"}, "hours": {"saa", "masaa"}},
+}
+
+
+def _parse_auto_delete_duration(raw: str, language: str = "en") -> float | None:
+    """Parse a localized integer duration such as '5 minutes' or its locale equivalent."""
+    match = re.fullmatch(r"\s*(\d+)\s*(.*?)\s*", raw or "", re.IGNORECASE)
     if not match:
         return None
     amount = int(match.group(1))
-    unit = match.group(2).lower()
-    minutes = amount if unit in ("m", "min", "mins", "minute", "minutes") else amount * 60
+    unit = match.group(2).casefold().strip()
+    aliases = _AUTO_DELETE_UNIT_ALIASES.get(language, _AUTO_DELETE_UNIT_ALIASES["en"])
+    if unit in aliases["minutes"]:
+        minutes = amount
+    elif unit in aliases["hours"]:
+        minutes = amount * 60
+    else:
+        return None
     if minutes < 5 or minutes > 525600:
         return None
     return minutes / 60
 
-# ---------------------------------------------------------------------------
-# Wizard state constants
-# ---------------------------------------------------------------------------
-(
-    WIZARD_CHAT_ID,
-    WIZARD_CONTENT,
-    WIZARD_RECURRENCE,
-    WIZARD_INTERVAL_VALUE,
-    WIZARD_INTERVAL_UNIT,
-    WIZARD_DOW_SELECT,
-    WIZARD_FIRST_RUN,
-    WIZARD_TIMEZONE,
-    WIZARD_MAX_RUNS,
-    WIZARD_TIME_WINDOW,
-    WIZARD_TW_START,
-    WIZARD_TW_END,
-    WIZARD_LIFECYCLE,
-    WIZARD_AD_HOURS,
-    WIZARD_SD_SECS,
-    WIZARD_AP_HOURS,
-    WIZARD_SUMMARY,
-    WIZARD_INLINE_BTNS,
-) = range(10, 28)
-
-WIZARD_INTRO = 29       # guided introduction before the setup wizard
-
-# ---------------------------------------------------------------------------
-# Callback-data constants (all ≤ 64 bytes)
-# ---------------------------------------------------------------------------
-CB_SCHEDULE_NEW  = "action:schedule_new"
-CB_WIZARD_CONTINUE = "wizard:continue"
-CB_REC_ONCE      = "rec:once"
-CB_REC_INTERVAL  = "rec:interval"
-CB_REC_DOW       = "rec:dow"
-CB_IU_MINUTES    = "iu:minutes"
-CB_IU_HOURS      = "iu:hours"
-CB_IU_DAYS       = "iu:days"
-CB_DOW_NEXT      = "dow:next"
-CB_TW_ON         = "tw:on"
-CB_TW_OFF        = "tw:off"
-CB_LC_NEXT       = "lc:next"
-CB_CONFIRM_POST  = "confirm:post"
-CB_IB_SKIP       = "ib:skip"
-CB_IB_ADD        = "ib:add"
-CB_IB_DONE       = "ib:done"
-CB_BACK_INLINE_BTNS = "back:inline_btns"
-CB_BACK_CHAT = "back:chat"
-CB_CONTENT_KEEP = "content:keep"
-CB_AP_FOREVER = "ap:forever"
-
-# Day-of-week toggle: "dow:0" … "dow:6"
 def _dow_cb(day: int) -> str:
     return f"dow:{day}"
 
@@ -604,7 +583,7 @@ def _content_step_keyboard(
             flow_tr(language, "keep_content"), style="success", callback_data=CB_CONTENT_KEEP
         )])
     rows.append([
-        InlineKeyboardButton(flow_tr(language, "back_content"), callback_data=CB_BACK_CHAT),
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_CHAT),
         InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
@@ -621,12 +600,12 @@ def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
     )
 
 def _inline_buttons_prompt(w: dict[str, Any], language: str = "en") -> str:
-    """Explain the optional button flow in the user's selected language."""
+    """Explain the optional button flow and show a localized remaining count."""
     count = len(w.get("inline_buttons", []))
     return (
         f"{flow_tr(language, 'buttons_intro')}\n\n"
         f"{flow_tr(language, 'button_guide')}\n\n"
-        f"*{count}/10*"
+        f"{flow_tr(language, 'buttons_count', count=count)}"
     )
 
 async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1400,18 +1379,25 @@ async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     draft.setdefault("auto_delete", False)
     draft.setdefault("self_destruct", False)
     draft.setdefault("auto_pin", False)
+
     if one_time:
-        label = flow_tr(language, "one_send")
+        prompt = (
+            f"✅ *{flow_tr(language, 'one_send')}*\n\n"
+            f"{flow_tr(language, 'advanced_intro')}"
+        )
     elif value == 0:
-        label = flow_tr(language, "unlimited")
+        prompt = (
+            f"✅ *{flow_tr(language, 'unlimited')}*\n\n"
+            f"{flow_tr(language, 'advanced_intro')}"
+        )
     else:
-        label = flow_tr(language, "sends", value=value)
+        prompt = flow_tr(language, "delivery_confirm", value=value)
     await _edit(
         query,
-        f"✅ *{flow_tr(language, 'delivery_confirm', value=label)}*\n\n{flow_tr(language, 'advanced_intro')}",
+        prompt,
         _advanced_keyboard(
-            draft["time_window_enabled"], draft["auto_delete"], draft["self_destruct"],
-            draft["auto_pin"], language
+            draft["time_window_enabled"], draft["auto_delete"],
+            draft["self_destruct"], draft["auto_pin"], language
         ),
     )
     return WIZARD_TIME_WINDOW
@@ -1579,7 +1565,7 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     language = _language(context)
-    value = _parse_auto_delete_duration(raw)
+    value = _parse_auto_delete_duration(raw, language)
     if value is None:
         await update.message.reply_text(
             flow_tr(language, "delete_invalid"),
