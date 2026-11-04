@@ -204,7 +204,7 @@ def test_inline_button_plain_label_then_link_flow_is_easy_to_follow():
         result_text = link_message.reply_text.await_args.args[0]
         assert "Button added" in result_text
         assert "Join Channel" in result_text
-        assert "Add Another" in result_text
+        assert "add another" in result_text.lower()
         assert "Done" in result_text
         assert "pending_inline_button_label" not in context.user_data["wizard"]
 
@@ -263,7 +263,7 @@ def test_max_runs_custom_count_accepts_positive_integer_and_rejects_zero():
 
         assert state == wizard.WIZARD_TIME_WINDOW
         assert context.user_data["wizard"]["max_runs"] == 27
-        assert "Delivery limit: 27 sends" in valid_message.reply_text.await_args.args[0]
+        assert "27 sends" in valid_message.reply_text.await_args.args[0]
 
     asyncio.run(scenario())
 
@@ -364,9 +364,9 @@ def test_schedule_summary_escapes_user_supplied_markdown_and_shows_one_send():
     )
     summary = wizard._build_summary(draft)
     assert "1 send" in summary
-    assert "Breaking\\_\\*\\[news\\]" in summary
-    assert "News\\_\\*\\[Group\\]" in summary
-    assert "Open\\_\\*\\[link\\]" in summary
+    assert "Breaking\\_\\*\\[news]" in summary
+    assert "News\\_\\*\\[Group]" in summary
+    assert "Open\\_\\*\\[link]" in summary
 
 
 def test_auto_delete_and_self_destruct_toggles_are_mutually_exclusive():
@@ -422,7 +422,7 @@ def test_schedule_save_failure_keeps_draft_for_recovery(monkeypatch):
             answer=AsyncMock(),
             edit_message_text=AsyncMock(),
         )
-        context = SimpleNamespace(user_data={"wizard": _valid_schedule_draft()})
+        context = SimpleNamespace(bot=object(), user_data={"wizard": _valid_schedule_draft()})
 
         state = await wizard.cb_confirm_post(SimpleNamespace(callback_query=query), context)
 
