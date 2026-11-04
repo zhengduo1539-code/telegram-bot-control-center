@@ -945,18 +945,14 @@ async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 def _inline_btns_list_text(buttons: list) -> str:
-    """Format stored button rows into readable text for summary/prompts."""
-    lines = []
+    """Render button labels and URLs safely in a Markdown message."""
+    lines: list[str] = []
     for row in buttons:
-        for btn in row:
-            lines.append(f"• {btn['text']} → {btn['url']}")
-    return "\n".join(lines) if lines else "_(none)_"
-
-
-# ---------------------------------------------------------------------------
-# Step 3 — Recurrence type
-# ---------------------------------------------------------------------------
-
+        for button in row:
+            label = escape_markdown(str(button.get("text", "")), version=1)
+            url = escape_markdown(str(button.get("url", "")), version=1)
+            lines.append(f"• {label} → {url}")
+    return "\n".join(lines) if lines else "None"
 async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Set one-time recurrence and force the matching one-send limit."""
     w = _w(context)
@@ -1655,49 +1651,86 @@ async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     _w(context)["ap_hours"] = value
     return await _show_summary_from_message(update, context)
 def _build_summary(w: dict[str, Any]) -> str:
-    rec = w.get("recurrence_type", "once")
-    if rec == "interval":
-        rec_line = f"Every `{w.get('interval_value')} {w.get('interval_unit')}`"
-    elif rec == "days_of_week":
+    """Build a safe final review from the validated draft."""
+    recurrence = w.get("recurrence_type", "once")
+    if recurrence == "interval":
+        recurrence_line = f"Every {w.get('interval_value')} {w.get('interval_unit')}"
+    elif recurrence == "days_of_week":
         days = sorted(w.get("days_of_week", set()))
-        rec_line = f"Weekly on `{', '.join(DOW_LABELS[d] for d in days)}`"
+        recurrence_line = "Weekly on " + ", ".join(DOW_LABELS[d] for d in days if d in range(7))
     else:
-        rec_line = "One-time"
+        recurrence_line = "One-time"
 
-    tw = w.get("time_window_enabled", False)
-    tw_line = f"`{w.get('tw_start')}` → `{w.get('tw_end')}`" if tw else "Disabled"
+    timezone_name = str(w.get("timezone", "UTC"))
+    try:
+        zone = pytz.timezone(timezone_name)
+    except (pytz.exceptions.UnknownTimeZoneError, TypeError):
+        zone = pytz.UTC
+        timezone_name = "UTC"
 
-    ad  = f"`{w.get('ad_duration_label', str(w.get('ad_hours')) + ' hours')}`" if w.get('auto_delete') else 'OFF'
-    sd  = f"`{w.get('sd_secs')}s`"   if w.get("self_destruct") else "OFF"
-    ap  = f"`{w.get('ap_hours')}h`"  if w.get("auto_pin")      else "OFF"
+    first_run = w.get("first_run")
+    if isinstance(first_run, datetime) and first_run.tzinfo is not None and first_run.utcoffset() is not None:
+        first_run_line = first_run.astimezone(zone).strftime("%d/%m/%Y %H:%M")
+    else:
+        first_run_line = "Not set"
 
-    max_r = w.get("max_runs")
-    max_line = f"`{max_r}` runs" if max_r else "Unlimited"
+    if w.get("time_window_enabled"):
+        window_line = f"{w.get('tw_start')} to {w.get('tw_end')} ({timezone_name})"
+    else:
+        window_line = "Off"
 
-    # Strip backtick characters before embedding in a Markdown code span;
-    # a backtick inside `…` terminates the span early and breaks the message.
-    raw_preview = (w.get("content_text") or "").replace("`", "'")[:60]
-    content_preview = f"[{w['media_type'].upper()}] {raw_preview}" if w.get("media_type") else raw_preview
+    auto_delete_line = (
+        str(w.get("ad_duration_label") or f"{w.get('ad_hours')} hours")
+        if w.get("auto_delete") else "Off"
+    )
+    self_destruct_line = (
+        f"{w.get('sd_secs')} seconds after publishing"
+        if w.get("self_destruct") else "Off"
+    )
+    if not w.get("auto_pin"):
+        auto_pin_line = "Off"
+    elif "ap_hours" not in w:
+        auto_pin_line = "Not configured"
+    elif w.get("ap_hours") is None:
+        auto_pin_line = "Keep pinned until manually unpinned"
+    else:
+        auto_pin_line = f"Unpin after {w.get('ap_hours')} hours"
 
-    first_run = w.get("first_run_raw", "—")
+    if recurrence == "once":
+        delivery_line = "1 send"
+    elif w.get("max_runs") is None:
+        delivery_line = "Unlimited"
+    else:
+        delivery_line = f"{w.get('max_runs')} sends"
+
+    raw_text = " ".join(str(w.get("content_text") or "").split())
+    preview = escape_markdown(raw_text[:100], version=1) if raw_text else ""
+    if w.get("media_type"):
+        preview = f"[{str(w['media_type']).replace('_', ' ').title()}] {preview}".strip()
+    if len(raw_text) > 100:
+        preview += "…"
+    if not preview:
+        preview = "Media post" if w.get("media_file_id") else "Not set"
+
+    title = escape_markdown(str(w.get("chat_title") or "Selected destination"), version=1)
+    chat_id = escape_markdown(str(w.get("chat_id") or "—"), version=1)
+    tz_display = escape_markdown(timezone_name, version=1)
 
     return (
-        "▰▰▰▰▰▰▰▰ 8/8\nChat › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › *Summary*\n📋 *Post Summary — Please Review*\n\n"
-        f"🗂 *Chat:* {w.get('chat_title') or ''} `{w.get('chat_id')}`\n"
-        f"📝 *Content:* `{content_preview or '—'}`\n"
-        f"🔁 *Recurrence:* {rec_line}\n"
-        f"🕐 *First Run:* `{first_run}`\n"
-        f"🌍 *Timezone:* `{w.get('timezone', 'UTC')}`\n"
-        f"🔢 *Max Runs:* {max_line}\n"
-        f"🕑 *Time Window:* {tw_line}\n"
-        f"🗑 *Auto-Delete:* {ad}\n"
-        f"💣 *Self-Destruct:* {sd}\n"
-        f"📌 *Auto-Pin:* {ap}\n"
-        f"🔘 *Inline Buttons:* {_inline_btns_list_text(w.get('inline_buttons', []))}\n\n"
-        "Tap *✅ Confirm* to schedule, *⬅️ Back* to edit, or *❌ Cancel* to abort."
+        "▰▰▰▰▰▰▰▰ 8/8\n"
+        "*Final Review — Schedule New Post*\n\n"
+        f"🗂 *Destination:* {title} ({chat_id})\n"
+        f"📝 *Content:* {preview}\n"
+        f"🔁 *Repeat:* {escape_markdown(recurrence_line, version=1)}\n"
+        f"🕐 *First Post:* {first_run_line} ({tz_display})\n"
+        f"🔢 *Delivery Limit:* {delivery_line}\n"
+        f"🕑 *Posting Window:* {escape_markdown(window_line, version=1)}\n"
+        f"🗑 *Auto-Delete:* {escape_markdown(auto_delete_line, version=1)}\n"
+        f"💣 *Self-Destruct:* {escape_markdown(self_destruct_line, version=1)}\n"
+        f"📌 *Auto-Pin:* {escape_markdown(auto_pin_line, version=1)}\n"
+        f"🔘 *Post Buttons:*\n{_inline_btns_list_text(w.get('inline_buttons', []))}\n\n"
+        "Review every detail. Nothing is scheduled until you tap Confirm."
     )
-
-
 async def _show_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
