@@ -2303,6 +2303,35 @@ for _locale, _values in _MORE_ROWS.items():
         raise RuntimeError(f"Incomplete extended Schedule wizard copy for {_locale}.")
     _MESSAGES[_locale].update(dict(zip(_MORE_KEYS, _values, strict=True)))
 
+
+_SMART_KEYS = ("smart_activity_intro",)
+_SMART_ROWS = {
+    "en": ["Recent message activity in this chat:"],
+    "my": ["ဤ Chat ၏ မကြာသေးမီက Message လှုပ်ရှားမှုများကို အခြေခံထားပါသည်။"],
+    "zh": ["根据此聊天最近的消息活动："],
+    "es": ["Según la actividad reciente de mensajes en este chat:"],
+    "hi": ["इस चैट में हाल के संदेशों की गतिविधि के आधार पर:"],
+    "ar": ["بناءً على نشاط الرسائل الأخير في هذه المحادثة:"],
+    "pt": ["Com base na atividade recente de mensagens neste chat:"],
+    "fr": ["Selon l’activité récente des messages dans cette conversation :"],
+    "ru": ["На основе недавней активности сообщений в этом чате:"],
+    "bn": ["এই চ্যাটের সাম্প্রতিক বার্তার কার্যকলাপের ভিত্তিতে:"],
+    "id": ["Berdasarkan aktivitas pesan terbaru di chat ini:"],
+    "ja": ["このチャットの最近のメッセージのアクティビティに基づいています："],
+    "ko": ["이 채팅의 최근 메시지 활동을 기반으로 합니다:"],
+    "th": ["อ้างอิงจากกิจกรรมข้อความล่าสุดในแชตนี้:"],
+    "vi": ["Dựa trên hoạt động tin nhắn gần đây trong cuộc trò chuyện này:"],
+    "tr": ["Bu sohbetteki son mesaj etkinliğine göre:"],
+    "de": ["Basierend auf der letzten Nachrichtenaktivität in diesem Chat:"],
+    "it": ["In base all'attività recente dei messaggi in questa chat:"],
+    "ur": ["اس چیٹ میں حالیہ پیغامات کی سرگرمی کی بنیاد پر:"],
+    "sw": ["Kulingana na shughuli za hivi karibuni za ujumbe kwenye mazungumzo haya:"],
+}
+if set(_SMART_ROWS) != set(LANGUAGES) or any(len(values) != len(_SMART_KEYS) for values in _SMART_ROWS.values()):
+    raise RuntimeError("Smart-time guidance must cover every supported language.")
+for _locale, _values in _SMART_ROWS.items():
+    _MESSAGES[_locale].update(dict(zip(_SMART_KEYS, _values, strict=True)))
+
 _WEEKDAY_LABELS = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
     "my": ("တနင်္လာ", "အင်္ဂါ", "ဗုဒ္ဓဟူး", "ကြာသပတေး", "သောကြာ", "စနေ", "တနင်္ဂနွေ"),
