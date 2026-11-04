@@ -2468,6 +2468,163 @@ for _locale, _values in _SUMMARY_ROWS.items():
         raise RuntimeError(f"Incomplete Schedule review summary for {_locale}.")
     _MESSAGES[_locale].update(dict(zip(_SUMMARY_KEYS, _values, strict=True)))
 
+
+_STATUS_KEYS = [
+    "already_saved",
+    "setup_inactive",
+    "saving_in_progress",
+    "cannot_identify_user",
+    "validation_incomplete"
+]
+_STATUS_ROWS = {
+    "en": [
+        "This schedule has already been saved.",
+        "This setup is no longer active. Start a new schedule to continue.",
+        "Your schedule is already being saved.",
+        "Unable to identify your Telegram account.",
+        "⚠️ *This schedule is incomplete.*\n\n{error}\n\nReview the settings and try again."
+],
+    "my": [
+        "ဤ Schedule ကို သိမ်းဆည်းပြီးဖြစ်ပါသည်။",
+        "ဤ Setup ကို ဆက်လက်အသုံးပြု၍မရတော့ပါ။ Schedule အသစ်တစ်ခု စတင်ပါ။",
+        "သင့် Schedule ကို သိမ်းဆည်းနေပါသည်။",
+        "သင့် Telegram အကောင့်ကို အတည်မပြုနိုင်ပါ။",
+        "⚠️ *ဤ Schedule တွင် အချက်အလက် မပြည့်စုံသေးပါ။*\n\n{error}\n\nSetting များကို ပြန်စစ်ပြီး ထပ်မံကြိုးစားပါ။"
+],
+    "zh": [
+        "此计划已保存。",
+        "此设置已失效。请重新创建一个计划。",
+        "正在保存您的计划。",
+        "无法识别您的 Telegram 帐户。",
+        "⚠️ *此计划尚未完成。*\n\n{error}\n\n请检查设置后重试。"
+],
+    "es": [
+        "Esta programación ya se ha guardado.",
+        "Esta configuración ya no está activa. Inicia una nueva programación para continuar.",
+        "Tu programación ya se está guardando.",
+        "No se pudo identificar tu cuenta de Telegram.",
+        "⚠️ *Esta programación está incompleta.*\n\n{error}\n\nRevisa la configuración e inténtalo de nuevo."
+],
+    "hi": [
+        "यह शेड्यूल पहले ही सेव किया जा चुका है।",
+        "यह सेटअप अब सक्रिय नहीं है। आगे बढ़ने के लिए नया शेड्यूल शुरू करें।",
+        "आपका शेड्यूल पहले से सेव हो रहा है।",
+        "आपके Telegram खाते की पहचान नहीं हो सकी।",
+        "⚠️ *यह शेड्यूल अधूरा है।*\n\n{error}\n\nसेटिंग जाँचकर फिर प्रयास करें।"
+],
+    "ar": [
+        "تم حفظ هذا الجدول بالفعل.",
+        "لم يعد هذا الإعداد نشطًا. ابدأ جدولًا جديدًا للمتابعة.",
+        "يتم حفظ جدولك بالفعل.",
+        "تعذر تحديد حساب Telegram الخاص بك.",
+        "⚠️ *هذا الجدول غير مكتمل.*\n\n{error}\n\nراجع الإعدادات وحاول مرة أخرى."
+],
+    "pt": [
+        "Este agendamento já foi salvo.",
+        "Esta configuração não está mais ativa. Inicie um novo agendamento para continuar.",
+        "Seu agendamento já está sendo salvo.",
+        "Não foi possível identificar sua conta do Telegram.",
+        "⚠️ *Este agendamento está incompleto.*\n\n{error}\n\nRevise as configurações e tente novamente."
+],
+    "fr": [
+        "Cette programmation a déjà été enregistrée.",
+        "Cette configuration n’est plus active. Commencez une nouvelle programmation pour continuer.",
+        "Votre programmation est déjà en cours d’enregistrement.",
+        "Impossible d’identifier votre compte Telegram.",
+        "⚠️ *Cette programmation est incomplète.*\n\n{error}\n\nVérifiez les paramètres et réessayez."
+],
+    "ru": [
+        "Это расписание уже сохранено.",
+        "Эта настройка больше не активна. Создайте новое расписание, чтобы продолжить.",
+        "Ваше расписание уже сохраняется.",
+        "Не удалось определить ваш аккаунт Telegram.",
+        "⚠️ *Это расписание заполнено не полностью.*\n\n{error}\n\nПроверьте настройки и попробуйте снова."
+],
+    "bn": [
+        "এই সময়সূচি ইতিমধ্যে সংরক্ষণ করা হয়েছে।",
+        "এই সেটআপটি আর সক্রিয় নেই। এগিয়ে যেতে নতুন সময়সূচি শুরু করুন।",
+        "আপনার সময়সূচি সংরক্ষণ করা হচ্ছে।",
+        "আপনার Telegram অ্যাকাউন্ট শনাক্ত করা যায়নি।",
+        "⚠️ *এই সময়সূচিটি অসম্পূর্ণ।*\n\n{error}\n\nসেটিং পরীক্ষা করে আবার চেষ্টা করুন।"
+],
+    "id": [
+        "Jadwal ini sudah disimpan.",
+        "Pengaturan ini sudah tidak aktif. Mulai jadwal baru untuk melanjutkan.",
+        "Jadwal Anda sedang disimpan.",
+        "Akun Telegram Anda tidak dapat diidentifikasi.",
+        "⚠️ *Jadwal ini belum lengkap.*\n\n{error}\n\nPeriksa pengaturan lalu coba lagi."
+],
+    "ja": [
+        "このスケジュールはすでに保存されています。",
+        "この設定は無効になりました。続行するには新しいスケジュールを開始してください。",
+        "スケジュールを保存中です。",
+        "Telegramアカウントを確認できません。",
+        "⚠️ *スケジュールが未完成です。*\n\n{error}\n\n設定を確認して再試行してください。"
+],
+    "ko": [
+        "이 일정은 이미 저장되었습니다.",
+        "이 설정은 더 이상 활성 상태가 아닙니다. 계속하려면 새 일정을 시작하세요.",
+        "일정을 저장하고 있습니다.",
+        "Telegram 계정을 확인할 수 없습니다.",
+        "⚠️ *일정 설정이 완료되지 않았습니다.*\n\n{error}\n\n설정을 확인하고 다시 시도하세요."
+],
+    "th": [
+        "บันทึกกำหนดการนี้แล้ว",
+        "การตั้งค่านี้ไม่ได้ใช้งานแล้ว โปรดเริ่มกำหนดการใหม่เพื่อดำเนินการต่อ",
+        "กำลังบันทึกกำหนดการของคุณ",
+        "ไม่สามารถระบุบัญชี Telegram ของคุณได้",
+        "⚠️ *กำหนดการนี้ยังไม่สมบูรณ์*\n\n{error}\n\nตรวจสอบการตั้งค่าแล้วลองอีกครั้ง"
+],
+    "vi": [
+        "Lịch này đã được lưu.",
+        "Thiết lập này không còn hoạt động. Hãy bắt đầu lịch mới để tiếp tục.",
+        "Lịch của bạn đang được lưu.",
+        "Không thể xác định tài khoản Telegram của bạn.",
+        "⚠️ *Lịch này chưa hoàn tất.*\n\n{error}\n\nHãy kiểm tra cài đặt và thử lại."
+],
+    "tr": [
+        "Bu program zaten kaydedildi.",
+        "Bu kurulum artık etkin değil. Devam etmek için yeni bir program başlatın.",
+        "Programınız zaten kaydediliyor.",
+        "Telegram hesabınız tanımlanamadı.",
+        "⚠️ *Bu program tamamlanmadı.*\n\n{error}\n\nAyarları kontrol edip tekrar deneyin."
+],
+    "de": [
+        "Dieser Zeitplan wurde bereits gespeichert.",
+        "Diese Einrichtung ist nicht mehr aktiv. Starte einen neuen Zeitplan, um fortzufahren.",
+        "Dein Zeitplan wird bereits gespeichert.",
+        "Dein Telegram-Konto konnte nicht erkannt werden.",
+        "⚠️ *Dieser Zeitplan ist unvollständig.*\n\n{error}\n\nÜberprüfe die Einstellungen und versuche es erneut."
+],
+    "it": [
+        "Questa programmazione è già stata salvata.",
+        "Questa configurazione non è più attiva. Avvia una nuova programmazione per continuare.",
+        "La tua programmazione è già in fase di salvataggio.",
+        "Impossibile identificare il tuo account Telegram.",
+        "⚠️ *Questa programmazione è incompleta.*\n\n{error}\n\nControlla le impostazioni e riprova."
+],
+    "ur": [
+        "یہ شیڈول پہلے ہی محفوظ ہو چکا ہے۔",
+        "یہ سیٹ اپ اب فعال نہیں رہا۔ جاری رکھنے کے لیے نیا شیڈول شروع کریں۔",
+        "آپ کا شیڈول پہلے ہی محفوظ ہو رہا ہے۔",
+        "آپ کے Telegram اکاؤنٹ کی شناخت نہیں ہو سکی۔",
+        "⚠️ *یہ شیڈول نامکمل ہے۔*\n\n{error}\n\nترتیبات کا جائزہ لے کر دوبارہ کوشش کریں۔"
+],
+    "sw": [
+        "Ratiba hii tayari imehifadhiwa.",
+        "Mipangilio hii haitumiki tena. Anza ratiba mpya ili kuendelea.",
+        "Ratiba yako tayari inahifadhiwa.",
+        "Haikuwezekana kutambua akaunti yako ya Telegram.",
+        "⚠️ *Ratiba hii haijakamilika.*\n\n{error}\n\nKagua mipangilio kisha ujaribu tena."
+],
+}
+if set(_STATUS_ROWS) != set(LANGUAGES):
+    raise RuntimeError("Schedule wizard status messages must cover every supported language.")
+for _locale, _values in _STATUS_ROWS.items():
+    if len(_values) != len(_STATUS_KEYS) or any(not value for value in _values):
+        raise RuntimeError(f"Incomplete Schedule wizard status messages for {_locale}.")
+    _MESSAGES[_locale].update(dict(zip(_STATUS_KEYS, _values, strict=True)))
+
 _WEEKDAY_LABELS = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
     "my": ("တနင်္လာ", "အင်္ဂါ", "ဗုဒ္ဓဟူး", "ကြာသပတေး", "သောကြာ", "စနေ", "တနင်္ဂနွေ"),
