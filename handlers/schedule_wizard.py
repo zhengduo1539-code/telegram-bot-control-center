@@ -64,7 +64,7 @@ def _language(context: ContextTypes.DEFAULT_TYPE) -> str:
 
 
 def _nav(context: ContextTypes.DEFAULT_TYPE, back_data: str | None = None) -> InlineKeyboardMarkup:
-    return _nav(context, back_data=back_data, language=_language(context))
+    return nav_keyboard(back_data=back_data, language=_language(context))
 
 
 def _confirm_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
@@ -372,6 +372,15 @@ def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool, language: str = "
 
 
 
+_TIME_RE = re.compile(r"^(\\d{1,2}):(\\d{2})$")
+_DT_RE = re.compile(r"^(\\d{1,2})/(\\d{1,2})/(\\d{4})\\s+(\\d{1,2}):(\\d{2})$")
+
+
+def _parse_run_time(text: str, tz: str) -> datetime | None:
+    """Parse the selected local time and return an aware UTC datetime."""
+    return parse_schedule_datetime(text, tz)
+
+
 def _parse_hhmm(text: str) -> str | None:
     """Validate and normalise 'HH:MM' string. Returns None if invalid."""
     m = _TIME_RE.match(text.strip())
@@ -583,7 +592,8 @@ async def cb_back_content(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     w = _w(context)
     w.pop("pending_inline_button_label", None)
     has_content = bool(w.get("content_text") or w.get("media_file_id"))
-    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
+    user = getattr(query, "from_user", None)
+    language = await resolve_user_language(context, user.id if user else None)
     prompt = _content_prompt_text(w, language)
     if has_content:
         prompt += "\n\n" + sw_tr(language, "saved_content_notice")
@@ -916,15 +926,6 @@ async def cb_ib_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return WIZARD_RECURRENCE
 
 
-def _inline_btns_list_text(buttons: list) -> str:
-    """Render button labels and URLs safely in a Markdown message."""
-    lines: list[str] = []
-    for row in buttons:
-        for button in row:
-            label = escape_markdown(str(button.get("text", "")), version=1)
-            url = escape_markdown(str(button.get("url", "")), version=1)
-            lines.append(f"• {label} → {url}")
-    return "\n".join(lines) if lines else "None"
 async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Set one-time recurrence and force the matching one-send limit."""
     w = _w(context)
