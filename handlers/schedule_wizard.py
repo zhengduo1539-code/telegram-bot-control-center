@@ -1838,10 +1838,81 @@ def _validate_schedule_draft(w: dict[str, Any]) -> str | None:
 
 
 
+async def _edit_confirm_result(
+    query: Any,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    keyboard: InlineKeyboardMarkup,
+    *,
+    parse_mode: str | None = None,
+) -> bool:
+    """Edit the wizard message, then fall back to a fresh chat message."""
+    try:
+        await query.edit_message_text(
+            text,
+            parse_mode=parse_mode,
+            reply_markup=keyboard,
+        )
+        return True
+    except Exception as edit_error:
+        logger.warning(
+            "Could not edit Schedule New Post confirmation message (%s); trying a new message.",
+            edit_error,
+        )
+
+    message = getattr(query, "message", None)
+    if message is not None:
+        try:
+            await message.reply_text(
+                text,
+                parse_mode=parse_mode,
+                reply_markup=keyboard,
+            )
+            return True
+        except Exception as reply_error:
+            logger.warning(
+                "Reply fallback for Schedule New Post confirmation failed (%s); trying direct send.",
+                reply_error,
+            )
+
+    chat_id = getattr(message, "chat_id", None)
+    bot = getattr(context, "bot", None)
+    if chat_id is not None and bot is not None:
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=parse_mode,
+                reply_markup=keyboard,
+            )
+            return True
+        except Exception:
+            logger.exception("Could not send a fallback Schedule New Post confirmation message.")
+    return False
+
+
 async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Revalidate the draft and destination, then save once per active wizard."""
+    """Revalidate, save once, and confirm without relying on an editable old message."""
     query = update.callback_query
-    w = _w(context)
+    message = getattr(query, "message", None)
+    message_id = getattr(message, "message_id", None)
+    completed = context.user_data.get("_completed_schedule_confirmations", {})
+    message_key = str(message_id) if message_id is not None else None
+
+    # A completed wizard can receive delayed/replayed callback updates. Never
+    # recreate its draft or attempt a second database insert for that message.
+    if message_key is not None and isinstance(completed, dict) and message_key in completed:
+        await query.answer("This schedule has already been saved.", show_alert=True)
+        return ConversationHandler.END
+
+    w = context.user_data.get("wizard")
+    if not isinstance(w, dict):
+        await query.answer(
+            "This setup is no longer active. Start a new schedule to continue.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
     if w.get("_saving"):
         await query.answer("Your schedule is already being saved.")
         return WIZARD_SUMMARY
@@ -1854,25 +1925,31 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             language = await resolve_user_language(context, user_id)
             bot_username = (await query.get_bot().get_me()).username
             groups = await list_groups_for_user(user_id) if user_id is not None else []
-            await query.edit_message_text(
-                f"⚠️ {validation_error}\n\n{tr(language, 'choose_group')}",
-                reply_markup=_chat_list_keyboard(groups, 0, bot_username, language)
+            await _edit_confirm_result(
+                query,
+                context,
+                f"⚠️ {validation_error}\\n\\n{tr(language, 'choose_group')}",
+                _chat_list_keyboard(groups, 0, bot_username, language)
                 if groups else _no_groups_keyboard(bot_username, language),
             )
             return WIZARD_CHAT_ID
         if "first posting time" in validation_error:
-            await query.edit_message_text(
-                "⚠️ The selected first-post time is no longer in the future.\n\n"
+            await _edit_confirm_result(
+                query,
+                context,
+                "⚠️ The selected first-post time is no longer in the future.\\n\\n"
                 "Enter a new 24-hour HH:MM time or an exact DD/MM/YYYY HH:MM date.",
-                reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
+                _first_run_keyboard(CB_BACK_TIMEZONE),
             )
             return WIZARD_FIRST_RUN
-        await query.edit_message_text(
-            "⚠️ *This schedule is incomplete.*\n\n"
+        await _edit_confirm_result(
+            query,
+            context,
+            "⚠️ *This schedule is incomplete.*\\n\\n"
             + escape_markdown(validation_error, version=1)
-            + "\n\nReview the settings and try again.",
+            + "\\n\\nReview the settings and try again.",
+            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
         )
         return WIZARD_SUMMARY
 
@@ -1881,22 +1958,43 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer("Unable to identify your Telegram account.", show_alert=True)
         return WIZARD_SUMMARY
 
+    # Acquire the per-user wizard lock before the first awaited operation.
+    # This closes the race where two quick callbacks both pass permission
+    # checks and insert the same schedule.
+    w["_saving"] = True
+    try:
+        await query.answer("Saving schedule…")
+    except Exception:
+        logger.debug("Could not acknowledge Schedule New Post confirmation callback.", exc_info=True)
+
     try:
         await ensure_chat_access(context.bot, w["chat_id"], user_id)
     except ChatAccessError:
-        await query.answer()
+        w.pop("_saving", None)
         bot_username = (await query.get_bot().get_me()).username
         groups = await list_groups_for_user(user_id)
-        await query.edit_message_text(
+        await _edit_confirm_result(
+            query,
+            context,
             "⚠️ Posting access to the selected destination has changed. "
             "Restore the bot's administrator/posting permissions, then select the destination again.",
-            reply_markup=_chat_list_keyboard(groups, 0, bot_username)
+            _chat_list_keyboard(groups, 0, bot_username)
             if groups else _no_groups_keyboard(bot_username),
         )
         return WIZARD_CHAT_ID
+    except Exception:
+        w.pop("_saving", None)
+        logger.exception("Could not revalidate destination access for user_id=%s", user_id)
+        await _edit_confirm_result(
+            query,
+            context,
+            "⚠️ We couldn't verify posting access right now. Your setup is still available. "
+            "Please try confirming again.",
+            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return WIZARD_SUMMARY
 
-    w["_saving"] = True
-    await query.answer("Saving schedule…")
     try:
         doc = build_scheduled_post(
             user_id=user_id,
@@ -1926,27 +2024,53 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception:
         logger.exception("Failed to save scheduled post for user_id=%s", user_id)
         w.pop("_saving", None)
-        await query.edit_message_text(
-            "⚠️ *We couldn't confirm that your schedule was saved.*\n\n"
+        await _edit_confirm_result(
+            query,
+            context,
+            "⚠️ *We couldn't confirm that your schedule was saved.*\\n\\n"
             "Your setup is still available. Before retrying, check *My Posts* in case the database save completed but the response was interrupted.",
+            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
         )
         return WIZARD_SUMMARY
 
+    # Remember the completed callback message before any more awaits. Delayed
+    # duplicate clicks are acknowledged without touching the database again.
+    if message_key is not None:
+        completed = context.user_data.setdefault("_completed_schedule_confirmations", {})
+        if not isinstance(completed, dict):
+            completed = {}
+            context.user_data["_completed_schedule_confirmations"] = completed
+        completed[message_key] = str(post_id)
+        while len(completed) > 20:
+            completed.pop(next(iter(completed)))
+
     _clear(context)
-    chat_id = query.message.chat_id
-    await chat_cleanup.cleanup(context, chat_id, keep_message_id=query.message.message_id)
-    await query.edit_message_text(
-        f"✅ *Post scheduled successfully!*\n\n"
-        f"🆔 Post ID: {post_id}\n\n"
+    chat_id = getattr(message, "chat_id", None)
+    try:
+        if chat_id is not None:
+            await chat_cleanup.cleanup(
+                context, chat_id, keep_message_id=message_id
+            )
+    except Exception:
+        # The database commit is already complete; cleanup must never suppress
+        # the success acknowledgement or make users retry and create duplicates.
+        logger.exception("Schedule %s was saved, but wizard message cleanup failed.", post_id)
+
+    await _edit_confirm_result(
+        query,
+        context,
+        f"✅ *Post scheduled successfully!*\\n\\n"
+        f"🆔 Post ID: {post_id}\\n\\n"
         "Your schedule is saved and ready. Use *My Posts* to manage it.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
+        InlineKeyboardMarkup([
             [InlineKeyboardButton("🏠 Main Menu", style="primary", callback_data=CB_MAIN_MENU)],
         ]),
+        parse_mode=ParseMode.MARKDOWN,
     )
     return ConversationHandler.END
+
+
 async def cb_back_recurrence(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
