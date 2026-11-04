@@ -721,7 +721,7 @@ async def cb_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     username = (await query.get_bot().get_me()).username
     await _answer(query)
     await _show(context, _w(context),
-        "📍 *Choose a Destination*\n\nSelect a saved group or channel. Administrator access and bot posting permissions are verified now and again before saving.",
+        f"{_t(_w(context), 'destination_title')}\n\n{_t(_w(context), 'destination_prompt')}",
         _destination_keyboard(groups, 0, username, _lang(_w(context))))
     return DESTINATION
 
@@ -733,7 +733,7 @@ async def cb_destination_page(update: Update, context: ContextTypes.DEFAULT_TYPE
     groups = await list_groups_for_user(query.from_user.id if query.from_user else None)
     username = (await query.get_bot().get_me()).username
     await _answer(query)
-    await _show(context, _w(context), "📍 *Choose a Destination*", _destination_keyboard(groups, page, username, _lang(_w(context))))
+    await _show(context, _w(context), _t(_w(context), "destination_title"), _destination_keyboard(groups, page, username, _lang(_w(context))))
     return DESTINATION
 
 
@@ -759,7 +759,7 @@ async def cb_choose_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cb_manual_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _answer(query)
-    await _show(context, _w(context), "✏️ *Enter Chat ID*\n\nSend the numeric group or channel ID, including the minus sign.\nExample: -1001234567890.", _nav(CB_DESTINATION, _lang(_w(context))))
+    await _show(context, _w(context), f"{_t(_w(context), 'enter_chat_id')}\n\n{_t(_w(context), 'enter_chat_id_prompt')}", _nav(CB_DESTINATION, _lang(_w(context))))
     return MANUAL_DESTINATION
 
 
@@ -810,7 +810,7 @@ async def cb_mode_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     w.pop("interval_value", None)
     w.pop("interval_unit", None)
     await _answer(query)
-    await _show(context, w, "🔁 *Repeat at an Interval*\n\nEnter a whole number from 1 to 525,600. You will choose minutes, hours or days next.", _nav(CB_SCHEDULE, _lang(_w(context))))
+    await _show(context, w, _flow(w, "interval_value_prompt"), _nav(CB_SCHEDULE, _lang(_w(context))))
     return INTERVAL_VALUE
 
 
@@ -858,7 +858,7 @@ async def cb_mode_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     w.pop("interval_unit", None)
     selected = w.setdefault("days_of_week", set())
     await _answer(query)
-    await _show(context, w, "📆 *Choose Publishing Days*\n\nSelect every weekday on which this post should be published.", _days_keyboard(selected, _lang(w)))
+    await _show(context, w, _flow(w, "days_prompt"), _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
 
 
@@ -872,7 +872,7 @@ async def cb_day_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     selected = w.setdefault("days_of_week", set())
     selected.symmetric_difference_update({day})
     await _answer(query, f"{DAYS[day]} updated.")
-    await _show(context, w, "📆 *Choose Publishing Days*", _days_keyboard(selected, _lang(w)))
+    await _show(context, w, _flow(w, "days_prompt"), _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
 
 
@@ -899,7 +899,7 @@ async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     raw = (query.data or "").replace(CB_TZ_PAGE, "", 1)
     page = int(raw) if raw.isdigit() else 0
     await _answer(query)
-    await _show(context, _w(context), "🌍 *Choose a Timezone*", _timezone_keyboard(page, _lang(_w(context))))
+    await _show(context, _w(context), tr(_lang(_w(context)), "timezone_prompt"), _timezone_keyboard(page, _lang(_w(context))))
     return TIMEZONE
 
 
@@ -1176,7 +1176,7 @@ async def recv_button_batch(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     buttons = w.setdefault("inline_buttons", [])
     parsed = _parse_button_batch(update.message.text or "", len(buttons))
     if parsed is None:
-        await update.message.reply_text("I couldn't add those buttons. Use one line per button: Label | URL. Labels must be 1–64 characters, links must be valid, and the total limit is 10.")
+        await update.message.reply_text(_flow(w, "button_link_invalid"))
         return BUTTON_ENTRY
     buttons.extend(parsed)
     return await _home(context, w, f"Added {len(parsed)} post button(s).")
@@ -1208,17 +1208,17 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await _answer(query, _flow(_w(context), "validation_generic"), alert=True)
         detail = "\n".join("• " + escape_markdown(error, version=1) for error in errors)
         await _show(context, w, "⚠️ *A few details need attention*\n\n" + detail + "\n\nReturn to the workspace and open the relevant section.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("Open Workspace", style="primary", callback_data=CB_HOME)],
+            [InlineKeyboardButton(_t(w, "review_open_workspace"), style="primary", callback_data=CB_HOME)],
             [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
         ]))
         return HOME
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Schedule Post", style="success", callback_data=CB_CONFIRM)],
-        [InlineKeyboardButton("✏️ Content", callback_data=CB_CONTENT), InlineKeyboardButton("📍 Destination", callback_data=CB_DESTINATION)],
-        [InlineKeyboardButton("🕒 Schedule", callback_data=CB_SCHEDULE), InlineKeyboardButton("⚙️ Rules", callback_data=CB_OPTIONS)],
-        [InlineKeyboardButton("🔘 Buttons", callback_data=CB_BUTTONS)],
-        [InlineKeyboardButton("⬅️ Workspace", callback_data=CB_HOME)],
+        [InlineKeyboardButton(_t(w, "review_confirm"), style="success", callback_data=CB_CONFIRM)],
+        [InlineKeyboardButton("✏️ " + _t(w, "section_content"), callback_data=CB_CONTENT), InlineKeyboardButton("📍 " + _t(w, "section_destination"), callback_data=CB_DESTINATION)],
+        [InlineKeyboardButton("🕒 " + _t(w, "section_schedule"), callback_data=CB_SCHEDULE), InlineKeyboardButton("⚙️ " + _t(w, "section_rules"), callback_data=CB_OPTIONS)],
+        [InlineKeyboardButton("🔘 " + _t(w, "section_buttons"), callback_data=CB_BUTTONS)],
+        [InlineKeyboardButton("⬅️ " + _t(w, "review_open_workspace"), callback_data=CB_HOME)],
         [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
     ])
     await _show(context, w, _preview_text(w), keyboard)
@@ -1261,7 +1261,7 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w.pop("_saving", None)
         await _show(context, w, f"⚠️ {escape_markdown(str(exc), version=1)}\n\nChoose another destination or restore the required permissions.", InlineKeyboardMarkup([
             [InlineKeyboardButton("Choose Destination", style="primary", callback_data=CB_DESTINATION)],
-            [InlineKeyboardButton("⬅️ Workspace", callback_data=CB_HOME)],
+            [InlineKeyboardButton("⬅️ " + _t(w, "review_open_workspace"), callback_data=CB_HOME)],
             [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
         ]))
         return DESTINATION
@@ -1301,7 +1301,7 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w["_save_uncertain"] = True
         logger.exception("Could not verify scheduled-post save for user_id=%s", user_id)
         await _show(context, w, "⚠️ *The save result could not be verified.*\n\nTo avoid a duplicate, this setup is locked from retrying. Open *My Posts* and check whether the post appears before creating another one.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Main Menu", style="primary", callback_data=CB_MENU)],
+            [InlineKeyboardButton("📋 " + tr(_lang(w), "menu_title"), style="primary", callback_data=CB_MENU)],
         ]))
         return REVIEW
 
@@ -1327,7 +1327,7 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Post ID: {escape_markdown(str(post_id), version=1)}\n\n"
         "Your post is now available in *My Posts*, where you can pause, resume or delete it."
     )
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 Main Menu", style="primary", callback_data=CB_MENU)]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 " + tr(_lang(w), "menu_title"), style="primary", callback_data=CB_MENU)]])
     screen = {"ui_chat_id": chat_id, "ui_message_id": ui_message_id}
     try:
         await _show(context, screen, success, keyboard)
