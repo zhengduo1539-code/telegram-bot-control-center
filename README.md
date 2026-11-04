@@ -4,7 +4,8 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 
 ## Main features
 
-- **Schedule New Post:** text, photos, videos, documents, audio, animations and voice messages.
+- **Schedule Post Composer:** configure Content, Destination and Publish Schedule in any order from one workspace. Delivery Rules and Post Buttons are optional sections; review and confirm only when required settings are ready.
+- **Supported content:** text, photos, videos, documents, audio, animations and voice messages.
 - **Recurring schedules:** repeat every N minutes, hours or days, or on selected weekdays.
 - **Timezone support:** choose an IANA timezone; execution timestamps are persisted in UTC.
 - **Post URL buttons:** add optional clickable links below scheduled posts.
@@ -18,7 +19,8 @@ A Telegram scheduling bot for group and channel publishers. It supports one-time
 2. Give it permission to send messages. For channels, make it an administrator with **Post Messages** permission.
 3. Open a private chat with the bot and send /start.
 4. Choose **Schedule New Post**.
-5. Follow the guided steps, review the summary and confirm.
+5. Configure **Content**, **Destination** and **Publish Schedule** in any order. Add optional delivery rules or post buttons when needed.
+6. Open **Preview**, check the details and confirm the schedule.
 
 Only a group administrator or channel owner can create schedules for a target chat. The bot re-checks target permissions before saving.
 
@@ -30,7 +32,7 @@ English, Myanmar (မြန်မာ), Simplified Chinese, Spanish, Hindi, Arabi
 
 The selection is stored per Telegram user in MongoDB and restored on later visits. The language picker uses Telegram's native, two-column, one-time Reply Keyboard. All private-chat navigation—including **Add to My Group**, **Share Bot**, Schedule New Post, My Posts and Owner Panel—is presented as Reply Keyboard buttons. URL actions return a clickable link in the chat because Telegram Reply Keyboard buttons cannot open URLs directly. When a workflow edits an existing message, a minimal invisible keyboard anchor keeps the Reply Keyboard synchronized with the active step.
 
-Localized screens include the main menu, group-to-private onboarding, Schedule New Post setup, recurrence/timezone selection and My Posts. Any UI message without a locale entry falls back to English, so partially translated or newly added workflow prompts remain usable.
+The main menu, language selection, group-to-private onboarding and My Posts use the centralized locale catalog. The Schedule Post Composer uses a consistent workspace layout and clear English operational prompts; any missing locale entry falls back to English.
 
 ## Project structure
 
@@ -39,7 +41,7 @@ Localized screens include the main menu, group-to-private onboarding, Schedule N
 - database.py: MongoDB persistence, indexes and scheduled-post retention.
 - scheduler.py: one-time and recurring post execution, plus message lifecycle actions.
 - schedule_utils.py: pure timezone-aware schedule and recurrence calculations.
-- handlers/: guided user flows, owner tools and permission checks.
+- handlers/: the non-linear scheduled-post composer, owner tools and permission checks.
 - keep_alive.py: Render liveness/readiness endpoints.
 - tests/: automated unit tests.
 
