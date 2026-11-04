@@ -50,10 +50,25 @@ from handlers.base import (
 )
 from handlers.language import resolve_user_language
 from localization import translate as tr
-from schedule_wizard_localization import translate_schedule_wizard as sw_tr
+from schedule_wizard_localization import (
+    translate_schedule_wizard as sw_tr,
+    schedule_wizard_weekdays,
+)
 from schedule_utils import parse_schedule_datetime
 
 logger = logging.getLogger(__name__)
+
+
+def _language(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("language", "en")
+
+
+def _nav(context: ContextTypes.DEFAULT_TYPE, back_data: str | None = None) -> InlineKeyboardMarkup:
+    return _nav(context, back_data=back_data, language=_language(context))
+
+
+def _confirm_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    return confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE, language=_language(context))
 
 
 def _parse_auto_delete_duration(raw: str) -> float | None:
@@ -196,41 +211,24 @@ def _clear(context: ContextTypes.DEFAULT_TYPE) -> None:
 # Keyboards
 # ---------------------------------------------------------------------------
 
-def _chat_list_keyboard(
-    groups: list[dict],
-    page: int,
-    bot_username: str,
-    language: str = "en",
-) -> InlineKeyboardMarkup:
-    """
-    Build the inline keyboard for the group/channel picker.
-    Each group gets its own button row.  Navigation + manual-entry rows follow.
-    """
+def _chat_list_keyboard(groups: list[dict], page: int, bot_username: str, language: str = "en") -> InlineKeyboardMarkup:
+    """Build a localized, paginated group/channel picker."""
     rows: list[list[InlineKeyboardButton]] = []
-    total   = len(groups)
-    start   = page * _CHAT_PAGE_SIZE
-    end     = min(start + _CHAT_PAGE_SIZE, total)
-    page_groups = groups[start:end]
-
+    total = len(groups)
+    start = page * _CHAT_PAGE_SIZE
+    end = min(start + _CHAT_PAGE_SIZE, total)
     type_icon = {"channel": "📢", "supergroup": "👥", "group": "👥"}
-    for g in page_groups:
-        icon  = type_icon.get(g.get("chat_type", ""), "💬")
-        title = (g.get("title") or f"Chat {g['chat_id']}")[:35]
-        rows.append([InlineKeyboardButton(
-            f"{icon} {title}",
-            style="primary",
-            callback_data=f"{CB_CHAT_PICK_PREFIX}{g['chat_id']}",
-        )])
-
-    # Pagination
+    for group in groups[start:end]:
+        icon = type_icon.get(group.get("chat_type", ""), "💬")
+        title = (group.get("title") or f"Chat {group['chat_id']}")[:35]
+        rows.append([InlineKeyboardButton(f"{icon} {title}", style="primary", callback_data=f"{CB_CHAT_PICK_PREFIX}{group['chat_id']}")])
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ Prev", style="primary", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page - 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "previous"), style="primary", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page - 1}"))
     if end < total:
-        nav.append(InlineKeyboardButton("Next ➡️", style="primary", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page + 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "next"), style="primary", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page + 1}"))
     if nav:
         rows.append(nav)
-
     rows.append([InlineKeyboardButton(tr(language, "manual_chat_id"), style="success", callback_data=CB_MANUAL_CHAT_ID)])
     rows.append([InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
@@ -238,25 +236,22 @@ def _chat_list_keyboard(
 
 def _no_groups_keyboard(bot_username: str, language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            "➕ Add Bot to a Group",
-            style="primary",
-            url=f"https://t.me/{bot_username}?startgroup=start",
-        )],
+        [InlineKeyboardButton(tr(language, "add_group"), style="primary", url=f"https://t.me/{bot_username}?startgroup=start")],
         [InlineKeyboardButton(tr(language, "manual_chat_id"), style="success", callback_data=CB_MANUAL_CHAT_ID)],
         [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
-def _first_run_keyboard(back_data: str) -> InlineKeyboardMarkup:
-    """First-run step keyboard — includes a 💡 Smart Suggest button."""
+def _first_run_keyboard(back_data: str, language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💡 Suggest Best Time", style="primary", callback_data=CB_SMART_SUGGEST)],
+        [InlineKeyboardButton(sw_tr(language, "suggest_time_button"), style="primary", callback_data=CB_SMART_SUGGEST)],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=back_data),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=back_data),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
+
+
 
 
 def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
@@ -265,52 +260,43 @@ def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(tr(language, "recurrence_days"), style="primary", callback_data=CB_REC_DOW)],
         [InlineKeyboardButton(tr(language, "recurrence_once"), style="primary", callback_data=CB_REC_ONCE)],
         [
-            InlineKeyboardButton("⬅️ Back to Post Buttons", callback_data=CB_BACK_INLINE_BTNS),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(sw_tr(language, "back_post_buttons_button"), callback_data=CB_BACK_INLINE_BTNS),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
-def _interval_unit_keyboard() -> InlineKeyboardMarkup:
+
+
+def _interval_unit_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⏱ Minutes", style="primary", callback_data=CB_IU_MINUTES),
-            InlineKeyboardButton("🕐 Hours",   style="primary", callback_data=CB_IU_HOURS),
-            InlineKeyboardButton("📅 Days",    style="primary", callback_data=CB_IU_DAYS),
+            InlineKeyboardButton(sw_tr(language, "unit_minutes_button"), style="primary", callback_data=CB_IU_MINUTES),
+            InlineKeyboardButton(sw_tr(language, "unit_hours_button"), style="primary", callback_data=CB_IU_HOURS),
+            InlineKeyboardButton(sw_tr(language, "unit_days_button"), style="primary", callback_data=CB_IU_DAYS),
         ],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_INTERVAL_V),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_INTERVAL_V),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
 
-def _dow_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
-    """Build a 7-button day-of-week toggle keyboard."""
-    rows: list[list[InlineKeyboardButton]] = []
-    # Two rows: Mon-Thu, Fri-Sun
-    days_row1 = [
-        InlineKeyboardButton(
-            f"{'✅' if d in selected else '☐'} {DOW_LABELS[d]}",
-            style="success" if d in selected else "primary",
-            callback_data=_dow_cb(d),
-        )
-        for d in range(4)
-    ]
-    days_row2 = [
-        InlineKeyboardButton(
-            f"{'✅' if d in selected else '☐'} {DOW_LABELS[d]}",
-            style="success" if d in selected else "primary",
-            callback_data=_dow_cb(d),
-        )
-        for d in range(4, 7)
-    ]
-    rows.append(days_row1)
-    rows.append(days_row2)
+def _dow_keyboard(selected: set[int], language: str = "en") -> InlineKeyboardMarkup:
+    weekdays = schedule_wizard_weekdays(language)
+    rows = []
+    for chunk in (range(4), range(4, 7)):
+        rows.append([
+            InlineKeyboardButton(f"{'✅' if day in selected else '☐'} {weekdays[day]}",
+                style="success" if day in selected else "primary", callback_data=_dow_cb(day))
+            for day in chunk
+        ])
     rows.append([
-        InlineKeyboardButton("⬅️ Back",    callback_data=CB_BACK_RECURRENCE),
-        InlineKeyboardButton("➡️ Next",    style="success", callback_data=CB_DOW_NEXT),
-        InlineKeyboardButton("❌ Cancel",  style="danger", callback_data=CB_CANCEL),
+        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_RECURRENCE),
+        InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_DOW_NEXT),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
+
+
 
 
 def _timezone_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMarkup:
@@ -335,66 +321,55 @@ def _timezone_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMar
     return InlineKeyboardMarkup(rows)
 
 
-def _time_window_keyboard(enabled: bool) -> InlineKeyboardMarkup:
-    on_icon  = "🟢 ON ✅" if enabled else "🔘 ON"
-    off_icon = "🔴 OFF ✅" if not enabled else "🔘 OFF"
+def _time_window_keyboard(enabled: bool, language: str = "en") -> InlineKeyboardMarkup:
+    label = sw_tr(language, "posting_window_toggle")
+    on_label = f"{label}: {sw_tr(language, 'on_status' if enabled else 'off_status')}"
+    off_label = f"{label}: {sw_tr(language, 'off_status' if enabled else 'on_status')}"
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(on_icon, style="success" if enabled else "primary", callback_data=CB_TW_ON),
-            InlineKeyboardButton(off_icon, style="success" if not enabled else "primary", callback_data=CB_TW_OFF),
+            InlineKeyboardButton(on_label, style="success" if enabled else "primary", callback_data=CB_TW_ON),
+            InlineKeyboardButton(off_label, style="success" if not enabled else "primary", callback_data=CB_TW_OFF),
         ],
         [
-            InlineKeyboardButton("⬅️ Back",    callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton("➡️ Next",    style="success", callback_data=CB_LC_NEXT),
-            InlineKeyboardButton("❌ Cancel",  style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MAX_RUNS),
+            InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
 
-def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
-    def _flag(v: bool) -> str:
-        return "✅" if v else "☐"
+def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool, language: str = "en") -> InlineKeyboardMarkup:
+    def flag(value: bool) -> str:
+        return "✅" if value else "☐"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after X hours", style="success" if ad else "primary", callback_data=CB_LC_AD)],
-        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after X seconds", style="success" if sd else "primary", callback_data=CB_LC_SD)],
-        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)", style="success" if ap else "primary", callback_data=CB_LC_AP)],
+        [InlineKeyboardButton(f"{flag(ad)} {sw_tr(language, 'auto_delete_toggle')}", style="success" if ad else "primary", callback_data=CB_LC_AD)],
+        [InlineKeyboardButton(f"{flag(sd)} {sw_tr(language, 'self_destruct_toggle')}", style="success" if sd else "primary", callback_data=CB_LC_SD)],
+        [InlineKeyboardButton(f"{flag(ap)} {sw_tr(language, 'auto_pin_toggle')}", style="success" if ap else "primary", callback_data=CB_LC_AP)],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_TW),
-            InlineKeyboardButton("➡️ Next",   style="success", callback_data=CB_LC_NEXT),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_TW),
+            InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
 
-def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
-    """Optional controls for when posts may publish and what happens afterward."""
-    tw_btn = InlineKeyboardButton(
-        "🟢 Posting Window: ON" if tw else "🔘 Posting Window: OFF",
-        style="success" if tw else "primary",
-        callback_data=CB_TW_OFF if tw else CB_TW_ON,
-    )
-
-    def _flag(enabled: bool) -> str:
-        return "✅" if enabled else "☐"
-
+def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool, language: str = "en") -> InlineKeyboardMarkup:
+    label = f"{sw_tr(language, 'posting_window_toggle')}: {sw_tr(language, 'on_status' if tw else 'off_status')}"
+    def flag(value: bool) -> str:
+        return "✅" if value else "☐"
     return InlineKeyboardMarkup([
-        [tw_btn],
-        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after a duration", style="success" if ad else "primary", callback_data=CB_LC_AD)],
-        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after seconds", style="success" if sd else "primary", callback_data=CB_LC_SD)],
-        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin after publishing", style="success" if ap else "primary", callback_data=CB_LC_AP)],
+        [InlineKeyboardButton(label, style="success" if tw else "primary", callback_data=CB_TW_OFF if tw else CB_TW_ON)],
+        [InlineKeyboardButton(f"{flag(ad)} {sw_tr(language, 'auto_delete_toggle')}", style="success" if ad else "primary", callback_data=CB_LC_AD)],
+        [InlineKeyboardButton(f"{flag(sd)} {sw_tr(language, 'self_destruct_toggle')}", style="success" if sd else "primary", callback_data=CB_LC_SD)],
+        [InlineKeyboardButton(f"{flag(ap)} {sw_tr(language, 'auto_pin_toggle')}", style="success" if ap else "primary", callback_data=CB_LC_AP)],
         [
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton("➡️ Review Options", style="success", callback_data=CB_LC_NEXT),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MAX_RUNS),
+            InlineKeyboardButton(sw_tr(language, "review_options_button"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
-_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
-_DT_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})$")
 
 
-def _parse_run_time(text: str, tz: str) -> datetime | None:
-    """Parse the selected local time and return an aware UTC datetime."""
-    return parse_schedule_datetime(text, tz)
 
 
 def _parse_hhmm(text: str) -> str | None:
@@ -550,16 +525,17 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         reply_markup=_content_step_keyboard(bool(w.get("content_text") or w.get("media_file_id"))),
     )
     return WIZARD_CONTENT
-def _content_step_keyboard(has_content: bool = False) -> InlineKeyboardMarkup:
-    """Content actions with an explicit route back to the destination."""
+def _content_step_keyboard(has_content: bool = False, language: str = "en") -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if has_content:
-        rows.append([InlineKeyboardButton("✅ Keep Current Content", style="success", callback_data=CB_CONTENT_KEEP)])
+        rows.append([InlineKeyboardButton(sw_tr(language, "keep_content_button"), style="success", callback_data=CB_CONTENT_KEEP)])
     rows.append([
-        InlineKeyboardButton("⬅️ Back to Destination", callback_data=CB_BACK_CHAT),
-        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+        InlineKeyboardButton(sw_tr(language, "back_destination_button"), callback_data=CB_BACK_CHAT),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
+
+
 
 
 def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
@@ -568,23 +544,17 @@ def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
     return (
         "▰▱▱▱▱▱▱▱ 2/8\n"
         f"{tr(language, 'schedule_content_title')}\n\n"
-        f"📍 *Destination:* {title}\n\n"
+        f"📍 *{sw_tr(language, 'destination_label')}:* {title}\n\n"
         f"{tr(language, 'schedule_content_prompt')}\n\n"
-        "Each Telegram message becomes one scheduled post. Send media with a caption to include text. Albums and forwarded message bundles are not combined."
+        sw_tr(language, "content_delivery_hint")
     )
-def _inline_buttons_prompt(w: dict[str, Any]) -> str:
+def _inline_buttons_prompt(w: dict[str, Any], language: str = "en") -> str:
     count = len(w.get("inline_buttons", []))
-    media = w.get("media_type")
-    kind = "Media with caption" if media and w.get("content_text") else ("Media" if media else "Text")
-    return (
-        f"✅ Content saved ({kind}).\n\n"
-        "🔘 *Optional — Post Buttons*\n\n"
-        "Add clickable buttons below your post. Each button needs a short label and a destination link.\n\n"
-        "1. Tap Add Button.\n"
-        "2. Send the label people will see, such as Visit Website.\n"
-        "3. Send a full URL, such as https://example.com, or a Telegram @username.\n\n"
-        f"Added: *{count}/10*. Choose Skip or Done when you are ready."
-    )
+    return sw_tr(language, "buttons_intro", count=count)
+
+
+
+
 async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return to destination selection without discarding saved draft data."""
     query = update.callback_query
@@ -676,7 +646,7 @@ async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "Example: -1001234567890\n\n"
         "To find an ID, forward a message from that chat to a trusted ID helper.",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+        reply_markup=_nav(context, back_data=CB_BACK_CHAT),
     )
     return WIZARD_CHAT_ID
 async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -686,13 +656,13 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except ValueError:
         await update.message.reply_text(
             "⚠️ Enter a valid Telegram group or channel ID, for example -1001234567890.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+            reply_markup=_nav(context, back_data=CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
     if chat_id >= 0:
         await update.message.reply_text(
             "⚠️ Group and channel IDs must be negative. Check the ID and try again.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+            reply_markup=_nav(context, back_data=CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
     try:
@@ -700,7 +670,7 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except ChatAccessError as exc:
         await update.message.reply_text(
             f"⚠️ {exc}",
-            reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
+            reply_markup=_nav(context, back_data=CB_BACK_CHAT),
         )
         return WIZARD_CHAT_ID
     w = _w(context)
@@ -749,26 +719,29 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         reply_markup=_inline_btns_keyboard(len(w["inline_buttons"])),
     )
     return WIZARD_INLINE_BTNS
-def _inline_btns_keyboard(count: int) -> InlineKeyboardMarkup:
-    """Optional post-button controls with a direct route back to saved content."""
+def _inline_btns_keyboard(count: int, language: str = "en") -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if count == 0:
         rows.append([
-            InlineKeyboardButton("➕ Add Button", style="primary", callback_data=CB_IB_ADD),
-            InlineKeyboardButton("⏭ Skip", style="primary", callback_data=CB_IB_SKIP),
+            InlineKeyboardButton(sw_tr(language, "add_button"), style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton(sw_tr(language, "skip_button"), style="primary", callback_data=CB_IB_SKIP),
         ])
     elif count >= 10:
-        rows.append([InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE)])
+        rows.append([InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=CB_IB_DONE)])
     else:
         rows.append([
-            InlineKeyboardButton("➕ Add Another", style="primary", callback_data=CB_IB_ADD),
-            InlineKeyboardButton("✅ Done", style="success", callback_data=CB_IB_DONE),
+            InlineKeyboardButton(sw_tr(language, "add_button"), style="primary", callback_data=CB_IB_ADD),
+            InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=CB_IB_DONE),
         ])
     rows.append([
-        InlineKeyboardButton("⬅️ Back to Content", callback_data=CB_BACK_CONTENT),
-        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+        InlineKeyboardButton(sw_tr(language, "back_content_button"), callback_data=CB_BACK_CONTENT),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
+
+
+
+
 async def cb_ib_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User skips inline buttons — go straight to recurrence."""
     query = update.callback_query
@@ -795,7 +768,7 @@ async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "📝 *Step 1 of 2 — Button label*\n"
         "Send the short text people will see on the button, such as Visit Website or Join Channel.\n\n"
         "Next, the bot will ask for its destination link.",
-        nav_keyboard(back_data=CB_BACK_CONTENT),
+        _nav(context, back_data=CB_BACK_CONTENT),
     )
     return WIZARD_INLINE_BTNS
 async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -810,13 +783,13 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             if not text or "\n" in text or "\r" in text:
                 await update.message.reply_text(
                     "Send one short button label at a time, such as Join Channel.",
-                    reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                    reply_markup=_nav(context, back_data=CB_BACK_CONTENT),
                 )
                 return WIZARD_INLINE_BTNS
             if len(text) > 64:
                 await update.message.reply_text(
                     "Button labels must be 64 characters or fewer. Please send a shorter label.",
-                    reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                    reply_markup=_nav(context, back_data=CB_BACK_CONTENT),
                 )
                 return WIZARD_INLINE_BTNS
             w["pending_inline_button_label"] = text
@@ -826,7 +799,7 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 "Send a full website URL or a Telegram @username.\n\n"
                 "Examples:\n• https://example.com\n• https://t.me/mychannel\n• @mychannel",
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                reply_markup=_nav(context, back_data=CB_BACK_CONTENT),
             )
             return WIZARD_INLINE_BTNS
 
@@ -839,7 +812,7 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not url or " " in url or not url.startswith(("http://", "https://", "tg://")):
             await update.message.reply_text(
                 "⚠️ I couldn't recognize that link. Send a full URL or a Telegram @username, then try again. Your label is saved.",
-                reply_markup=nav_keyboard(back_data=CB_BACK_CONTENT),
+                reply_markup=_nav(context, back_data=CB_BACK_CONTENT),
             )
             return WIZARD_INLINE_BTNS
         if len(w["inline_buttons"]) >= 10:
@@ -963,7 +936,7 @@ async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"{tr(language, 'recurrence_interval')}\n\n"
         "Enter a whole number from 1 to 525,600. You will choose minutes, hours, or days next.\n"
         "Examples: 30 minutes, 6 hours, or 1 day.",
-        nav_keyboard(back_data=CB_BACK_RECURRENCE),
+        _nav(context, back_data=CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
 async def cb_rec_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -988,7 +961,7 @@ async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not raw.isdecimal() or not (1 <= int(raw) <= 525600):
         await update.message.reply_text(
             "⚠️ Enter a whole number from 1 to 525,600. For example, 6.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_RECURRENCE),
+            reply_markup=_nav(context, back_data=CB_BACK_RECURRENCE),
         )
         return WIZARD_INTERVAL_VALUE
     w = _w(context)
@@ -1005,7 +978,7 @@ async def cb_back_interval_value(update: Update, context: ContextTypes.DEFAULT_T
     await _edit(query,
         "⏱ *Step 3a — Interval Value*\n\n"
         "Type a positive whole number (e.g. `6`):",
-        nav_keyboard(back_data=CB_BACK_RECURRENCE),
+        _nav(context, back_data=CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
 
@@ -1287,31 +1260,34 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # Step 6 — Max runs
 # ---------------------------------------------------------------------------
 
-def _max_runs_keyboard(one_time: bool = False) -> InlineKeyboardMarkup:
-    """Only show delivery-limit choices that apply to this recurrence."""
+def _max_runs_keyboard(one_time: bool = False, language: str = "en") -> InlineKeyboardMarkup:
     if one_time:
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ One-Time Post — 1 Send", style="success", callback_data=f"{CB_MR_PRESET}1")],
+            [InlineKeyboardButton(sw_tr(language, "one_time_button"), style="success", callback_data=f"{CB_MR_PRESET}1")],
             [
-                InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN),
-                InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+                InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_FIRST_RUN),
+                InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
             ],
         ])
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("1× One time", style="primary", callback_data=f"{CB_MR_PRESET}1"),
+            InlineKeyboardButton(sw_tr(language, "one_time_button"), style="primary", callback_data=f"{CB_MR_PRESET}1"),
             InlineKeyboardButton("5×", style="primary", callback_data=f"{CB_MR_PRESET}5"),
             InlineKeyboardButton("10×", style="primary", callback_data=f"{CB_MR_PRESET}10"),
         ],
         [
             InlineKeyboardButton("30×", style="primary", callback_data=f"{CB_MR_PRESET}30"),
-            InlineKeyboardButton("∞ Unlimited", style="primary", callback_data=f"{CB_MR_PRESET}0"),
+            InlineKeyboardButton(sw_tr(language, "unlimited_button"), style="primary", callback_data=f"{CB_MR_PRESET}0"),
         ],
         [
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_FIRST_RUN),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
+
+
+
+
 async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Accept bounded positive custom counts for recurring schedules only."""
     text = (update.message.text or "").strip()
@@ -1408,7 +1384,7 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             "Enter the earliest local time the bot may publish each day.\n"
             "Use 24-hour HH:MM format, for example 08:00.\n"
             "Posts scheduled outside this window will wait until it opens.",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_TW_START
 
@@ -1420,7 +1396,7 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             "🗑 *Auto-Delete*\n\n"
             "How long after each post is published should the bot delete it?\n"
             "Enter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     if w.get("self_destruct"):
@@ -1429,7 +1405,7 @@ async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             "💣 *Self-Destruct*\n\n"
             "How many seconds after publishing should the bot delete each post?\n"
             "Enter a positive whole number, such as 60.",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
@@ -1447,7 +1423,7 @@ async def recv_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if parsed is None:
         await update.message.reply_text(
             "⚠️ Enter a valid 24-hour time in HH:MM format, such as 08:00.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_TW_START
     _w(context)["tw_start"] = parsed
@@ -1456,7 +1432,7 @@ async def recv_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         "🕐 *Posting Window — End Time*\n\n"
         "Enter the latest local time the bot may publish, using HH:MM (for example, 22:00).\n"
         "The window may cross midnight, such as 22:00 to 06:00.",
-        reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
+        reply_markup=_nav(context, back_data=CB_BACK_TW_START),
     )
     return WIZARD_TW_END
 async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1466,7 +1442,7 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if parsed is None:
         await update.message.reply_text(
             "⚠️ Enter a valid 24-hour time in HH:MM format, such as 22:00.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
+            reply_markup=_nav(context, back_data=CB_BACK_TW_START),
         )
         return WIZARD_TW_END
 
@@ -1474,7 +1450,7 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if not start or parsed == start:
         await update.message.reply_text(
             "⚠️ Start and end times must be valid and different. For an overnight window, choose an earlier end time.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
+            reply_markup=_nav(context, back_data=CB_BACK_TW_START),
         )
         return WIZARD_TW_END
 
@@ -1483,13 +1459,13 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w.get("auto_delete"):
         await update.message.reply_text(
             prefix + "🗑 *Auto-Delete*\nEnter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     if w.get("self_destruct"):
         await update.message.reply_text(
             prefix + "💣 *Self-Destruct*\nEnter the number of seconds after publishing before each post is deleted.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
@@ -1549,21 +1525,21 @@ async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await _edit(query,
             "🗑 *Auto-Delete — After how many hours?*\n\n"
             "Type a positive number (decimals OK, e.g. `24` or `0.5`):",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     if w.get("self_destruct"):
         await _edit(query,
             "💣 *Self-Destruct — After how many seconds?*\n\n"
             "Type a positive integer (e.g. `60`):",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
         await _edit(query,
             "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
             "Type a positive number (e.g. `12`):",
-            nav_keyboard(back_data=CB_BACK_TW),
+            _nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AP_HOURS
     return await _show_summary(update, context)
@@ -1579,7 +1555,7 @@ async def recv_ad_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if val is None:
         await update.message.reply_text(
             "⚠️ Enter a valid duration such as 5 minutes or 2 hours. Minimum: 5 minutes; maximum: 365 days.",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     w = _w(context)
@@ -1598,7 +1574,7 @@ async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if not raw.isdecimal() or not (1 <= int(raw) <= 31536000):
         await update.message.reply_text(
             "⚠️ Enter a whole number from 1 to 31,536,000 seconds (for example, 60).",
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            reply_markup=_nav(context, back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     w = _w(context)
@@ -1611,15 +1587,16 @@ async def recv_sd_secs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
-def _auto_pin_keyboard() -> InlineKeyboardMarkup:
-    """Choose a timed unpin or leave published posts pinned."""
+def _auto_pin_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📌 Keep Pinned (No Auto-Unpin)", style="primary", callback_data=CB_AP_FOREVER)],
+        [InlineKeyboardButton(sw_tr(language, "keep_pinned_button"), style="primary", callback_data=CB_AP_FOREVER)],
         [
-            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_LIFECYCLE),
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_LIFECYCLE),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
+
+
 
 
 async def cb_ap_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1728,7 +1705,7 @@ async def _show_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await query.edit_message_text(
         _build_summary(_w(context)),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+        reply_markup=_confirm_keyboard(context),
     )
     return WIZARD_SUMMARY
 
@@ -1737,7 +1714,7 @@ async def _show_summary_from_message(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(
         _build_summary(_w(context)),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+        reply_markup=_confirm_keyboard(context),
     )
     return WIZARD_SUMMARY
 
@@ -1948,7 +1925,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "⚠️ *This schedule is incomplete.*\\n\\n"
             + escape_markdown(validation_error, version=1)
             + "\\n\\nReview the settings and try again.",
-            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+            _confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
         return WIZARD_SUMMARY
@@ -1990,7 +1967,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             context,
             "⚠️ We couldn't verify posting access right now. Your setup is still available. "
             "Please try confirming again.",
-            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+            _confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
         return WIZARD_SUMMARY
@@ -2029,7 +2006,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             context,
             "⚠️ *We couldn't confirm that your schedule was saved.*\\n\\n"
             "Your setup is still available. Before retrying, check *My Posts* in case the database save completed but the response was interrupted.",
-            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+            _confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
         return WIZARD_SUMMARY
@@ -2140,7 +2117,7 @@ async def cb_back_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await _edit(query,
         "🕐 *Step 7a — Window Start Time*\n\n"
         "Type the earliest time posts should fire (e.g. `08:00`):",
-        nav_keyboard(back_data=CB_BACK_TW),
+        _nav(context, back_data=CB_BACK_TW),
     )
     return WIZARD_TW_START
 
