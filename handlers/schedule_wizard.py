@@ -347,7 +347,7 @@ def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool, language: str = "en") -> I
         [InlineKeyboardButton(f"{flag(ap)} {sw_tr(language, 'auto_pin_toggle')}", style="success" if ap else "primary", callback_data=CB_LC_AP)],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_TW),
-            InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(sw_tr(language, "next_step_button"), style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
