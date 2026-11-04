@@ -2838,3 +2838,133 @@ for _locale, _values in _EXTRA_BUTTON_LABELS.items():
     if len(_values) != len(_EXTRA_BUTTON_KEYS) or any(not _value for _value in _values):
         raise RuntimeError(f"Incomplete Schedule Post action labels for {_locale}.")
     _MESSAGES[_locale].update(dict(zip(_EXTRA_BUTTON_KEYS, _values, strict=True)))
+
+_VALIDATION_KEYS = ("validation_destination", "validation_content", "validation_recurrence", "validation_delete_conflict")
+_VALIDATION_ROWS = {
+    "en": [
+        "Choose a valid group or channel destination.",
+        "Add the post text or media before continuing.",
+        "Choose a valid repeat schedule.",
+        "Choose either Auto-Delete or Self-Destruct, not both."
+],
+    "my": [
+        "မှန်ကန်သော Group သို့မဟုတ် Channel ကို ပို့မည့်နေရာအဖြစ် ရွေးချယ်ပါ။",
+        "ဆက်လက်မလုပ်ဆောင်မီ Post စာသား သို့မဟုတ် Media ထည့်ပါ။",
+        "မှန်ကန်သော ထပ်ခါတလဲလဲ ပို့မည့်ပုံစံကို ရွေးချယ်ပါ။",
+        "Auto-Delete နှင့် Self-Destruct တို့အနက် တစ်ခုကိုသာ ဖွင့်နိုင်ပါသည်။ နှစ်ခုလုံးကို တစ်ပြိုင်နက် မဖွင့်ပါနှင့်။"
+],
+    "zh": [
+        "请选择有效的群组或频道作为发布目标。",
+        "请先添加帖子文字或媒体内容，然后继续。",
+        "请选择有效的重复发布计划。",
+        "自动删除和自动销毁只能选择其中一项，不能同时启用。"
+],
+    "es": [
+        "Elige un grupo o canal válido como destino.",
+        "Añade el texto o contenido multimedia antes de continuar.",
+        "Elige una programación de repetición válida.",
+        "Elige entre Eliminación automática y Autodestrucción; no se pueden activar ambas."
+],
+    "hi": [
+        "पोस्ट करने के लिए मान्य समूह या चैनल चुनें।",
+        "आगे बढ़ने से पहले पोस्ट का टेक्स्ट या मीडिया जोड़ें।",
+        "दोहराव का मान्य शेड्यूल चुनें।",
+        "ऑटो-डिलीट और सेल्फ-डिस्ट्रक्ट में से केवल एक चुनें। दोनों एक साथ चालू नहीं हो सकते।"
+],
+    "ar": [
+        "اختر مجموعة أو قناة صالحة كوجهة للنشر.",
+        "أضف نص المنشور أو الوسائط قبل المتابعة.",
+        "اختر جدول تكرار صالحًا.",
+        "اختر إما الحذف التلقائي أو التدمير الذاتي؛ لا يمكن تفعيلهما معًا."
+],
+    "pt": [
+        "Escolha um grupo ou canal válido como destino.",
+        "Adicione o texto ou a mídia da publicação antes de continuar.",
+        "Escolha um agendamento de repetição válido.",
+        "Escolha entre Exclusão automática e Autodestruição; não é possível ativar ambas."
+],
+    "fr": [
+        "Choisissez un groupe ou un canal valide comme destination.",
+        "Ajoutez le texte ou le média de la publication avant de continuer.",
+        "Choisissez une programmation récurrente valide.",
+        "Choisissez soit la suppression automatique, soit l’autodestruction ; les deux ne peuvent pas être activées ensemble."
+],
+    "ru": [
+        "Выберите корректную группу или канал для публикации.",
+        "Добавьте текст или медиа публикации, прежде чем продолжить.",
+        "Выберите корректное расписание повторения.",
+        "Выберите автоудаление или самоуничтожение. Одновременно включить оба режима нельзя."
+],
+    "bn": [
+        "পোস্টের গন্তব্য হিসেবে একটি বৈধ গ্রুপ বা চ্যানেল নির্বাচন করুন।",
+        "এগিয়ে যাওয়ার আগে পোস্টের লেখা বা মিডিয়া যোগ করুন।",
+        "একটি বৈধ পুনরাবৃত্তির সময়সূচি নির্বাচন করুন।",
+        "স্বয়ংক্রিয় মুছে ফেলা এবং স্বয়ংবিনাশের মধ্যে একটি বেছে নিন; দুটো একসঙ্গে চালু করা যাবে না।"
+],
+    "id": [
+        "Pilih grup atau kanal yang valid sebagai tujuan posting.",
+        "Tambahkan teks atau media postingan sebelum melanjutkan.",
+        "Pilih jadwal pengulangan yang valid.",
+        "Pilih Hapus Otomatis atau Hancurkan Otomatis; keduanya tidak dapat diaktifkan bersamaan."
+],
+    "ja": [
+        "有効なグループまたはチャンネルを投稿先として選択してください。",
+        "続行する前に投稿のテキストまたはメディアを追加してください。",
+        "有効な繰り返しスケジュールを選択してください。",
+        "自動削除と自動消滅はどちらか一方のみ有効にできます。"
+],
+    "ko": [
+        "게시 대상으로 유효한 그룹 또는 채널을 선택하세요.",
+        "계속하기 전에 게시물 텍스트나 미디어를 추가하세요.",
+        "유효한 반복 일정을 선택하세요.",
+        "자동 삭제와 자동 소멸 중 하나만 선택할 수 있습니다. 두 기능을 동시에 켤 수 없습니다."
+],
+    "th": [
+        "เลือกกลุ่มหรือช่องที่ถูกต้องเป็นปลายทางสำหรับโพสต์",
+        "เพิ่มข้อความหรือสื่อของโพสต์ก่อนดำเนินการต่อ",
+        "เลือกรูปแบบการทำซ้ำที่ถูกต้อง",
+        "เลือกระหว่างลบอัตโนมัติหรือทำลายตัวเองเท่านั้น ไม่สามารถเปิดใช้ทั้งสองอย่างพร้อมกันได้"
+],
+    "vi": [
+        "Chọn một nhóm hoặc kênh hợp lệ làm đích đăng.",
+        "Thêm văn bản hoặc nội dung đa phương tiện trước khi tiếp tục.",
+        "Chọn lịch lặp lại hợp lệ.",
+        "Chỉ chọn Tự động xóa hoặc Tự hủy; không thể bật đồng thời cả hai."
+],
+    "tr": [
+        "Hedef olarak geçerli bir grup veya kanal seçin.",
+        "Devam etmeden önce gönderi metnini veya medyasını ekleyin.",
+        "Geçerli bir tekrarlama programı seçin.",
+        "Otomatik Silme veya Kendini İmha seçeneklerinden yalnızca birini seçin; ikisi aynı anda etkinleştirilemez."
+],
+    "de": [
+        "Wähle eine gültige Gruppe oder einen gültigen Kanal als Ziel aus.",
+        "Füge vor dem Fortfahren den Beitragstext oder Medien hinzu.",
+        "Wähle einen gültigen Wiederholungszeitplan.",
+        "Wähle entweder automatisches Löschen oder Selbstzerstörung. Beide Funktionen können nicht gleichzeitig aktiviert sein."
+],
+    "it": [
+        "Scegli un gruppo o canale valido come destinazione.",
+        "Aggiungi il testo o il contenuto multimediale del post prima di continuare.",
+        "Scegli una pianificazione di ripetizione valida.",
+        "Scegli tra Eliminazione automatica e Autodistruzione; non possono essere attivate insieme."
+],
+    "ur": [
+        "پوسٹ کی منزل کے طور پر درست گروپ یا چینل منتخب کریں۔",
+        "جاری رکھنے سے پہلے پوسٹ کا متن یا میڈیا شامل کریں۔",
+        "تکرار کا درست شیڈول منتخب کریں۔",
+        "خودکار حذف یا خود تباہی میں سے صرف ایک منتخب کریں؛ دونوں ایک ساتھ فعال نہیں ہو سکتے۔"
+],
+    "sw": [
+        "Chagua kikundi au chaneli halali kama lengwa la chapisho.",
+        "Ongeza maandishi au media ya chapisho kabla ya kuendelea.",
+        "Chagua ratiba halali ya marudio.",
+        "Chagua Futa Kiotomatiki au Jiharibu; huwezi kuwasha zote mbili kwa wakati mmoja."
+],
+}
+if set(_VALIDATION_ROWS) != set(LANGUAGES):
+    raise RuntimeError("Schedule draft validation messages must cover every supported language.")
+for _locale, _values in _VALIDATION_ROWS.items():
+    if len(_values) != len(_VALIDATION_KEYS) or any(not _value for _value in _values):
+        raise RuntimeError(f"Incomplete Schedule draft validation messages for {_locale}.")
+    _MESSAGES[_locale].update(dict(zip(_VALIDATION_KEYS, _values, strict=True)))
