@@ -21,8 +21,6 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
     Update,
 )
@@ -44,7 +42,7 @@ from handlers.permissions import ChatAccessError, ensure_chat_access
 from handlers.language import resolve_user_language
 from localization import translate as tr
 from welcome_localization import welcome_text
-from reply_keyboard import publish_reply_keyboard, register_reply_keyboard_routes, split_inline_keyboard
+from reply_keyboard import publish_reply_keyboard, split_inline_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -220,29 +218,34 @@ async def replace_with_main_menu_message(
     return new_message
 
 
-def nav_keyboard(back_data: str | None = None) -> InlineKeyboardMarkup:
+def nav_keyboard(
+    back_data: str | None = None,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
     """
-    Universal navigation row.  Pass `back_data` to enable the Back button;
-    omit it (or pass None) to hide Back (e.g. on the first wizard step).
+    Universal localized navigation row. Existing callers may omit language
+    and retain the English default; localized workflows pass the selected locale.
     """
     row: list[InlineKeyboardButton] = []
     if back_data:
-        row.append(InlineKeyboardButton("⬅️ Back", callback_data=back_data))
-    row.append(InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL))
+        row.append(InlineKeyboardButton(tr(language, "back"), callback_data=back_data))
+    row.append(InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL))
     return InlineKeyboardMarkup([row])
 
 
-def confirm_keyboard(confirm_data: str, back_data: str) -> InlineKeyboardMarkup:
-    """
-    Final summary confirmation keyboard shown before any database write.
-    """
+def confirm_keyboard(
+    confirm_data: str,
+    back_data: str,
+    language: str = "en",
+) -> InlineKeyboardMarkup:
+    """Localized final review controls, shown before any database write."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Confirm", style="success", callback_data=confirm_data),
-            InlineKeyboardButton("⬅️ Back",   callback_data=back_data),
+            InlineKeyboardButton(tr(language, "confirm"), style="success", callback_data=confirm_data),
+            InlineKeyboardButton(tr(language, "back"), callback_data=back_data),
         ],
         [
-            InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
 
@@ -582,29 +585,22 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         group_title = escape_markdown(chat.title or "this group", version=1)
         open_private_label = tr(language, "open_private")
-        # Reply Keyboard buttons cannot open URLs directly. Keep the deep link
-        # as a normal clickable Telegram link and provide a Reply Keyboard
-        # action that re-sends it when the user needs it.
-        keyboard = ReplyKeyboardMarkup(
-            [[KeyboardButton(open_private_label, style="primary")]],
-            resize_keyboard=True,
-            one_time_keyboard=False,
-            is_persistent=True,
-        )
-        group_message = await message.reply_text(
+        # A native Inline URL button opens the bot's private chat and carries
+        # the originating group ID in Telegram's /start payload.
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                open_private_label,
+                style="primary",
+                url=private_url,
+            )
+        ]])
+        await message.reply_text(
             f"{tr(language, 'group_start_title')}\n\n"
             f"{tr(language, 'group_start_body', group=group_title)}\n\n"
             f"🔒 {tr(language, 'private_setup_action')}\n\n"
-            f"🔗 {private_url}\n\n"
             f"{tr(language, 'group_admin_note')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard,
-        )
-        register_reply_keyboard_routes(
-            context.bot_data,
-            chat.id,
-            {open_private_label: {"type": "url", "url": private_url}},
-            group_message,
         )
         return ConversationHandler.END
 

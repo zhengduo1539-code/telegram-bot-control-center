@@ -281,7 +281,7 @@ def test_one_time_preset_stores_a_single_run():
 
         assert state == wizard.WIZARD_TIME_WINDOW
         assert context.user_data["wizard"]["max_runs"] == 1
-        assert "One send" in query.edit_message_text.await_args.args[0]
+        assert "1 send" in query.edit_message_text.await_args.args[0]
 
     asyncio.run(scenario())
 
