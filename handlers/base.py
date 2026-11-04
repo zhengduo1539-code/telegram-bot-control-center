@@ -276,7 +276,7 @@ def _mp_recurrence_label(language: str, recurrence: str) -> str:
         "interval": "rec_interval",
         "days_of_week": "rec_weekly",
     }.get(recurrence, None)
-    return mp_tr(language, key) if key else recurrence.replace("_", " ")
+    return mp_tr(language, key) if key else recurrence.replace("_", " ").title()
 
 
 def _mp_content_label(language: str, media_type: str | None, has_text: bool) -> str:
@@ -374,7 +374,7 @@ def _posts_rich_message(
     )
     return {
         "blocks": [
-            {"type": "heading", "size": 2, "text": f"📋 {tr(language, 'posts_title')}"},
+            {"type": "heading", "size": 2, "text": tr(language, "posts_title")},
             {"type": "paragraph", "text": f"{_mp_label(language, filter_key)} · {total} · {t('page', page=page + 1, pages=n_pages)}"},
             {"type": "paragraph", "text": summary},
             {
