@@ -43,6 +43,7 @@ from handlers.language import resolve_user_language
 from localization import translate as tr
 from my_posts_localization import translate_my_posts as mp_tr
 from welcome_localization import welcome_text
+from system_localization import translate_system as st
 from reply_keyboard import publish_reply_keyboard, split_inline_keyboard
 
 logger = logging.getLogger(__name__)
@@ -609,17 +610,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             }
         except ChatAccessError as exc:
             launch_notice = (
-                "⚠️ *Group not linked:* "
-                f"{escape_markdown(str(exc), version=1)}\n\n"
-                "You can still choose a group manually, or ask a group administrator "
-                "to open this setup link."
+                f"{st(language, 'deep_link_invalid')}\n\n"
+                f"{escape_markdown(str(exc), version=1)}"
             )
         except Exception:
             logger.exception("Failed to validate deep-linked group %s.", target_chat_id)
-            launch_notice = (
-                "⚠️ I couldn't verify the selected group. "
-                "You can choose a group manually from the menu."
-            )
+            launch_notice = st(language, "deep_link_verify")
 
     if "launch_chat" in context.user_data:
         linked = context.user_data["launch_chat"]
@@ -697,7 +693,7 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = update.effective_user.id if update.effective_user else None
         language = await resolve_user_language(context, user_id)
         final = await update.message.reply_text(
-            f"❌ *Cancelled.*\n\n{tr(language, 'menu_title')}",
+            f"{mp_tr(language, 'cancelled')}\n\n{tr(language, 'menu_title')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=main_menu_keyboard(context.bot, user_id, language),
         )
