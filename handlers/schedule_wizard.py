@@ -571,7 +571,7 @@ async def cb_back_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
     else:
         await query.edit_message_text(
-            f"▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n{tr(language, 'choose_group')}",
+            f"▰▱▱▱▱▱▱▱ 1/8\n*{sw_tr(language, 'destination_label')}*\n\n{tr(language, 'choose_group')}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=_no_groups_keyboard(bot_username, language),
         )
@@ -763,7 +763,7 @@ async def cb_ib_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     w.pop("pending_inline_button_label", None)
     await _edit(
         query,
-        "➕ *Add a Post Button*\n\n" + sw_tr(language, "button_label_prompt"),
+        "➕ *" + sw_tr(language, "add_button_heading") + "*\n\n" + sw_tr(language, "button_label_prompt"),
         _nav(context, back_data=CB_BACK_CONTENT),
     )
     return WIZARD_INLINE_BTNS
@@ -795,8 +795,8 @@ async def recv_ib_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
             w["pending_inline_button_label"] = text
             await message.reply_text(
-                f"✅ Button label saved: *{escape_markdown(text, version=1)}*\n\n"
-                + sw_tr(language, "button_link_prompt"),
+                sw_tr(language, "button_label_saved", label=escape_markdown(text, version=1))
+                + "\n\n" + sw_tr(language, "button_link_prompt"),
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=_nav(context, back_data=CB_BACK_CONTENT),
             )
@@ -965,8 +965,7 @@ async def cb_rec_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _edit(
         query,
         f"{tr(language, 'recurrence_days')}\n\n"
-        "Select every day on which this post should be published. You can select more than one day.\n"
-        "Tap Next when your selection is complete.",
+        + sw_tr(language, "days_prompt"),
         _dow_keyboard(w["days_of_week"], _language(context)),
     )
     return WIZARD_DOW_SELECT
@@ -1311,7 +1310,7 @@ async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     w.setdefault("self_destruct", False)
     w.setdefault("auto_pin", False)
     await update.message.reply_text(
-        f"✅ *{sw_tr(_language(context), 'delivery_limit_label')}:* {value}\n\n"
+        f"✅ *{sw_tr(_language(context), 'delivery_limit_label')}:* {sw_tr(_language(context), 'delivery_count', count=value)}\n\n"
         + "⚙️ *" + sw_tr(_language(context), "review_options_button") + "*\n"
         + sw_tr(_language(context), "advanced_intro"),
         parse_mode=ParseMode.MARKDOWN,
@@ -2110,7 +2109,7 @@ async def cb_back_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     query = update.callback_query
     w = _w(context)
     await _edit(query,
-        "📆 *Step 3a — Days of Week*\n\nTap days to toggle, then ➡️ Next.",
+        sw_tr(_language(context), "days_prompt"),
         _dow_keyboard(w.get("days_of_week", set()), _language(context)),
     )
     return WIZARD_DOW_SELECT
@@ -2120,8 +2119,8 @@ async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     w = _w(context)
     await _edit(query,
-        f"✅ Value: `{w.get('interval_value')}`\n\n"
-        "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
+        f"✅ {w.get('interval_value')}\n\n"
+        + sw_tr(_language(context), "interval_unit_prompt"),
         _interval_unit_keyboard(_language(context)),
     )
     return WIZARD_INTERVAL_UNIT
@@ -2172,17 +2171,13 @@ async def cb_back_lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await _edit(
         query,
         "▰▰▰▰▰▰▰▱ 7/8\n"
-        "*Step 7/8 — Advanced Options*\n\n"
-        "Choose any optional settings. Everything is OFF unless you enable it.\n\n"
-        "🕑 *Posting Window:* Publish only during your selected local hours; posts wait outside the window.\n"
-        "🗑 *Auto-Delete:* Remove a post after a duration (minimum 5 minutes).\n"
-        "💣 *Self-Destruct:* Remove a post after a number of seconds. This cannot be combined with Auto-Delete.\n"
-        "📌 *Auto-Pin:* Pin each post after publishing, with an optional automatic unpin.",
+        + sw_tr(_language(context), "advanced_intro"),
         _advanced_keyboard(
             w.get("time_window_enabled", False),
             w.get("auto_delete", False),
             w.get("self_destruct", False),
             w.get("auto_pin", False),
+            _language(context),
         ),
     )
     return WIZARD_TIME_WINDOW
