@@ -1012,7 +1012,9 @@ def _inline_btns_list_text(buttons: list) -> str:
 # ---------------------------------------------------------------------------
 
 async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    _w(context)["recurrence_type"] = "once"
+    w = _w(context)
+    w["recurrence_type"] = "once"
+    w["max_runs"] = 1
     query = update.callback_query
     language = context.user_data.get("language", "en")
     await _edit(
@@ -1343,11 +1345,19 @@ async def cb_back_tz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # Step 6 — Max runs
 # ---------------------------------------------------------------------------
 
-def _max_runs_keyboard() -> InlineKeyboardMarkup:
-    """Quick-tap presets, including one-time, plus a custom number input."""
+def _max_runs_keyboard(one_time: bool = False) -> InlineKeyboardMarkup:
+    """Show only run-count choices that apply to the selected recurrence."""
+    if one_time:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ One-Time Post Confirmed", style="success", callback_data=f"{CB_MR_PRESET}1")],
+            [
+                InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_FIRST_RUN),
+                InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+            ],
+        ])
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("1× One time", style="success", callback_data=f"{CB_MR_PRESET}1"),
+            InlineKeyboardButton("1× One time", style="primary", callback_data=f"{CB_MR_PRESET}1"),
             InlineKeyboardButton("5×", style="primary", callback_data=f"{CB_MR_PRESET}5"),
             InlineKeyboardButton("10×", style="primary", callback_data=f"{CB_MR_PRESET}10"),
         ],
@@ -1360,7 +1370,6 @@ def _max_runs_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
-
 
 async def recv_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Accept a typed custom max-runs number."""
