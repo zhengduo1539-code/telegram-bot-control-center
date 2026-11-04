@@ -1146,7 +1146,7 @@ async def recv_auto_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return AUTO_PIN
     w = _w(context)
     w.update(auto_pin=True, ap_hours=value, ap_duration_label=_duration_label(value))
-    return await _home(context, w, _flow(w, "pin_invalid"))
+    return await _home(context, w, _t(w, "pin_updated"))
 
 
 async def cb_pin_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1179,7 +1179,7 @@ async def recv_button_batch(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text(_flow(w, "button_link_invalid"))
         return BUTTON_ENTRY
     buttons.extend(parsed)
-    return await _home(context, w, f"Added {len(parsed)} post button(s).")
+    return await _home(context, w, _flow(w, "button_added", count=len(w.get("inline_buttons") or [])))
 
 
 async def cb_button_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
