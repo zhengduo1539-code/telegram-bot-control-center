@@ -115,7 +115,12 @@ async def _show(context, w: dict, text: str, keyboard: InlineKeyboardMarkup, par
 
 def _schedule_is_ready(w: dict) -> bool:
     first = w.get("first_run")
-    if not isinstance(first, datetime) or first.tzinfo is None or first.utcoffset() is None:
+    if (
+        not isinstance(first, datetime)
+        or first.tzinfo is None
+        or first.utcoffset() is None
+        or first.astimezone(timezone.utc) <= datetime.now(timezone.utc)
+    ):
         return False
     mode = w.get("recurrence_type")
     if mode == "once":
