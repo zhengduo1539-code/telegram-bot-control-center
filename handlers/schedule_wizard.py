@@ -1341,7 +1341,7 @@ async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w.setdefault("self_destruct", False)
     w.setdefault("auto_pin", False)
     label = (
-        sw_tr(_language(context), "one_send")
+        ("One send" if _language(context) == "en" else sw_tr(_language(context), "one_send"))
         if one_time else
         sw_tr(_language(context), "unlimited_label")
         if value == 0 else
