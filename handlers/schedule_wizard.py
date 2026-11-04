@@ -101,9 +101,12 @@ def _parse_auto_delete_duration(raw: str, language: str = "en") -> float | None:
     amount = int(match.group(1))
     unit = match.group(2).casefold().strip()
     aliases = _AUTO_DELETE_UNIT_ALIASES.get(language, _AUTO_DELETE_UNIT_ALIASES["en"])
-    if unit in aliases["minutes"]:
+    # Accept English units as a practical fallback even when the UI language
+    # uses a translated unit word (some users naturally mix both forms).
+    english_aliases = _AUTO_DELETE_UNIT_ALIASES["en"]
+    if unit in aliases["minutes"] or unit in english_aliases["minutes"]:
         minutes = amount
-    elif unit in aliases["hours"]:
+    elif unit in aliases["hours"] or unit in english_aliases["hours"]:
         minutes = amount * 60
     else:
         return None
@@ -1702,14 +1705,13 @@ def _build_summary(w: dict[str, Any], language: str = "en") -> str:
     raw_text = " ".join(str(w.get("content_text") or "").split())
     preview = escape_markdown(raw_text[:100], version=1) if raw_text else ""
     if w.get("media_type"):
-        media_kind = str(w["media_type"]).replace("_", " ").title()
-        preview = f"[{media_kind}] {preview}".strip()
+        preview = f"[{flow_tr(language, 'review_media')}] {preview}".strip()
     if len(raw_text) > 100:
         preview += "…"
     if not preview:
         preview = flow_tr(language, "review_media") if w.get("media_file_id") else flow_tr(language, "review_not_set")
 
-    title = escape_markdown(str(w.get("chat_title") or "Selected destination"), version=1)
+    title = escape_markdown(str(w.get("chat_title") or tr(language, "choose_group")), version=1)
     chat_id = escape_markdown(str(w.get("chat_id") or "—"), version=1)
     timezone_display = escape_markdown(timezone_name, version=1)
     values = {
