@@ -546,7 +546,7 @@ def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
         f"{tr(language, 'schedule_content_title')}\n\n"
         f"📍 *{sw_tr(language, 'destination_label')}:* {title}\n\n"
         f"{tr(language, 'schedule_content_prompt')}\n\n"
-        sw_tr(language, "content_delivery_hint")
+        + sw_tr(language, "content_delivery_hint")
     )
 def _inline_buttons_prompt(w: dict[str, Any], language: str = "en") -> str:
     count = len(w.get("inline_buttons", []))
