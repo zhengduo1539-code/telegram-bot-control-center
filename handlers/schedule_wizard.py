@@ -1848,28 +1848,64 @@ def _validate_schedule_draft(w: dict[str, Any]) -> str | None:
 
 
 async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Save the post to MongoDB and end the wizard."""
+    """Revalidate the draft and destination, then save once per active wizard."""
     query = update.callback_query
-    await query.answer("Saving…")
-
     w = _w(context)
-    first_run = w.get("first_run")
-    if (
-        not isinstance(first_run, datetime)
-        or first_run.tzinfo is None
-        or first_run.utcoffset() is None
-        or first_run.astimezone(timezone.utc) <= datetime.now(tz=timezone.utc)
-    ):
-        language = context.user_data.get("language", "en")
-        await query.edit_message_text(
-            "⚠️ The selected first-run time has passed. Please enter a new future time.\n\n"
-            "Use `HH:MM` or `DD/MM/YYYY HH:MM`.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
-        )
-        return WIZARD_FIRST_RUN
-    user_id: int = query.from_user.id  # type: ignore[union-attr]
+    if w.get("_saving"):
+        await query.answer("Your schedule is already being saved.")
+        return WIZARD_SUMMARY
 
+    validation_error = _validate_schedule_draft(w)
+    if validation_error:
+        await query.answer()
+        if "destination" in validation_error.lower():
+            user_id = query.from_user.id if query.from_user else None
+            language = await resolve_user_language(context, user_id)
+            bot_username = (await query.get_bot().get_me()).username
+            groups = await list_groups_for_user(user_id) if user_id is not None else []
+            await query.edit_message_text(
+                f"⚠️ {validation_error}\n\n{tr(language, 'choose_group')}",
+                reply_markup=_chat_list_keyboard(groups, 0, bot_username, language)
+                if groups else _no_groups_keyboard(bot_username, language),
+            )
+            return WIZARD_CHAT_ID
+        if "first posting time" in validation_error:
+            await query.edit_message_text(
+                "⚠️ The selected first-post time is no longer in the future.\n\n"
+                "Enter a new 24-hour HH:MM time or an exact DD/MM/YYYY HH:MM date.",
+                reply_markup=_first_run_keyboard(CB_BACK_TIMEZONE),
+            )
+            return WIZARD_FIRST_RUN
+        await query.edit_message_text(
+            "⚠️ *This schedule is incomplete.*\n\n"
+            + escape_markdown(validation_error, version=1)
+            + "\n\nReview the settings and try again.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+        )
+        return WIZARD_SUMMARY
+
+    user_id = query.from_user.id if query.from_user else None
+    if user_id is None:
+        await query.answer("Unable to identify your Telegram account.", show_alert=True)
+        return WIZARD_SUMMARY
+
+    try:
+        await ensure_chat_access(context.bot, w["chat_id"], user_id)
+    except ChatAccessError:
+        await query.answer()
+        bot_username = (await query.get_bot().get_me()).username
+        groups = await list_groups_for_user(user_id)
+        await query.edit_message_text(
+            "⚠️ Posting access to the selected destination has changed. "
+            "Restore the bot's administrator/posting permissions, then select the destination again.",
+            reply_markup=_chat_list_keyboard(groups, 0, bot_username)
+            if groups else _no_groups_keyboard(bot_username),
+        )
+        return WIZARD_CHAT_ID
+
+    w["_saving"] = True
+    await query.answer("Saving schedule…")
     try:
         doc = build_scheduled_post(
             user_id=user_id,
@@ -1896,36 +1932,30 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             inline_keyboard=w.get("inline_buttons") or None,
         )
         post_id = await insert_post(doc)
-    except Exception as exc:
-        logger.exception("Failed to save post: %s", exc)
-        _clear(context)
-        chat_id = query.message.chat_id
-        await chat_cleanup.cleanup(context, chat_id, keep_message_id=query.message.message_id)
+    except Exception:
+        logger.exception("Failed to save scheduled post for user_id=%s", user_id)
+        w.pop("_saving", None)
         await query.edit_message_text(
-            f"❌ Failed to save post: `{str(exc).replace(chr(96), chr(39))}`\n\nTry again or contact support.",
+            "⚠️ *We couldn't confirm that your schedule was saved.*\n\n"
+            "Your setup is still available. Before retrying, check *My Posts* in case the database save completed but the response was interrupted.",
             parse_mode=ParseMode.MARKDOWN,
+            reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
         )
-        return ConversationHandler.END
+        return WIZARD_SUMMARY
 
     _clear(context)
     chat_id = query.message.chat_id
     await chat_cleanup.cleanup(context, chat_id, keep_message_id=query.message.message_id)
     await query.edit_message_text(
         f"✅ *Post scheduled successfully!*\n\n"
-        f"🆔 Post ID: `{post_id}`\n\n"
-        "Use *My Posts* to manage it, or start another task below.",
+        f"🆔 Post ID: {post_id}\n\n"
+        "Your schedule is saved and ready. Use *My Posts* to manage it.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🏠 Main Menu", style="primary", callback_data=CB_MAIN_MENU)],
         ]),
     )
     return ConversationHandler.END
-
-
-# ---------------------------------------------------------------------------
-# Back-navigation helpers
-# ---------------------------------------------------------------------------
-
 async def cb_back_recurrence(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
