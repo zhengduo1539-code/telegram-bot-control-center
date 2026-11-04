@@ -360,7 +360,7 @@ def _dow_keyboard(selected: set[int], language: str = "en") -> InlineKeyboardMar
         ])
     rows.append([
         InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_RECURRENCE),
-        InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_DOW_NEXT),
+        InlineKeyboardButton(flow_tr(language, "wizard_next"), style="success", callback_data=CB_DOW_NEXT),
         InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
@@ -402,7 +402,7 @@ def _time_window_keyboard(enabled: bool, language: str = "en") -> InlineKeyboard
         ],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(flow_tr(language, "wizard_next"), style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
@@ -459,7 +459,7 @@ def _advanced_keyboard(
         )],
         [
             InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton(tr(language, "next"), style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton(flow_tr(language, "review_options"), style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
         ],
     ])
@@ -637,7 +637,7 @@ def _content_step_keyboard(
             flow_tr(language, "keep_content"), style="success", callback_data=CB_CONTENT_KEEP
         )])
     rows.append([
-        InlineKeyboardButton(tr(language, "back"), callback_data=CB_BACK_CHAT),
+        InlineKeyboardButton(flow_tr(language, "back_destination"), callback_data=CB_BACK_CHAT),
         InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ])
     return InlineKeyboardMarkup(rows)
