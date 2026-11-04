@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 async def resolve_user_language(context: ContextTypes.DEFAULT_TYPE, user_id: int | None) -> str:
     """Load a user's saved locale once per update/session, defaulting safely to English."""
-    cached = context.user_data.get("language")
+    user_data = getattr(context, "user_data", None)
+    cached = user_data.get("language") if isinstance(user_data, dict) else None
     if cached in LANGUAGES:
         return cached
     if user_id is None:
@@ -36,7 +37,8 @@ async def resolve_user_language(context: ContextTypes.DEFAULT_TYPE, user_id: int
     except Exception:
         logger.exception("Could not load language preference for user_id=%s", user_id)
         language = DEFAULT_LANGUAGE
-    context.user_data["language"] = language
+    if isinstance(user_data, dict):
+        user_data["language"] = language
     return language
 
 
