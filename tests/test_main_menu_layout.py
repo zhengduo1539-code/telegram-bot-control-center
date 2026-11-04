@@ -21,7 +21,7 @@ def test_main_menu_keeps_welcome_actions_inline_and_features_on_reply_keyboard(m
     ] == ["➕ Add to My Group", "📤 Share Bot"]
     assert reply is not None
     reply_buttons = [button for row in reply.keyboard for button in row]
-    labels = {button.text for button in reply.keyboard for button in row}
+    labels = {button.text for row in reply.keyboard for button in row}
     assert len(reply_buttons) == 4  # Schedule, My Posts, Language, and Owner Panel
     assert all(button.style == "primary" for button in reply_buttons)
     assert {
