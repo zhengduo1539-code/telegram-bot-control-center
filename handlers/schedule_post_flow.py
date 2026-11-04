@@ -191,7 +191,7 @@ def _home_text(w: dict, notice: str | None = None) -> str:
     timezone_name = str(w.get("timezone") or "UTC")
     first = w.get("first_run")
     try:
-        first_text = first.astimezone(pytz.timezone(timezone_name)).strftime("%d %b %Y, %H:%M") if scheduled else _flow(w, "review_not_set")
+        first_text = first.astimezone(pytz.timezone(timezone_name)).strftime("%Y-%m-%d %H:%M") if scheduled else _flow(w, "review_not_set")
     except Exception:
         first_text = _flow(w, "review_not_set")
     destination_text = escape_markdown(str(w.get("chat_title") or _t(w, "not_selected")), version=1)
@@ -277,7 +277,7 @@ def _schedule_text(w: dict) -> str:
     zone_name = str(w.get("timezone") or "UTC")
     first = w.get("first_run")
     try:
-        first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%a, %d %b %Y · %H:%M") if isinstance(first, datetime) else _flow(w, "review_not_set")
+        first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%Y-%m-%d · %H:%M") if isinstance(first, datetime) else _flow(w, "review_not_set")
     except Exception:
         first_text = _flow(w, "review_not_set")
     limit = _flow(w, "one_send") if mode == "once" else (
@@ -349,8 +349,8 @@ def _pin_label(w: dict) -> str:
         return _flow(w, "review_off")
     if w.get("ap_hours") is None:
         return _t(w, "keep_pinned")
-    duration = w.get("ap_duration_label") or _flow(w, "unpin_after", value=w.get("ap_hours"))
-    return _flow(w, "unpin_after", value=duration)
+    duration = w.get("ap_duration_label")
+    return duration if duration else _flow(w, "unpin_after", value=w.get("ap_hours"))
 
 
 def _options_text(w: dict) -> str:
@@ -426,7 +426,7 @@ def _preview_text(w: dict) -> str:
         repeat = _flow(w, "repeat_once")
     zone_name = str(w.get("timezone") or "UTC")
     first = w.get("first_run")
-    first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%A, %d %b %Y at %H:%M") if isinstance(first, datetime) else _flow(w, "review_not_set")
+    first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%Y-%m-%d %H:%M") if isinstance(first, datetime) else _flow(w, "review_not_set")
     limit = _flow(w, "one_send") if mode == "once" else (
         _flow(w, "unlimited") if w.get("max_runs") is None else _flow(w, "sends", value=w.get("max_runs"))
     )
