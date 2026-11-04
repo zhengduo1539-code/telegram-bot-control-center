@@ -1143,13 +1143,13 @@ async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if one_time:
         draft["max_runs"] = 1
         prompt = (
-            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
-            f"{local_display} ({timezone_name})\n\n{flow_tr(language, 'one_time_delivery')}"
+            f"{tr(language, 'first_run_prompt')}\n\n"
+            f"✅ {local_display} ({timezone_name})\n\n{flow_tr(language, 'one_time_delivery')}"
         )
     else:
         prompt = (
-            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
-            f"{local_display} ({timezone_name})\n\n{tr(language, 'max_runs_prompt')}"
+            f"{tr(language, 'first_run_prompt')}\n\n"
+            f"✅ {local_display} ({timezone_name})\n\n{tr(language, 'max_runs_prompt')}"
         )
     await update.message.reply_text(
         prompt,
@@ -1241,13 +1241,13 @@ async def cb_smart_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if one_time:
         draft["max_runs"] = 1
         prompt = (
-            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
-            f"{local_display} ({timezone_name})\n\n{flow_tr(language, 'one_time_delivery')}"
+            f"{tr(language, 'first_run_prompt')}\n\n"
+            f"✅ {local_display} ({timezone_name})\n\n{flow_tr(language, 'one_time_delivery')}"
         )
     else:
         prompt = (
-            f"✅ *{tr(language, 'first_run_prompt').splitlines()[0].strip('* ')}:* "
-            f"{local_display} ({timezone_name})\n\n{tr(language, 'max_runs_prompt')}"
+            f"{tr(language, 'first_run_prompt')}\n\n"
+            f"✅ {local_display} ({timezone_name})\n\n{tr(language, 'max_runs_prompt')}"
         )
     await query.answer()
     await query.edit_message_text(
@@ -1408,7 +1408,7 @@ async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         label = flow_tr(language, "sends", value=value)
     await _edit(
         query,
-        flow_tr(language, "delivery_confirm", value=label),
+        f"✅ *{flow_tr(language, 'delivery_confirm', value=label)}*\n\n{flow_tr(language, 'advanced_intro')}",
         _advanced_keyboard(
             draft["time_window_enabled"], draft["auto_delete"], draft["self_destruct"],
             draft["auto_pin"], language
@@ -1649,16 +1649,27 @@ async def recv_ap_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     _w(context)["ap_hours"] = value
     return await _show_summary_from_message(update, context)
 
-def _build_summary(w: dict[str, Any]) -> str:
-    """Build a safe final review from the validated draft."""
+def _build_summary(w: dict[str, Any], language: str = "en") -> str:
+    """Build a localized, safe final review from the validated draft."""
     recurrence = w.get("recurrence_type", "once")
     if recurrence == "interval":
-        recurrence_line = f"Every {w.get('interval_value')} {w.get('interval_unit')}"
+        raw_unit = str(w.get("interval_unit") or "minutes")
+        unit_key = f"unit_{raw_unit}"
+        unit_label = flow_tr(language, unit_key)
+        unit_label = re.sub(r"^[^A-Za-z\u0080-\uFFFF]+", "", unit_label).strip()
+        recurrence_line = flow_tr(
+            language, "repeat_interval",
+            value=w.get("interval_value"), unit=unit_label,
+        )
     elif recurrence == "days_of_week":
+        weekdays = _locale_weekdays(language)
         days = sorted(w.get("days_of_week", set()))
-        recurrence_line = "Weekly on " + ", ".join(DOW_LABELS[d] for d in days if d in range(7))
+        recurrence_line = flow_tr(
+            language, "repeat_weekly",
+            days=", ".join(weekdays[day] for day in days if day in range(7)),
+        )
     else:
-        recurrence_line = "One-time"
+        recurrence_line = flow_tr(language, "repeat_once")
 
     timezone_name = str(w.get("timezone", "UTC"))
     try:
@@ -1671,84 +1682,85 @@ def _build_summary(w: dict[str, Any]) -> str:
     if isinstance(first_run, datetime) and first_run.tzinfo is not None and first_run.utcoffset() is not None:
         first_run_line = first_run.astimezone(zone).strftime("%d/%m/%Y %H:%M")
     else:
-        first_run_line = "Not set"
+        first_run_line = flow_tr(language, "review_not_set")
 
     if w.get("time_window_enabled"):
         window_line = f"{w.get('tw_start')} to {w.get('tw_end')} ({timezone_name})"
     else:
-        window_line = "Off"
+        window_line = flow_tr(language, "review_off")
 
     auto_delete_line = (
-        str(w.get("ad_duration_label") or f"{w.get('ad_hours')} hours")
-        if w.get("auto_delete") else "Off"
+        flow_tr(language, "delete_after", value=w.get("ad_duration_label") or w.get("ad_hours"))
+        if w.get("auto_delete") else flow_tr(language, "review_off")
     )
     self_destruct_line = (
-        f"{w.get('sd_secs')} seconds after publishing"
-        if w.get("self_destruct") else "Off"
+        flow_tr(language, "destruct_after", value=w.get("sd_secs"))
+        if w.get("self_destruct") else flow_tr(language, "review_off")
     )
     if not w.get("auto_pin"):
-        auto_pin_line = "Off"
+        auto_pin_line = flow_tr(language, "review_off")
     elif "ap_hours" not in w:
-        auto_pin_line = "Not configured"
+        auto_pin_line = flow_tr(language, "review_not_set")
     elif w.get("ap_hours") is None:
-        auto_pin_line = "Keep pinned until manually unpinned"
+        auto_pin_line = flow_tr(language, "keep_pinned")
     else:
-        auto_pin_line = f"Unpin after {w.get('ap_hours')} hours"
+        auto_pin_line = flow_tr(language, "unpin_after", value=w.get("ap_hours"))
 
     if recurrence == "once":
-        delivery_line = "1 send"
+        delivery_line = flow_tr(language, "one_send")
     elif w.get("max_runs") is None:
-        delivery_line = "Unlimited"
+        delivery_line = flow_tr(language, "unlimited")
     else:
-        delivery_line = f"{w.get('max_runs')} sends"
+        delivery_line = flow_tr(language, "sends", value=w.get("max_runs"))
 
     raw_text = " ".join(str(w.get("content_text") or "").split())
     preview = escape_markdown(raw_text[:100], version=1) if raw_text else ""
     if w.get("media_type"):
-        preview = f"[{str(w['media_type']).replace('_', ' ').title()}] {preview}".strip()
+        media_kind = str(w["media_type"]).replace("_", " ").title()
+        preview = f"[{media_kind}] {preview}".strip()
     if len(raw_text) > 100:
         preview += "…"
     if not preview:
-        preview = "Media post" if w.get("media_file_id") else "Not set"
+        preview = flow_tr(language, "review_media") if w.get("media_file_id") else flow_tr(language, "review_not_set")
 
     title = escape_markdown(str(w.get("chat_title") or "Selected destination"), version=1)
     chat_id = escape_markdown(str(w.get("chat_id") or "—"), version=1)
-    tz_display = escape_markdown(timezone_name, version=1)
+    timezone_display = escape_markdown(timezone_name, version=1)
+    values = {
+        "destination": title,
+        "chat_id": chat_id,
+        "content": preview,
+        "repeat": escape_markdown(recurrence_line, version=1),
+        "first_post": first_run_line,
+        "timezone": timezone_display,
+        "limit": escape_markdown(delivery_line, version=1),
+        "window": escape_markdown(window_line, version=1),
+        "auto_delete": escape_markdown(auto_delete_line, version=1),
+        "self_destruct": escape_markdown(self_destruct_line, version=1),
+        "auto_pin": escape_markdown(auto_pin_line, version=1),
+        "buttons": _inline_btns_list_text(w.get("inline_buttons", []), language),
+    }
+    return flow_tr(language, "review_template", **values)
 
-    return (
-        "▰▰▰▰▰▰▰▰ 8/8\n"
-        "*Final Review — Schedule New Post*\n\n"
-        f"🗂 *Destination:* {title} ({chat_id})\n"
-        f"📝 *Content:* {preview}\n"
-        f"🔁 *Repeat:* {escape_markdown(recurrence_line, version=1)}\n"
-        f"🕐 *First Post:* {first_run_line} ({tz_display})\n"
-        f"🔢 *Delivery Limit:* {delivery_line}\n"
-        f"🕑 *Posting Window:* {escape_markdown(window_line, version=1)}\n"
-        f"🗑 *Auto-Delete:* {escape_markdown(auto_delete_line, version=1)}\n"
-        f"💣 *Self-Destruct:* {escape_markdown(self_destruct_line, version=1)}\n"
-        f"📌 *Auto-Pin:* {escape_markdown(auto_pin_line, version=1)}\n"
-        f"🔘 *Post Buttons:*\n{_inline_btns_list_text(w.get('inline_buttons', []))}\n\n"
-        "Review every detail. Nothing is scheduled until you tap Confirm."
-    )
 async def _show_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    language = _language(context)
     await query.answer()
     await query.edit_message_text(
-        _build_summary(_w(context)),
+        _build_summary(_w(context), language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+        reply_markup=_wizard_confirm_keyboard(context),
     )
     return WIZARD_SUMMARY
-
 
 async def _show_summary_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    language = _language(context)
     await update.message.reply_text(
-        _build_summary(_w(context)),
+        _build_summary(_w(context), language),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+        reply_markup=_wizard_confirm_keyboard(context),
     )
     return WIZARD_SUMMARY
-
 
 def _validate_schedule_draft(w: dict[str, Any]) -> str | None:
     """Validate the whole draft before performing the database write."""
@@ -2081,117 +2093,105 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def cb_back_recurrence(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await _edit(query,
-        tr(context.user_data.get("language", "en"), "recurrence_prompt"),
-        _recurrence_keyboard(context.user_data.get("language", "en")),
-    )
+    language = _language(context)
+    await _edit(query, tr(language, "recurrence_prompt"), _recurrence_keyboard(language))
     return WIZARD_RECURRENCE
-
 
 async def cb_back_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    w = _w(context)
-    await _edit(query,
-        "📆 *Step 3a — Days of Week*\n\nTap days to toggle, then ➡️ Next.",
-        _dow_keyboard(w.get("days_of_week", set()), _language(context)),
+    draft = _w(context)
+    language = _language(context)
+    await _edit(
+        query,
+        flow_tr(language, "days_prompt"),
+        _dow_keyboard(draft.get("days_of_week", set()), language),
     )
     return WIZARD_DOW_SELECT
 
-
 async def cb_back_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    w = _w(context)
-    await _edit(query,
-        f"✅ Value: `{w.get('interval_value')}`\n\n"
-        "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
-        _interval_unit_keyboard(_language(context)),
+    draft = _w(context)
+    language = _language(context)
+    await _edit(
+        query,
+        f"{flow_tr(language, 'interval_unit_prompt')}\n\n"
+        f"{draft.get('interval_value', '')}",
+        _interval_unit_keyboard(language),
     )
     return WIZARD_INTERVAL_UNIT
 
-
 async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    w = _w(context)
-    one_time = w.get("recurrence_type") == "once"
-    if one_time:
-        prompt = (
-            "🔢 *One-time delivery*\n"
-            "This post will be sent once. Confirm the one-send setting to continue."
-        )
-    else:
-        prompt = tr(context.user_data.get("language", "en"), "max_runs_prompt")
+    draft = _w(context)
+    language = _language(context)
+    one_time = draft.get("recurrence_type") == "once"
+    prompt = (
+        flow_tr(language, "one_time_delivery")
+        if one_time else tr(language, "max_runs_prompt")
+    )
     await _edit(query, prompt, _max_runs_keyboard(one_time=one_time, language=language))
     return WIZARD_MAX_RUNS
+
 async def cb_back_tw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Return to Advanced Options from a posting-window or lifecycle detail."""
+    """Return to the localized Advanced Options screen."""
     query = update.callback_query
-    w = _w(context)
+    draft = _w(context)
+    language = _language(context)
     await _edit(
         query,
-        "▰▰▰▰▰▰▰▱ 7/8\n"
-        "*Step 7/8 — Advanced Options*\n\n"
-        "Choose any optional settings. Everything is OFF unless you enable it.\n\n"
-        "🕑 *Posting Window:* Publish only during your selected local hours; posts wait outside the window.\n"
-        "🗑 *Auto-Delete:* Remove a post after a duration (minimum 5 minutes).\n"
-        "💣 *Self-Destruct:* Remove a post after a number of seconds. This cannot be combined with Auto-Delete.\n"
-        "📌 *Auto-Pin:* Pin each post after publishing, with an optional automatic unpin.",
+        flow_tr(language, "advanced_intro"),
         _advanced_keyboard(
-            w.get("time_window_enabled", False),
-            w.get("auto_delete", False),
-            w.get("self_destruct", False),
-            w.get("auto_pin", False),
-            _language(context),
+            draft.get("time_window_enabled", False),
+            draft.get("auto_delete", False),
+            draft.get("self_destruct", False),
+            draft.get("auto_pin", False),
+            language,
         ),
     )
     return WIZARD_TIME_WINDOW
+
 async def cb_back_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await _edit(query,
-        "🕐 *Step 7a — Window Start Time*\n\n"
-        "Type the earliest time posts should fire (e.g. `08:00`):",
-        nav_keyboard(back_data=CB_BACK_TW),
+    language = _language(context)
+    await _edit(
+        query,
+        flow_tr(language, "window_start"),
+        _wizard_nav_keyboard(context, CB_BACK_TW),
     )
     return WIZARD_TW_START
-
 
 async def cb_back_lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Return to Advanced Options from the final review or a lifecycle detail."""
     query = update.callback_query
-    w = _w(context)
+    draft = _w(context)
+    language = _language(context)
     await _edit(
         query,
-        "▰▰▰▰▰▰▰▱ 7/8\n"
-        "*Step 7/8 — Advanced Options*\n\n"
-        "Choose any optional settings. Everything is OFF unless you enable it.\n\n"
-        "🕑 *Posting Window:* Publish only during your selected local hours; posts wait outside the window.\n"
-        "🗑 *Auto-Delete:* Remove a post after a duration (minimum 5 minutes).\n"
-        "💣 *Self-Destruct:* Remove a post after a number of seconds. This cannot be combined with Auto-Delete.\n"
-        "📌 *Auto-Pin:* Pin each post after publishing, with an optional automatic unpin.",
+        flow_tr(language, "advanced_intro"),
         _advanced_keyboard(
-            w.get("time_window_enabled", False),
-            w.get("auto_delete", False),
-            w.get("self_destruct", False),
-            w.get("auto_pin", False),
-            _language(context),
+            draft.get("time_window_enabled", False),
+            draft.get("auto_delete", False),
+            draft.get("self_destruct", False),
+            draft.get("auto_pin", False),
+            language,
         ),
     )
     return WIZARD_TIME_WINDOW
+
 async def cb_cancel_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer("Cancelled.")
-    _clear(context)
-    chat_id = query.message.chat_id
     user_id = query.from_user.id if query.from_user else None
     language = await resolve_user_language(context, user_id)
+    cancelled = flow_tr(language, "cancelled")
+    await query.answer(cancelled.replace("*", ""))
+    _clear(context)
+    chat_id = query.message.chat_id
     await chat_cleanup.cleanup(context, chat_id, keep_message_id=query.message.message_id)
     await replace_with_main_menu_message(
-        query,
-        context,
-        "❌ *Cancelled.* Back to Main Menu.",
-        user_id,
-        language,
+        query, context, cancelled, user_id, language,
     )
     return ConversationHandler.END
+
 def build_schedule_wizard() -> ConversationHandler:
     dow_pattern  = r"^dow:[0-6]$"
     tz_pattern   = r"^tz:(?!page:).+"
