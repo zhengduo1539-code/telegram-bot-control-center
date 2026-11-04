@@ -350,7 +350,7 @@ def _pin_label(w: dict) -> str:
     if w.get("ap_hours") is None:
         return _t(w, "keep_pinned")
     duration = w.get("ap_duration_label")
-    return duration if duration else _flow(w, "unpin_after", value=w.get("ap_hours"))
+    return _t(w, "unpin_after_label", value=duration) if duration else _flow(w, "unpin_after", value=w.get("ap_hours"))
 
 
 def _options_text(w: dict) -> str:
