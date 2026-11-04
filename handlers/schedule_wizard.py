@@ -549,7 +549,7 @@ def _content_step_keyboard(has_content: bool = False, language: str = "en") -> I
 
 def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
     """Use the existing 20-language catalogue for the core content instructions."""
-    title = escape_markdown(str(w.get("chat_title") or w.get("chat_id") or "Selected chat"), version=1)
+    title = escape_markdown(str(w.get("chat_title") or w.get("chat_id") or sw_tr(language, "destination_label")), version=1)
     return (
         "▰▱▱▱▱▱▱▱ 2/8\n"
         f"{tr(language, 'schedule_content_title')}\n\n"
@@ -1897,17 +1897,21 @@ def _localize_validation_error(error: str, language: str) -> str:
     """Map validator details to the matching localized recovery guidance."""
     message = (error or "").lower()
     if "destination" in message or "posting access" in message:
-        return sw_tr(language, "deep_link_unavailable")
+        return sw_tr(language, "validation_destination")
     if "first posting time" in message or "future" in message:
         return sw_tr(language, "first_time_invalid")
     if "timezone" in message:
         return sw_tr(language, "timezone_unknown")
-    if "weekday" in message or "day" in message and "select" in message:
+    if "weekday" in message or ("day" in message and "select" in message):
         return sw_tr(language, "days_required")
-    if "interval" in message or "repeat schedule" in message:
+    if "repeat schedule" in message:
+        return sw_tr(language, "validation_recurrence")
+    if "interval" in message:
         return sw_tr(language, "interval_invalid")
     if "posting window" in message or "window" in message:
         return sw_tr(language, "invalid_window")
+    if "either auto-delete or self-destruct" in message:
+        return sw_tr(language, "validation_delete_conflict")
     if "auto-delete" in message:
         return sw_tr(language, "invalid_auto_delete")
     if "self-destruct" in message:
@@ -1919,7 +1923,7 @@ def _localize_validation_error(error: str, language: str) -> str:
     if "button" in message or "label" in message or "destination link" in message:
         return sw_tr(language, "button_link_invalid")
     if "content" in message or "media" in message:
-        return sw_tr(language, "unsupported_content")
+        return sw_tr(language, "validation_content")
     return sw_tr(language, "validation_generic")
 
 
