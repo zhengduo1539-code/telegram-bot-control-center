@@ -743,7 +743,7 @@ async def cb_mpp_filter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return MY_POSTS
     filter_key = (query.data or "").replace(CB_MPP_FILTER, "", 1)
     if filter_key not in _MP_FILTERS:
-        await query.answer("Unknown filter.", show_alert=True)
+        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "unknown_filter"), show_alert=True)
         return MY_POSTS
     context.user_data["_mp_filter"] = filter_key
     context.user_data["_mp_page"] = 0
@@ -772,7 +772,7 @@ async def cb_mpp_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     post_id = (query.data or "").replace(CB_MPP_PAUSE, "")
     try:
         await update_post_status(post_id, "paused")
-        await query.answer("⏸ Post paused.")
+        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "paused_notice"))
     except Exception as exc:
         logger.exception("Pause post %s failed: %s", post_id, exc)
         await query.answer(f"Error: {exc}", show_alert=True)
@@ -792,12 +792,12 @@ async def cb_mpp_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         post = await get_post(post_id)
         if post and (post.get("recurrence") or {}).get("type") == "pool":
             await query.answer(
-                "This legacy Media Pool schedule is retired. Create a new schedule with Schedule New Post.",
+                mp_tr(await resolve_user_language(context, query.from_user.id), "legacy_retired"),
                 show_alert=True,
             )
             return MY_POSTS
         await update_post_status(post_id, "pending")
-        await query.answer("▶️ Post resumed.")
+        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "resumed_notice"))
     except Exception as exc:
         logger.exception("Resume post %s failed: %s", post_id, exc)
         await query.answer(f"Error: {exc}", show_alert=True)
@@ -814,12 +814,12 @@ async def cb_mpp_del(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     post_id = (query.data or "").replace(CB_MPP_DEL, "")
     await query.answer()
     await query.edit_message_text(
-        "⚠️ *Confirm Delete*\n\nThis post will be permanently deleted.\n\nProceed?",
+        f"⚠️ *{mp_tr(await resolve_user_language(context, query.from_user.id), 'delete_title')}*\n\n{mp_tr(await resolve_user_language(context, query.from_user.id), 'delete_body')}",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Yes, delete", style="danger", callback_data=f"{CB_MPP_DEL_YES}{post_id}"),
-                InlineKeyboardButton("⬅️ Back",        callback_data=CB_MY_POSTS),
+                InlineKeyboardButton("✅ " + mp_tr(await resolve_user_language(context, query.from_user.id), "yes_delete"), style="danger", callback_data=f"{CB_MPP_DEL_YES}{post_id}"),
+                InlineKeyboardButton("⬅️ " + tr(await resolve_user_language(context, query.from_user.id), "back"), callback_data=CB_MY_POSTS),
             ],
         ]),
     )
@@ -835,7 +835,7 @@ async def cb_mpp_del_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     post_id = (query.data or "").replace(CB_MPP_DEL_YES, "")
     try:
         deleted = await delete_post(post_id)
-        await query.answer("Deleted." if deleted else "Already deleted.")
+        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "deleted" if deleted else "already_deleted"))
     except Exception as exc:
         logger.exception("Delete post %s failed: %s", post_id, exc)
         await query.answer(f"Error: {exc}", show_alert=True)
@@ -863,7 +863,7 @@ async def cb_mpp_clone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await query.answer(f"Error: {exc}", show_alert=True)
         return MY_POSTS
     if not post:
-        await query.answer("Post not found.", show_alert=True)
+        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "post_not_found"), show_alert=True)
         return MY_POSTS
     await query.answer()
     chat_id  = post.get("chat_id", "?")
@@ -875,16 +875,16 @@ async def cb_mpp_clone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return MY_POSTS
     await query.edit_message_text(
-        f"🔁 *Clone Post*\n\n"
+        f"🔁 *{mp_tr(await resolve_user_language(context, query.from_user.id), 'clone_title')}*\n\n"
         f"🗂 Chat: `{chat_id}`\n"
         f"🔄 Recurrence: `{rec_type}`\n\n"
-        "A copy will be created with the same content and recurrence settings.\n"
-        "It will be scheduled to run in *5 minutes* from now.\n\n"
-        "Confirm?",
+        mp_tr(await resolve_user_language(context, query.from_user.id), "clone_body") + "\n"
+        
+        ,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Clone",  style="success", callback_data=f"{CB_MPP_CLONE_YES}{post_id}"),
+                InlineKeyboardButton("✅ " + mp_tr(await resolve_user_language(context, query.from_user.id), "clone_button"), style="success", callback_data=f"{CB_MPP_CLONE_YES}{post_id}"),
                 InlineKeyboardButton("⬅️ Back",  callback_data=CB_MY_POSTS),
             ],
         ]),
@@ -912,7 +912,7 @@ async def cb_mpp_clone_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.exception("Clone post %s failed: %s", post_id, exc)
         await query.answer(f"Error: {exc}", show_alert=True)
         return MY_POSTS
-    await query.answer(f"✅ Cloned! ID ends …{new_id[-6:]}")
+    await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "cloned_notice", suffix=new_id[-6:]))
     user_id: int = query.from_user.id
     page = context.user_data.get("_mp_page", 0)
     return await _render_my_posts(query, user_id, page, context)
