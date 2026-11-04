@@ -40,7 +40,8 @@ from database import (
 )
 from handlers import chat_cleanup
 from handlers.base import CB_LANGUAGE, build_base_conversation
-from handlers.language import cmd_lang, handle_language_choice, language_selection_filter
+from handlers.language import cmd_lang, handle_language_choice, language_selection_filter, resolve_user_language
+from system_localization import translate_system as st, command_descriptions
 from handlers.owner_panel import build_owner_panel
 from handlers.schedule_post_flow import build_schedule_wizard
 from keep_alive import app as health_app
@@ -71,7 +72,9 @@ async def cmd_ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
     try:
-        await update.message.reply_text("pong — " + BOT_VERSION)
+        user_id = update.effective_user.id if update.effective_user else None
+        language = await resolve_user_language(context, user_id)
+        await update.message.reply_text(st(language, "ping_prefix") + BOT_VERSION)
     except Exception:
         logger.exception("cmd_ping failed")
 
@@ -80,19 +83,18 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show the current chat ID and the sender's Telegram user ID."""
     if not update.message or not update.effective_chat or not update.effective_user:
         return
-
     from telegram.helpers import escape_markdown
-
     chat = update.effective_chat
     user = update.effective_user
+    language = await resolve_user_language(context, user.id)
     title = escape_markdown(chat.title or chat.first_name or "Private Chat", version=1)
     try:
         await update.message.reply_text(
-            f"ℹ️ *Group Help*\n"
+            f"{st(language, 'id_title')}\n"
             f"{title}\n\n"
-            f"Command: /id\n\n"
-            f"*CHAT ID:* {chat.id}\n"
-            f"*YOUR ID:* {user.id}",
+            f"{st(language, 'id_command')}\n\n"
+            f"{st(language, 'chat_id')} {chat.id}\n"
+            f"{st(language, 'user_id')} {user.id}",
             parse_mode=ParseMode.MARKDOWN,
         )
     except Exception:
@@ -113,12 +115,17 @@ async def post_init(application: Application) -> None:
     # owner-only commands are intentionally not exposed to regular users.
     try:
         await application.bot.set_my_commands([
-            BotCommand("start", "🏠 Open the main menu"),
-            BotCommand("lang", "🌐 Change language"),
-            BotCommand("id", "ℹ️ Show chat and user IDs"),
-            BotCommand("cancel", "❌ Cancel the current action"),
+            BotCommand(command, description)
+            for command, description in command_descriptions("en")
         ])
-        logger.info("Telegram Bot Commands Menu configured.")
+        # Telegram supports localized command menus by user language. Configure
+        # each supported locale so the slash-command picker follows /lang too.
+        for locale in ("my", "zh", "es", "hi", "ar", "pt", "fr", "ru", "bn", "id", "ja", "ko", "th", "vi", "tr", "de", "it", "ur", "sw"):
+            await application.bot.set_my_commands(
+                [BotCommand(command, description) for command, description in command_descriptions(locale)],
+                language_code=locale,
+            )
+        logger.info("Telegram Bot Commands Menu configured for all supported languages.")
     except Exception:
         # A command-menu API issue must not prevent the scheduler from starting.
         logger.exception("Could not update the Telegram Bot Commands Menu.")
