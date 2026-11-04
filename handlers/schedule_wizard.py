@@ -370,35 +370,27 @@ def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
 
 
 def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
-    """Combined Step 7 keyboard: silent-hours toggle + all lifecycle toggles."""
+    """Optional controls for when posts may publish and what happens afterward."""
     tw_btn = InlineKeyboardButton(
-        "🟢 Silent Hours: ON ✅" if tw else "🔘 Silent Hours: OFF",
+        "🟢 Posting Window: ON" if tw else "🔘 Posting Window: OFF",
         style="success" if tw else "primary",
         callback_data=CB_TW_OFF if tw else CB_TW_ON,
     )
-    def _flag(v: bool) -> str:
-        return "✅" if v else "☐"
+
+    def _flag(enabled: bool) -> str:
+        return "✅" if enabled else "☐"
+
     return InlineKeyboardMarkup([
         [tw_btn],
-        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after X hours", style="success" if ad else "primary", callback_data=CB_LC_AD)],
-        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after X seconds", style="success" if sd else "primary", callback_data=CB_LC_SD)],
-        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)", style="success" if ap else "primary", callback_data=CB_LC_AP)],
+        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after a duration", style="success" if ad else "primary", callback_data=CB_LC_AD)],
+        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after seconds", style="success" if sd else "primary", callback_data=CB_LC_SD)],
+        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin after publishing", style="success" if ap else "primary", callback_data=CB_LC_AP)],
         [
-            InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MAX_RUNS),
-            InlineKeyboardButton("➡️ Next",   style="success", callback_data=CB_LC_NEXT),
+            InlineKeyboardButton("⬅️ Back", callback_data=CB_BACK_MAX_RUNS),
+            InlineKeyboardButton("➡️ Review Options", style="success", callback_data=CB_LC_NEXT),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
         ],
     ])
-
-
-# ---------------------------------------------------------------------------
-# Input parsers / validators
-# ---------------------------------------------------------------------------
-
-_TIME_RE  = re.compile(r"^(\d{1,2}):(\d{2})$")
-_DT_RE    = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})$")
-
-
 def _parse_run_time(text: str, tz: str) -> datetime | None:
     """Parse the selected local time and return an aware UTC datetime."""
     return parse_schedule_datetime(text, tz)
@@ -1400,137 +1392,126 @@ async def cb_mr_preset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     )
     return WIZARD_TIME_WINDOW
 async def cb_tw_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Toggle silent-hours on/off; refresh the combined Advanced Options keyboard."""
+    """Toggle a local-time posting window and refresh the settings."""
     query = update.callback_query
     w = _w(context)
     enabled = query.data == CB_TW_ON
     w["time_window_enabled"] = enabled
-    await query.answer("🟢 Silent Hours enabled" if enabled else "🔘 Silent Hours disabled")
+    if not enabled:
+        w.pop("tw_start", None)
+        w.pop("tw_end", None)
+    await query.answer("Posting Window enabled" if enabled else "Posting Window disabled")
     await query.edit_message_reply_markup(
-        _advanced_keyboard(enabled, w.get("auto_delete", False),
-                           w.get("self_destruct", False), w.get("auto_pin", False))
+        _advanced_keyboard(
+            enabled,
+            w.get("auto_delete", False),
+            w.get("self_destruct", False),
+            w.get("auto_pin", False),
+        )
     )
     return WIZARD_TIME_WINDOW
-
-
 async def cb_adv_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    Called when user taps ➡️ Next on the Advanced Options screen.
-    Routes: TW_START (if silent hours ON) → lifecycle details → Summary.
-    """
+    """Route enabled optional settings through their detail screens."""
     query = update.callback_query
     w = _w(context)
     if w.get("time_window_enabled"):
-        await _edit(query,
-            "🕐 *Step 7a — Window Start Time*\n\n"
-            "Type the earliest time posts should fire (e.g. `08:00`):",
+        await _edit(
+            query,
+            "🕐 *Posting Window — Start Time*\n\n"
+            "Enter the earliest local time the bot may publish each day.\n"
+            "Use 24-hour HH:MM format, for example 08:00.\n"
+            "Posts scheduled outside this window will wait until it opens.",
             nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_TW_START
-    # No silent hours — route straight to lifecycle detail(s) or summary
-    w["tw_start"] = None
-    w["tw_end"]   = None
+
+    w.pop("tw_start", None)
+    w.pop("tw_end", None)
     if w.get("auto_delete"):
-        await _edit(query,
-            "🗑 *Auto-Delete — When should the post be deleted?*\n\n"
-            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
+        await _edit(
+            query,
+            "🗑 *Auto-Delete*\n\n"
+            "How long after each post is published should the bot delete it?\n"
+            "Enter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
             nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
     if w.get("self_destruct"):
-        await _edit(query,
-            "💣 *Self-Destruct — After how many seconds?*\n\n"
-            "Type a positive integer (e.g. `60`):",
+        await _edit(
+            query,
+            "💣 *Self-Destruct*\n\n"
+            "How many seconds after publishing should the bot delete each post?\n"
+            "Enter a positive whole number, such as 60.",
             nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
     if w.get("auto_pin"):
-        await _edit(query,
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number (e.g. `12`):",
-            nav_keyboard(back_data=CB_BACK_TW),
+        await _edit(
+            query,
+            "📌 *Auto-Pin*\n\n"
+            "Choose how long each post should stay pinned, or keep it pinned until you remove it manually.",
+            _auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary(update, context)
-
-
-# ---------------------------------------------------------------------------
-# Steps 7a / 7b — Time-window start / end
-# ---------------------------------------------------------------------------
-
 async def recv_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    parsed = _parse_hhmm(text)
+    raw = (update.message.text or "").strip()
+    parsed = _parse_hhmm(raw)
     if parsed is None:
-        await update.message.reply_text("⚠️ Use `HH:MM` format, e.g. `08:00`.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            "⚠️ Enter a valid 24-hour time in HH:MM format, such as 08:00.",
+            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+        )
         return WIZARD_TW_START
     _w(context)["tw_start"] = parsed
     await update.message.reply_text(
-        f"✅ Window starts: `{parsed}`\n\n"
-        "🕐 *Step 7b — Window End Time*\n\n"
-        "Type the latest time posts may fire (e.g. `22:00`):",
-        parse_mode=ParseMode.MARKDOWN,
+        f"✅ Posting window opens at {parsed}.\n\n"
+        "🕐 *Posting Window — End Time*\n\n"
+        "Enter the latest local time the bot may publish, using HH:MM (for example, 22:00).\n"
+        "The window may cross midnight, such as 22:00 to 06:00.",
         reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
     )
     return WIZARD_TW_END
-
-
 async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    parsed = _parse_hhmm(text)
+    raw = (update.message.text or "").strip()
+    parsed = _parse_hhmm(raw)
     w = _w(context)
     if parsed is None:
-        await update.message.reply_text("⚠️ Use `HH:MM` format, e.g. `22:00`.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            "⚠️ Enter a valid 24-hour time in HH:MM format, such as 22:00.",
+            reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
+        )
         return WIZARD_TW_END
 
-    start = w.get("tw_start", "00:00")
-    if parsed == start:
+    start = w.get("tw_start")
+    if not start or parsed == start:
         await update.message.reply_text(
-            "⚠️ Start and end times cannot be identical. Use an earlier end time for an overnight window.",
-            parse_mode=ParseMode.MARKDOWN,
+            "⚠️ Start and end times must be valid and different. For an overnight window, choose an earlier end time.",
+            reply_markup=nav_keyboard(back_data=CB_BACK_TW_START),
         )
         return WIZARD_TW_END
 
     w["tw_end"] = parsed
-    # Initialise lifecycle flags
-    w.setdefault("auto_delete",   False)
-    w.setdefault("self_destruct", False)
-    w.setdefault("auto_pin",      False)
-    # Route directly to first enabled lifecycle detail, or summary
-    if w["auto_delete"]:
+    prefix = f"✅ Posting window: {start}–{parsed}.\n\n"
+    if w.get("auto_delete"):
         await update.message.reply_text(
-            f"✅ Window: `{start}` → `{parsed}`\n\n"
-            "🗑 *Auto-Delete — When should the post be deleted?*\n\n"
-            "Enter a duration with its unit, e.g. `5 minutes` or `2 hours`. Minimum: 5 minutes.",
-            parse_mode=ParseMode.MARKDOWN,
+            prefix + "🗑 *Auto-Delete*\nEnter a duration such as 5 minutes or 2 hours. Minimum: 5 minutes.",
             reply_markup=nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_AD_HOURS
-    if w["self_destruct"]:
+    if w.get("self_destruct"):
         await update.message.reply_text(
-            f"✅ Window: `{start}` → `{parsed}`\n\n"
-            "💣 *Self-Destruct — After how many seconds?*\n\n"
-            "Type a positive integer (e.g. `60`):",
-            parse_mode=ParseMode.MARKDOWN,
+            prefix + "💣 *Self-Destruct*\nEnter the number of seconds after publishing before each post is deleted.",
             reply_markup=nav_keyboard(back_data=CB_BACK_TW),
         )
         return WIZARD_SD_SECS
-    if w["auto_pin"]:
+    if w.get("auto_pin"):
         await update.message.reply_text(
-            f"✅ Window: `{start}` → `{parsed}`\n\n"
-            "📌 *Auto-Pin — Unpin after how many hours?*\n\n"
-            "Type a positive number (e.g. `12`):",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=nav_keyboard(back_data=CB_BACK_TW),
+            prefix + "📌 *Auto-Pin*\nChoose how long each post stays pinned, or keep it pinned until you remove it manually.",
+            reply_markup=_auto_pin_keyboard(),
         )
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
-
-
-# ---------------------------------------------------------------------------
-# Step 8 — Lifecycle toggles
-# ---------------------------------------------------------------------------
-
 async def cb_lc_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Toggle a lifecycle option on the Advanced Options screen; refresh keyboard in-place."""
     query = update.callback_query
