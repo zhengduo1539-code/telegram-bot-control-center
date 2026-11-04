@@ -1085,40 +1085,61 @@ async def cb_pin_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _show(context, w, _flow(w, "pin_prompt"), _nav(CB_OPTIONS, _lang(w)))
     return AUTO_PIN
 
-def _duration_to_hours(raw: str, *, max_minutes: int) -> float | None:
-    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.I)
+_DURATION_UNITS = {
+    "en": {"minutes": {"minute", "minutes", "min", "mins", "m"}, "hours": {"hour", "hours", "hr", "hrs", "h"}},
+    "my": {"minutes": {"မိနစ်"}, "hours": {"နာရီ"}},
+    "zh": {"minutes": {"分钟", "分鐘", "分"}, "hours": {"小时", "小時", "时", "時"}},
+    "es": {"minutes": {"minuto", "minutos", "min"}, "hours": {"hora", "horas"}},
+    "hi": {"minutes": {"मिनट", "मिनटों"}, "hours": {"घंटा", "घंटे", "घंटों"}},
+    "ar": {"minutes": {"دقيقة", "دقائق", "دقيقه"}, "hours": {"ساعة", "ساعات"}},
+    "pt": {"minutes": {"minuto", "minutos", "min"}, "hours": {"hora", "horas"}},
+    "fr": {"minutes": {"minute", "minutes", "min"}, "hours": {"heure", "heures"}},
+    "ru": {"minutes": {"минута", "минуты", "минут", "мин"}, "hours": {"час", "часа", "часов"}},
+    "bn": {"minutes": {"মিনিট"}, "hours": {"ঘণ্টা", "ঘন্টা"}},
+    "id": {"minutes": {"menit"}, "hours": {"jam"}},
+    "ja": {"minutes": {"分", "分間"}, "hours": {"時間", "時"}},
+    "ko": {"minutes": {"분"}, "hours": {"시간"}},
+    "th": {"minutes": {"นาที"}, "hours": {"ชั่วโมง"}},
+    "vi": {"minutes": {"phút"}, "hours": {"giờ"}},
+    "tr": {"minutes": {"dakika", "dk"}, "hours": {"saat"}},
+    "de": {"minutes": {"minute", "minuten", "min"}, "hours": {"stunde", "stunden", "std"}},
+    "it": {"minutes": {"minuto", "minuti", "min"}, "hours": {"ora", "ore"}},
+    "ur": {"minutes": {"منٹ"}, "hours": {"گھنٹہ", "گھنٹے", "گھنٹوں"}},
+    "sw": {"minutes": {"dakika"}, "hours": {"saa", "masaa"}},
+}
+
+def _duration_to_hours(raw: str, *, max_minutes: int, language: str = 'en') -> float | None:
+    match = re.fullmatch(r"\s*(\d+)\s*(.*?)\s*", raw or "", re.I)
     if not match:
         return None
-    amount, unit = int(match.group(1)), match.group(2).lower()
-    minutes = amount if unit in {"m", "min", "mins", "minute", "minutes"} else amount * 60
+    amount, unit = int(match.group(1)), match.group(2).casefold().strip()
+    aliases = _DURATION_UNITS.get(language, _DURATION_UNITS["en"])
+    english = _DURATION_UNITS["en"]
+    if unit in aliases["minutes"] or unit in english["minutes"]:
+        minutes = amount
+    elif unit in aliases["hours"] or unit in english["hours"]:
+        minutes = amount * 60
+    else:
+        return None
     if not 5 <= minutes <= max_minutes:
         return None
     return minutes / 60
 
-
-def _duration_label(hours: float) -> str:
+def _duration_label(hours: float, language: str = 'en') -> str:
     minutes = round(hours * 60)
-    if minutes < 60:
-        return f"{minutes} minutes"
     if minutes % 60 == 0:
-        count = minutes // 60
-        return f"{count} hour" if count == 1 else f"{count} hours"
-    return f"{minutes} minutes"
-
+        return f"{minutes // 60} {_flow({'language': language}, 'unit_hours')}"
+    return f"{minutes} {_flow({'language': language}, 'unit_minutes')}"
 
 async def recv_auto_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw = (update.message.text or "").strip()
-    value = _duration_to_hours(raw, max_minutes=87600 * 60)
-    if value is None:
-        await update.message.reply_text(
-            "Enter a duration such as 5 minutes, 30m, 2 hours or 12h. "
-            "Minimum: 5 minutes; maximum: 87,600 hours."
-        )
-        return AUTO_PIN
     w = _w(context)
-    w.update(auto_pin=True, ap_hours=value, ap_duration_label=_duration_label(value))
+    raw = (update.message.text or "").strip()
+    value = _duration_to_hours(raw, max_minutes=87600 * 60, language=_lang(w))
+    if value is None:
+        await update.message.reply_text(_flow(w, "pin_invalid"))
+        return AUTO_PIN
+    w.update(auto_pin=True, ap_hours=value, ap_duration_label=_duration_label(value, _lang(w)))
     return await _home(context, w, _t(w, "pin_updated"))
-
 
 async def cb_pin_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
