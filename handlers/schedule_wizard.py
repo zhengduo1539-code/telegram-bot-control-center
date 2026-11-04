@@ -667,23 +667,17 @@ async def cb_chat_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def cb_manual_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User wants to type the chat ID manually."""
+    """Offer manual destination entry without leaving the destination step."""
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "▰▱▱▱▱▱▱▱ 1/8\n*Chat* › Content › Recurrence › Timezone › 1st Run › Max Runs › Advanced › Summary\n📅 *Step 1/8 — Target Chat*\n\n"
-        "✏️ Type the *Chat ID* of the target channel or group:\n\n"
-        "💡 Forward any message from the chat to @userinfobot to find its ID.\n\n"
-        "Example: `-1001234567890`",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=nav_keyboard(back_data=CB_MAIN_MENU),
+        "▰▱▱▱▱▱▱▱ 1/8\n*Step 1/8 — Destination*\n\n"
+        "Enter the numeric Telegram ID of the group or channel where the bot can publish.\n\n"
+        "Example: -1001234567890\n\n"
+        "To find an ID, forward a message from the chat to a trusted ID helper.",
+        reply_markup=nav_keyboard(back_data=CB_BACK_CHAT),
     )
     return WIZARD_CHAT_ID
-
-
-# Step 1 — Chat ID (manual text entry fallback)
-# ---------------------------------------------------------------------------
-
 async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     try:
@@ -955,53 +949,55 @@ async def cb_rec_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await _edit(query, tr(language, "timezone_prompt"), _timezone_keyboard(0, language))
     return WIZARD_TIMEZONE
 async def cb_rec_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    _w(context)["recurrence_type"] = "interval"
+    """Start interval recurrence and clear values belonging to other modes."""
+    w = _w(context)
+    w["recurrence_type"] = "interval"
+    w.pop("days_of_week", None)
+    w.pop("interval_value", None)
+    w.pop("interval_unit", None)
     query = update.callback_query
-    await _edit(query,
-        "⏱ *Step 3a — Interval Value*\n\n"
-        "How many minutes/hours/days between each post?\n\n"
-        "Type a positive whole number (e.g. `6`):",
+    await _edit(
+        query,
+        "🔁 *Step 3/8 — Repeat Schedule*\n\n"
+        "How often should the bot publish this post?\n\n"
+        "Enter a whole number from 1 to 525,600. You will choose minutes, hours, or days next.\n"
+        "Examples: 30 (minutes), 6 (hours), or 1 (day).",
         nav_keyboard(back_data=CB_BACK_RECURRENCE),
     )
     return WIZARD_INTERVAL_VALUE
-
-
 async def cb_rec_dow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start weekly recurrence and clear interval-only values."""
     w = _w(context)
     w["recurrence_type"] = "days_of_week"
-    w.setdefault("days_of_week", set())
+    w.pop("interval_value", None)
+    w.pop("interval_unit", None)
+    w["days_of_week"] = set()
     query = update.callback_query
-    await _edit(query,
-        "📆 *Step 3a — Days of Week*\n\n"
-        "Tap days to toggle them. Tap *➡️ Next* when done.",
+    await _edit(
+        query,
+        "📆 *Step 3/8 — Repeat Days*\n\n"
+        "Select every day on which this post should be published. "
+        "You can choose more than one day.\n\nTap Next when your selection is complete.",
         _dow_keyboard(w["days_of_week"]),
     )
     return WIZARD_DOW_SELECT
-
-
-# ---------------------------------------------------------------------------
-# Step 3a (interval) — value
-# ---------------------------------------------------------------------------
-
 async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = (update.message.text or "").strip()
-    if not text.isdigit() or int(text) <= 0:
+    raw = (update.message.text or "").strip()
+    if not raw.isdecimal() or not (1 <= int(raw) <= 525600):
         await update.message.reply_text(
-            "⚠️ Please enter a *positive whole number* greater than 0 (e.g. `6`).",
-            parse_mode=ParseMode.MARKDOWN,
+            "⚠️ Enter a whole number from 1 to 525,600. For example, 6.",
+            reply_markup=nav_keyboard(back_data=CB_BACK_RECURRENCE),
         )
         return WIZARD_INTERVAL_VALUE
-
-    _w(context)["interval_value"] = int(text)
+    w = _w(context)
+    w["interval_value"] = int(raw)
+    w.pop("interval_unit", None)
     await update.message.reply_text(
-        f"✅ Value: `{text}`\n\n"
-        "⏱ *Step 3b — Interval Unit*\n\nChoose the time unit:",
-        parse_mode=ParseMode.MARKDOWN,
+        f"✅ Interval value: {raw}\n\n"
+        "Choose the unit for this interval.",
         reply_markup=_interval_unit_keyboard(),
     )
     return WIZARD_INTERVAL_UNIT
-
-
 async def cb_back_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
@@ -1018,21 +1014,32 @@ async def cb_back_interval_value(update: Update, context: ContextTypes.DEFAULT_T
 
 async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    unit_map = {CB_IU_MINUTES: "minutes", CB_IU_HOURS: "hours", CB_IU_DAYS: "days"}
-    unit = unit_map[query.data]
-    _w(context)["interval_unit"] = unit
+    unit_map = {
+        CB_IU_MINUTES: "minutes",
+        CB_IU_HOURS: "hours",
+        CB_IU_DAYS: "days",
+    }
+    unit = unit_map.get(query.data)
+    if unit is None:
+        await query.answer("Choose minutes, hours, or days.", show_alert=True)
+        return WIZARD_INTERVAL_UNIT
+    value = _w(context).get("interval_value")
+    limits = {"minutes": 525600, "hours": 8760, "days": 365}
+    if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= limits[unit]:
+        await query.answer(
+            f"Enter an interval from 1 to {limits[unit]} {unit}.",
+            show_alert=True,
+        )
+        return WIZARD_INTERVAL_VALUE
+    w = _w(context)
+    w["interval_unit"] = unit
     language = context.user_data.get("language", "en")
     await _edit(
         query,
-        f"✅ Interval: every \`{_w(context)['interval_value']} {unit}\`\n\n{tr(language, 'timezone_prompt')}",
+        f"✅ Repeat: every {value} {unit}.\n\n{tr(language, 'timezone_prompt')}",
         _timezone_keyboard(0, language),
     )
     return WIZARD_TIMEZONE
-
-# ---------------------------------------------------------------------------
-# Step 3a (DOW) — day toggles
-# ---------------------------------------------------------------------------
-
 async def cb_dow_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     day = int(query.data.split(":")[1])
