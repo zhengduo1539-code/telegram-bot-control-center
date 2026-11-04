@@ -562,18 +562,15 @@ def _content_step_keyboard(has_content: bool = False) -> InlineKeyboardMarkup:
 
 
 def _content_prompt_text(w: dict[str, Any], language: str = "en") -> str:
+    """Use the existing 20-language catalogue for the core content instructions."""
     title = escape_markdown(str(w.get("chat_title") or w.get("chat_id") or "Selected chat"), version=1)
     return (
         "▰▱▱▱▱▱▱▱ 2/8\n"
-        "📝 *Step 2/8 — Post Content*\n\n"
+        f"{tr(language, 'schedule_content_title')}\n\n"
         f"📍 *Destination:* {title}\n\n"
-        "Send one message that you want the bot to publish.\n\n"
-        "Supported: text, photo, video, document, audio, animation, or voice message.\n"
-        "To publish text with media, send the media with a caption.\n"
-        "Each Telegram message becomes one scheduled post; albums and forwarded bundles are not combined."
+        f"{tr(language, 'schedule_content_prompt')}\n\n"
+        "Each Telegram message becomes one scheduled post. Send media with a caption to include text. Albums and forwarded message bundles are not combined."
     )
-
-
 def _inline_buttons_prompt(w: dict[str, Any]) -> str:
     count = len(w.get("inline_buttons", []))
     media = w.get("media_type")
@@ -1225,33 +1222,26 @@ async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    tz_name = query.data.replace("tz:", "")
+    tz_name = (query.data or "").replace("tz:", "", 1)
     try:
         pytz.timezone(tz_name)
-    except pytz.exceptions.UnknownTimeZoneError:
-        await query.answer("⚠️ Unknown timezone.", show_alert=True)
+    except (pytz.exceptions.UnknownTimeZoneError, TypeError):
+        await query.answer("Unknown timezone. Please choose one from the list.", show_alert=True)
         return WIZARD_TIMEZONE
 
     w = _w(context)
     w["timezone"] = tz_name
-
-    await _edit(query,
-        f"✅ Timezone: `{tz_name}`\n\n"
-        f"{tr(context.user_data.get('language', 'en'), 'first_run_prompt')}\\n\\n"
-        "When should this post fire?\n\n"
-        "Type the date/time:\n"
-        "• `HH:MM` — the next occurrence (today if upcoming, otherwise tomorrow; e.g. `14:30`)\n"
-        "• `DD/MM/YYYY HH:MM` — specific date (e.g. `25/12/2027 09:00`)\n\n"
-        "Or tap *💡 Suggest Best Time* to see active hours for this chat.",
+    language = context.user_data.get("language", "en")
+    await _edit(
+        query,
+        f"✅ Timezone: {escape_markdown(tz_name, version=1)}\n\n"
+        f"{tr(language, 'first_run_prompt')}\n\n"
+        "Enter a 24-hour time such as 14:30 for the next occurrence, or "
+        "DD/MM/YYYY HH:MM for an exact date, such as 25/12/2027 09:00.\n\n"
+        "Or tap Suggest Best Time to choose from the group's recent activity.",
         _first_run_keyboard(CB_BACK_TIMEZONE),
     )
     return WIZARD_FIRST_RUN
-
-
-# ---------------------------------------------------------------------------
-# Back to timezone
-# ---------------------------------------------------------------------------
-
 async def cb_back_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Called from First Run back button — return to Timezone picker."""
     query = update.callback_query
