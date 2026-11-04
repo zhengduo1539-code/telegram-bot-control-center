@@ -1513,21 +1513,46 @@ async def recv_tw_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return WIZARD_AP_HOURS
     return await _show_summary_from_message(update, context)
 async def cb_lc_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Toggle a lifecycle option on the Advanced Options screen; refresh keyboard in-place."""
+    """Toggle optional post actions; deletion modes are mutually exclusive."""
     query = update.callback_query
     w = _w(context)
     key_map = {CB_LC_AD: "auto_delete", CB_LC_SD: "self_destruct", CB_LC_AP: "auto_pin"}
-    key = key_map[query.data]
-    w[key] = not w.get(key, False)
-    await query.answer(f"{'✅ Enabled' if w[key] else '☐ Disabled'}: {key.replace('_', ' ').title()}")
+    key = key_map.get(query.data)
+    if key is None:
+        await query.answer("Unknown option.", show_alert=True)
+        return WIZARD_TIME_WINDOW
+
+    enabled = not bool(w.get(key, False))
+    w[key] = enabled
+    if key == "auto_delete":
+        if enabled:
+            w["self_destruct"] = False
+            w.pop("sd_secs", None)
+        else:
+            w.pop("ad_hours", None)
+            w.pop("ad_duration_label", None)
+    elif key == "self_destruct":
+        if enabled:
+            w["auto_delete"] = False
+            w.pop("ad_hours", None)
+            w.pop("ad_duration_label", None)
+        else:
+            w.pop("sd_secs", None)
+    elif key == "auto_pin" and not enabled:
+        w.pop("ap_hours", None)
+
+    await query.answer(
+        f"{'Enabled' if enabled else 'Disabled'}: {key.replace('_', ' ').title()}"
+    )
     await query.edit_message_reply_markup(
-        _advanced_keyboard(w.get("time_window_enabled", False),
-                           w.get("auto_delete", False), w.get("self_destruct", False),
-                           w.get("auto_pin", False))
+        _advanced_keyboard(
+            w.get("time_window_enabled", False),
+            w.get("auto_delete", False),
+            w.get("self_destruct", False),
+            w.get("auto_pin", False),
+        )
     )
     return WIZARD_TIME_WINDOW
-
-
 async def cb_lc_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Route to the first enabled lifecycle detail step, or directly to summary.
     (Kept for back-compat; primary entry is now cb_adv_next from Advanced Options.)"""
