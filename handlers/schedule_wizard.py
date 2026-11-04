@@ -1912,43 +1912,40 @@ async def _edit_confirm_result(
 
 
 async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Revalidate, save once, and confirm without relying on an editable old message."""
+    """Revalidate, save once, and acknowledge using the user's selected language."""
     query = update.callback_query
+    language = _language(context)
     message = getattr(query, "message", None)
     message_id = getattr(message, "message_id", None)
     completed = context.user_data.get("_completed_schedule_confirmations", {})
     message_key = str(message_id) if message_id is not None else None
 
-    # A completed wizard can receive delayed/replayed callback updates. Never
-    # recreate its draft or attempt a second database insert for that message.
+    # Delayed or replayed callbacks must never create a duplicate schedule.
     if message_key is not None and isinstance(completed, dict) and message_key in completed:
-        await query.answer("This schedule has already been saved.", show_alert=True)
+        await query.answer(flow_tr(language, "already_saved"), show_alert=True)
         return ConversationHandler.END
 
-    w = context.user_data.get("wizard")
-    if not isinstance(w, dict):
-        await query.answer(
-            "This setup is no longer active. Start a new schedule to continue.",
-            show_alert=True,
-        )
+    draft = context.user_data.get("wizard")
+    if not isinstance(draft, dict):
+        await query.answer(flow_tr(language, "setup_inactive"), show_alert=True)
         return ConversationHandler.END
 
-    if w.get("_saving"):
-        await query.answer("Your schedule is already being saved.")
+    if draft.get("_saving"):
+        await query.answer(flow_tr(language, "already_saving"), show_alert=True)
         return WIZARD_SUMMARY
 
-    validation_error = _validate_schedule_draft(w)
+    validation_error = _validate_schedule_draft(draft)
     if validation_error:
         await query.answer()
         if "destination" in validation_error.lower():
             user_id = query.from_user.id if query.from_user else None
-            language = await resolve_user_language(context, user_id)
             bot_username = (await query.get_bot().get_me()).username
             groups = await list_groups_for_user(user_id) if user_id is not None else []
+            header = f"{flow_tr(language, 'linked_unavailable')}\n\n{tr(language, 'choose_group')}"
             await _edit_confirm_result(
                 query,
                 context,
-                f"⚠️ {validation_error}\\n\\n{tr(language, 'choose_group')}",
+                header,
                 _chat_list_keyboard(groups, 0, bot_username, language)
                 if groups else _no_groups_keyboard(bot_username, language),
             )
@@ -1957,139 +1954,126 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await _edit_confirm_result(
                 query,
                 context,
-                "⚠️ The selected first-post time is no longer in the future.\\n\\n"
-                "Enter a new 24-hour HH:MM time or an exact DD/MM/YYYY HH:MM date.",
-                _first_run_keyboard(CB_BACK_TIMEZONE),
+                flow_tr(language, "invalid_first_time"),
+                _first_run_keyboard(CB_BACK_TIMEZONE, language),
             )
             return WIZARD_FIRST_RUN
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ *This schedule is incomplete.*\\n\\n"
-            + escape_markdown(validation_error, version=1)
-            + "\\n\\nReview the settings and try again.",
-            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+            flow_tr(language, "validation_generic"),
+            _wizard_confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
         return WIZARD_SUMMARY
 
     user_id = query.from_user.id if query.from_user else None
     if user_id is None:
-        await query.answer("Unable to identify your Telegram account.", show_alert=True)
+        await query.answer(flow_tr(language, "user_missing"), show_alert=True)
         return WIZARD_SUMMARY
 
     # Acquire the per-user wizard lock before the first awaited operation.
-    # This closes the race where two quick callbacks both pass permission
-    # checks and insert the same schedule.
-    w["_saving"] = True
+    # This closes the race where two quick callbacks both pass permission checks.
+    draft["_saving"] = True
     try:
-        await query.answer("Saving schedule…")
+        await query.answer(flow_tr(language, "saving"))
     except Exception:
         logger.debug("Could not acknowledge Schedule New Post confirmation callback.", exc_info=True)
 
     try:
-        await ensure_chat_access(context.bot, w["chat_id"], user_id)
+        await ensure_chat_access(context.bot, draft["chat_id"], user_id)
     except ChatAccessError:
-        w.pop("_saving", None)
+        draft.pop("_saving", None)
         bot_username = (await query.get_bot().get_me()).username
         groups = await list_groups_for_user(user_id)
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ Posting access to the selected destination has changed. "
-            "Restore the bot's administrator/posting permissions, then select the destination again.",
-            _chat_list_keyboard(groups, 0, bot_username)
-            if groups else _no_groups_keyboard(bot_username),
+            flow_tr(language, "access_changed"),
+            _chat_list_keyboard(groups, 0, bot_username, language)
+            if groups else _no_groups_keyboard(bot_username, language),
         )
         return WIZARD_CHAT_ID
     except Exception:
-        w.pop("_saving", None)
+        draft.pop("_saving", None)
         logger.exception("Could not revalidate destination access for user_id=%s", user_id)
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ We couldn't verify posting access right now. Your setup is still available. "
-            "Please try confirming again.",
-            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+            flow_tr(language, "access_failed"),
+            _wizard_confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
         return WIZARD_SUMMARY
 
     try:
-        doc = build_scheduled_post(
+        document = build_scheduled_post(
             user_id=user_id,
-            chat_id=w["chat_id"],
-            content_text=w.get("content_text"),
-            content_media_file_id=w.get("media_file_id"),
-            content_media_type=w.get("media_type"),
-            timezone_str=w.get("timezone", "UTC"),
-            recurrence_type=w.get("recurrence_type", "once"),
-            interval_value=w.get("interval_value"),
-            interval_unit=w.get("interval_unit"),
-            days_of_week=sorted(w["days_of_week"]) if w.get("days_of_week") else None,
-            next_run_at=w.get("first_run"),
-            max_runs=w.get("max_runs"),
-            time_window_enabled=w.get("time_window_enabled", False),
-            time_window_start=w.get("tw_start"),
-            time_window_end=w.get("tw_end"),
-            auto_delete_enabled=w.get("auto_delete", False),
-            auto_delete_after_hours=w.get("ad_hours"),
-            self_destruct_enabled=w.get("self_destruct", False),
-            self_destruct_after_seconds=w.get("sd_secs"),
-            auto_pin_enabled=w.get("auto_pin", False),
-            auto_pin_unpin_after_hours=w.get("ap_hours"),
-            inline_keyboard=w.get("inline_buttons") or None,
+            chat_id=draft["chat_id"],
+            content_text=draft.get("content_text"),
+            content_media_file_id=draft.get("media_file_id"),
+            content_media_type=draft.get("media_type"),
+            timezone_str=draft.get("timezone", "UTC"),
+            recurrence_type=draft.get("recurrence_type", "once"),
+            interval_value=draft.get("interval_value"),
+            interval_unit=draft.get("interval_unit"),
+            days_of_week=sorted(draft["days_of_week"]) if draft.get("days_of_week") else None,
+            next_run_at=draft.get("first_run"),
+            max_runs=draft.get("max_runs"),
+            time_window_enabled=draft.get("time_window_enabled", False),
+            time_window_start=draft.get("tw_start"),
+            time_window_end=draft.get("tw_end"),
+            auto_delete_enabled=draft.get("auto_delete", False),
+            auto_delete_after_hours=draft.get("ad_hours"),
+            self_destruct_enabled=draft.get("self_destruct", False),
+            self_destruct_after_seconds=draft.get("sd_secs"),
+            auto_pin_enabled=draft.get("auto_pin", False),
+            auto_pin_unpin_after_hours=draft.get("ap_hours"),
+            inline_keyboard=draft.get("inline_buttons") or None,
         )
-        post_id = await insert_post(doc)
+        post_id = await insert_post(document)
     except Exception:
         logger.exception("Failed to save scheduled post for user_id=%s", user_id)
-        w.pop("_saving", None)
+        draft.pop("_saving", None)
         await _edit_confirm_result(
             query,
             context,
-            "⚠️ *We couldn't confirm that your schedule was saved.*\\n\\n"
-            "Your setup is still available. Before retrying, check *My Posts* in case the database save completed but the response was interrupted.",
-            confirm_keyboard(CB_CONFIRM_POST, CB_BACK_LIFECYCLE),
+            flow_tr(language, "save_failed"),
+            _wizard_confirm_keyboard(context),
             parse_mode=ParseMode.MARKDOWN,
         )
         return WIZARD_SUMMARY
 
-    # Remember the completed callback message before any more awaits. Delayed
-    # duplicate clicks are acknowledged without touching the database again.
+    # Record completion before awaiting anything else to prevent duplicate inserts.
     if message_key is not None:
-        completed = context.user_data.setdefault("_completed_schedule_confirmations", {})
-        if not isinstance(completed, dict):
-            completed = {}
-            context.user_data["_completed_schedule_confirmations"] = completed
-        completed[message_key] = str(post_id)
-        while len(completed) > 20:
-            completed.pop(next(iter(completed)))
+        saved = context.user_data.setdefault("_completed_schedule_confirmations", {})
+        if not isinstance(saved, dict):
+            saved = {}
+            context.user_data["_completed_schedule_confirmations"] = saved
+        saved[message_key] = str(post_id)
+        while len(saved) > 20:
+            saved.pop(next(iter(saved)))
 
     _clear(context)
     chat_id = getattr(message, "chat_id", None)
     try:
         if chat_id is not None:
-            await chat_cleanup.cleanup(
-                context, chat_id, keep_message_id=message_id
-            )
+            await chat_cleanup.cleanup(context, chat_id, keep_message_id=message_id)
     except Exception:
-        # The database commit is already complete; cleanup must never suppress
-        # the success acknowledgement or make users retry and create duplicates.
         logger.exception("Schedule %s was saved, but wizard message cleanup failed.", post_id)
 
     await _edit_confirm_result(
         query,
         context,
-        f"✅ *Post scheduled successfully!*\\n\\n"
-        f"🆔 Post ID: {post_id}\\n\\n"
-        "Your schedule is saved and ready. Use *My Posts* to manage it.",
-        InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏠 Main Menu", style="primary", callback_data=CB_MAIN_MENU)],
-        ]),
+        flow_tr(language, "success", post_id=post_id),
+        InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                flow_tr(language, "main_menu"), style="primary", callback_data=CB_MAIN_MENU
+            )
+        ]]),
         parse_mode=ParseMode.MARKDOWN,
     )
     return ConversationHandler.END
-
 
 async def cb_back_recurrence(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
