@@ -610,7 +610,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     if target_chat_id is not None and user_id is not None:
         try:
-            target_chat = await ensure_chat_access(context.bot, target_chat_id, user_id)
+            target_chat = await ensure_chat_access(context.bot, target_chat_id, user_id, language)
             context.user_data["launch_chat"] = {
                 "chat_id": target_chat.id,
                 "title": target_chat.title or str(target_chat.id),
