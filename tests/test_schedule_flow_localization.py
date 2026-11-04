@@ -75,7 +75,7 @@ def test_all_twenty_locales_render_translated_schedule_controls():
         assert wizard.flow_tr(locale, "pin_forever") in pin
 
         weekdays = wizard._dow_keyboard(set(), locale)
-        weekday_labels = wizard.flow_tr(locale, "weekdays").split(", ")
+        weekday_labels = wizard._locale_weekdays(locale)
         rendered_days = [
             button.text
             for row in weekdays.inline_keyboard
@@ -132,6 +132,8 @@ def test_auto_delete_duration_accepts_localized_minute_units():
     assert set(samples) == set(LANGUAGES)
     for locale, example in samples.items():
         assert wizard._parse_auto_delete_duration(example, locale) == 5 / 60, locale
+    assert wizard._parse_auto_delete_duration("5 minutes", "my") == 5 / 60
+    assert wizard._parse_auto_delete_duration("2 hours", "my") == 2
     assert wizard._parse_auto_delete_duration("4 minutes", "en") is None
     assert wizard._parse_auto_delete_duration("2 hours", "en") == 2
 
