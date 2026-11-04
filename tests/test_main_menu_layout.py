@@ -8,7 +8,8 @@ from handlers.base import main_menu_keyboard, replace_with_main_menu_message
 from reply_keyboard import split_inline_keyboard
 
 
-def test_main_menu_keeps_welcome_actions_inline_and_features_on_reply_keyboard():
+def test_main_menu_keeps_welcome_actions_inline_and_features_on_reply_keyboard(monkeypatch):
+    monkeypatch.setattr("handlers.base.ADMIN_IDS", {123456789})
     bot = SimpleNamespace(username="ScheduleBot")
     markup = main_menu_keyboard(bot=bot, user_id=123456789, language="en")
 
@@ -19,7 +20,10 @@ def test_main_menu_keeps_welcome_actions_inline_and_features_on_reply_keyboard()
         button.text for row in inline.inline_keyboard for button in row
     ] == ["➕ Add to My Group", "📤 Share Bot"]
     assert reply is not None
+    reply_buttons = [button for row in reply.keyboard for button in row]
     labels = {button.text for row in reply.keyboard for button in row}
+    assert len(reply_buttons) == 4  # Schedule, My Posts, Language, and Owner Panel
+    assert all(button.style == "primary" for button in reply_buttons)
     assert {
         "📅 Schedule New Post",
         "📋 My Posts",

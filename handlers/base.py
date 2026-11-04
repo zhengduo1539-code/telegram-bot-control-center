@@ -148,20 +148,32 @@ def main_menu_keyboard(
         [
             InlineKeyboardButton(
                 tr(language, "schedule_new"),
-                style="success",
+                style="primary",
                 callback_data=CB_SCHEDULE_NEW,
             ),
         ],
         [
-            InlineKeyboardButton(tr(language, "my_posts"), callback_data=CB_MY_POSTS),
+            InlineKeyboardButton(
+                tr(language, "my_posts"),
+                style="primary",
+                callback_data=CB_MY_POSTS,
+            ),
         ],
         [
-            InlineKeyboardButton(tr(language, "language"), callback_data=CB_LANGUAGE),
+            InlineKeyboardButton(
+                tr(language, "language"),
+                style="primary",
+                callback_data=CB_LANGUAGE,
+            ),
         ],
     ]
     if user_id is not None and user_id in ADMIN_IDS:
         rows.append([
-            InlineKeyboardButton(tr(language, "owner_panel"), callback_data=CB_OWNER_PANEL),
+            InlineKeyboardButton(
+                tr(language, "owner_panel"),
+                style="primary",
+                callback_data=CB_OWNER_PANEL,
+            ),
         ])
     # The tracked Bot keeps these two URL actions inline and converts feature
     # callbacks to the Reply Keyboard, publishing its invisible anchor message.

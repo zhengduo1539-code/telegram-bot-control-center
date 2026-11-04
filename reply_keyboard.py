@@ -75,7 +75,10 @@ def split_inline_keyboard(
                 display_label = f"{label} ({index})"
                 index += 1
             routes[display_label] = route
-            converted.append(KeyboardButton(display_label))
+            # Preserve semantic button styling when callback actions are bridged
+            # from the inline route definition into a native Reply Keyboard.
+            button_style = getattr(button, "style", None)
+            converted.append(KeyboardButton(display_label, style=button_style))
 
         if retained_inline:
             inline_rows.append(retained_inline)
