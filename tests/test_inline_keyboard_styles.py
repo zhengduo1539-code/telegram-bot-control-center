@@ -121,7 +121,7 @@ def test_group_selection_and_manual_group_id_buttons_have_requested_styles():
     assert _button(group_picker, "❌ Cancel").style == "danger"
 
     no_groups = _no_groups_keyboard("ScheduleBot", "en")
-    assert _button(no_groups, "➕ Add Bot to a Group").style == "primary"
+    assert _button(no_groups, "➕ Add to My Group").style == "primary"
     assert _button(no_groups, "✏️ Enter Chat ID manually").style == "success"
     assert _button(no_groups, "❌ Cancel").style == "danger"
 
