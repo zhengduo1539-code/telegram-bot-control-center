@@ -45,7 +45,7 @@ def _button(markup, label):
 
 def test_wizard_continue_and_next_actions_use_success_style():
     intro = _wizard_intro_keyboard("en")
-    assert _button(intro, "Continue").style == "success"
+    assert _button(intro, "Continue ➡️").style == "success"
 
     for markup in (
         _dow_keyboard(set()),
