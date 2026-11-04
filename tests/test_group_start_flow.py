@@ -3,7 +3,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from telegram import ReplyKeyboardMarkup
+from telegram import InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 
 from handlers.base import (
@@ -58,25 +58,21 @@ def test_group_start_shows_private_chat_button_not_feature_menu():
         bot.get_me.assert_awaited_once()
         kwargs = message.reply_text.await_args.kwargs
         keyboard = kwargs["reply_markup"]
-        assert isinstance(keyboard, ReplyKeyboardMarkup)
-        assert [[button.text for button in row] for row in keyboard.keyboard] == [
+        assert isinstance(keyboard, InlineKeyboardMarkup)
+        assert [[button.text for button in row] for row in keyboard.inline_keyboard] == [
             ["📩 Open Bot in Private Chat"]
         ]
-        assert context.bot_data["_reply_keyboard_route_registry"][str(chat_id)]["routes"][
-            "📩 Open Bot in Private Chat"
-        ] == {
-            "type": "url",
-            "url": "https://t.me/ScheduleBot?start=setup_-1001234567890",
-        }
+        open_button = keyboard.inline_keyboard[0][0]
+        assert open_button.url == "https://t.me/ScheduleBot?start=setup_-1001234567890"
+        assert open_button.style == "primary"
         rendered = message.reply_text.await_args.args[0]
         assert rendered.split("\n\n") == [
             "👋 *Schedule Posts for This Group*",
             "To schedule posts for *Publisher Group*, continue in the bot's private chat.",
             "🔒 Select *📅 Schedule New Post* to get started. This group will be selected automatically.",
-            "🔗 https://t.me/ScheduleBot?start=setup_-1001234567890",
             "ℹ️ Only this group's administrators can create schedules.",
         ]
-        assert "https://t.me/ScheduleBot?start=setup_-1001234567890" in rendered
+        assert "https://t.me/ScheduleBot?start=setup_-1001234567890" not in rendered
 
     asyncio.run(scenario())
 
