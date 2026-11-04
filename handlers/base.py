@@ -663,42 +663,27 @@ async def cb_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    Universal cancel handler.
-    Clears all user_data wizard state and returns the user to the welcome screen.
-    """
+    """Cancel the active conversation and show the localized main menu."""
     query = update.callback_query
     if not query:
         return ConversationHandler.END
-    await query.answer("Cancelled.")
-
-    language = await resolve_user_language(
-        context, query.from_user.id if query.from_user else None
-    )
-    # Wipe any in-progress wizard state so the next session starts clean
+    language = await resolve_user_language(context, query.from_user.id if query.from_user else None)
+    await query.answer(mp_tr(language, "cancelled"))
     context.user_data.clear()
-
     chat_id = query.message.chat_id if query.message else None
     keep_id = query.message.message_id if query.message else None
     if chat_id is not None:
         await chat_cleanup.cleanup(context, chat_id, keep_message_id=keep_id)
-
-    await query.edit_message_text(
-        "❌ *Cancelled.*",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    await query.edit_message_text(mp_tr(language, "cancelled"), parse_mode=ParseMode.MARKDOWN)
     if chat_id is not None:
         await context.bot.send_message(
             chat_id=chat_id,
             text=tr(language, "menu_title"),
             reply_markup=main_menu_keyboard(
-                context.bot,
-                query.from_user.id if query.from_user else None,
-                language,
+                context.bot, query.from_user.id if query.from_user else None, language
             ),
         )
     return ConversationHandler.END
-
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Text-command version of cancel (/cancel)."""
@@ -764,163 +749,136 @@ async def cb_mpp_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def cb_mpp_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Pause a pending post."""
+    """Pause a pending post and refresh the localized list."""
     from database import update_post_status
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
+    language = await resolve_user_language(context, query.from_user.id)
     post_id = (query.data or "").replace(CB_MPP_PAUSE, "")
     try:
         await update_post_status(post_id, "paused")
-        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "paused_notice"))
-    except Exception as exc:
-        logger.exception("Pause post %s failed: %s", post_id, exc)
-        await query.answer(f"Error: {exc}", show_alert=True)
-    user_id: int = query.from_user.id
+        await query.answer(mp_tr(language, "paused_notice"))
+    except Exception:
+        logger.exception("Pause post %s failed.", post_id)
+        await query.answer(mp_tr(language, "action_failed"), show_alert=True)
     page = context.user_data.get("_mp_page", 0)
-    return await _render_my_posts(query, user_id, page, context)
-
+    return await _render_my_posts(query, query.from_user.id, page, context)
 
 async def cb_mpp_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Resume a supported scheduled post (sets status back to pending)."""
+    """Resume a supported scheduled post and refresh the localized list."""
     from database import get_post, update_post_status
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
+    language = await resolve_user_language(context, query.from_user.id)
     post_id = (query.data or "").replace(CB_MPP_RESUME, "")
     try:
         post = await get_post(post_id)
         if post and (post.get("recurrence") or {}).get("type") == "pool":
-            await query.answer(
-                mp_tr(await resolve_user_language(context, query.from_user.id), "legacy_retired"),
-                show_alert=True,
-            )
+            await query.answer(mp_tr(language, "legacy_retired"), show_alert=True)
             return MY_POSTS
         await update_post_status(post_id, "pending")
-        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "resumed_notice"))
-    except Exception as exc:
-        logger.exception("Resume post %s failed: %s", post_id, exc)
-        await query.answer(f"Error: {exc}", show_alert=True)
-    user_id: int = query.from_user.id
+        await query.answer(mp_tr(language, "resumed_notice"))
+    except Exception:
+        logger.exception("Resume post %s failed.", post_id)
+        await query.answer(mp_tr(language, "action_failed"), show_alert=True)
     page = context.user_data.get("_mp_page", 0)
-    return await _render_my_posts(query, user_id, page, context)
-
+    return await _render_my_posts(query, query.from_user.id, page, context)
 
 async def cb_mpp_del(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Ask for delete confirmation."""
+    """Ask for localized delete confirmation."""
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS_CONFIRM_DELETE
+    language = await resolve_user_language(context, query.from_user.id)
     post_id = (query.data or "").replace(CB_MPP_DEL, "")
     await query.answer()
     await query.edit_message_text(
-        f"⚠️ *{mp_tr(await resolve_user_language(context, query.from_user.id), 'delete_title')}*\n\n{mp_tr(await resolve_user_language(context, query.from_user.id), 'delete_body')}",
+        f"⚠️ *{mp_tr(language, 'delete_title')}*\n\n{mp_tr(language, 'delete_body')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ " + mp_tr(await resolve_user_language(context, query.from_user.id), "yes_delete"), style="danger", callback_data=f"{CB_MPP_DEL_YES}{post_id}"),
-                InlineKeyboardButton("⬅️ " + tr(await resolve_user_language(context, query.from_user.id), "back"), callback_data=CB_MY_POSTS),
-            ],
-        ]),
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ " + mp_tr(language, "yes_delete"), style="danger", callback_data=f"{CB_MPP_DEL_YES}{post_id}"),
+            InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_MY_POSTS),
+        ]]),
     )
     return MY_POSTS_CONFIRM_DELETE
 
-
 async def cb_mpp_del_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Execute the delete and refresh the list."""
+    """Delete a post and refresh the localized list."""
     from database import delete_post
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
+    language = await resolve_user_language(context, query.from_user.id)
     post_id = (query.data or "").replace(CB_MPP_DEL_YES, "")
     try:
         deleted = await delete_post(post_id)
-        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "deleted" if deleted else "already_deleted"))
-    except Exception as exc:
-        logger.exception("Delete post %s failed: %s", post_id, exc)
-        await query.answer(f"Error: {exc}", show_alert=True)
-    user_id: int = query.from_user.id
+        await query.answer(mp_tr(language, "deleted" if deleted else "already_deleted"))
+    except Exception:
+        logger.exception("Delete post %s failed.", post_id)
+        await query.answer(mp_tr(language, "action_failed"), show_alert=True)
     page = context.user_data.get("_mp_page", 0)
-    return await _render_my_posts(query, user_id, page, context)
-
-
-
-
-# ---------------------------------------------------------------------------
-# Handlers — Clone Post
-# ---------------------------------------------------------------------------
+    return await _render_my_posts(query, query.from_user.id, page, context)
 
 async def cb_mpp_clone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Ask for clone confirmation."""
+    """Ask for localized clone confirmation."""
     from database import get_post
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
+    language = await resolve_user_language(context, query.from_user.id)
     post_id = (query.data or "").replace(CB_MPP_CLONE, "")
     try:
         post = await get_post(post_id)
-    except Exception as exc:
-        await query.answer(f"Error: {exc}", show_alert=True)
+    except Exception:
+        logger.exception("Could not load post %s for cloning.", post_id)
+        await query.answer(mp_tr(language, "action_failed"), show_alert=True)
         return MY_POSTS
     if not post:
-        await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "post_not_found"), show_alert=True)
+        await query.answer(mp_tr(language, "post_not_found"), show_alert=True)
         return MY_POSTS
+    recurrence = (post.get("recurrence") or {}).get("type", "once")
+    if recurrence == "pool":
+        await query.answer(mp_tr(language, "legacy_retired"), show_alert=True)
+        return MY_POSTS
+    chat_id = post.get("chat_id", "?")
+    recurrence_label = _mp_recurrence_label(language, recurrence)
     await query.answer()
-    chat_id  = post.get("chat_id", "?")
-    rec_type = (post.get("recurrence") or {}).get("type", "once")
-    if rec_type == "pool":
-        await query.answer(
-            "This legacy Media Pool schedule is retired. Create a new schedule with Schedule New Post.",
-            show_alert=True,
-        )
-        return MY_POSTS
     await query.edit_message_text(
-        f"🔁 *{mp_tr(await resolve_user_language(context, query.from_user.id), 'clone_title')}*\n\n"
+        f"🔁 *{mp_tr(language, 'clone_title')}*\n\n"
         f"🗂 Chat: `{chat_id}`\n"
-        f"🔄 Recurrence: `{rec_type}`\n\n"
-        mp_tr(await resolve_user_language(context, query.from_user.id), "clone_body") + "\n"
-        
-        ,
+        f"🔄 {mp_tr(language, 'status')}: {recurrence_label}\n\n"
+        f"{mp_tr(language, 'clone_body')}",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ " + mp_tr(await resolve_user_language(context, query.from_user.id), "clone_button"), style="success", callback_data=f"{CB_MPP_CLONE_YES}{post_id}"),
-                InlineKeyboardButton("⬅️ Back",  callback_data=CB_MY_POSTS),
-            ],
-        ]),
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ " + mp_tr(language, "clone_button"), style="success", callback_data=f"{CB_MPP_CLONE_YES}{post_id}"),
+            InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_MY_POSTS),
+        ]]),
     )
     return MY_POSTS_CONFIRM_CLONE
 
-
 async def cb_mpp_clone_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Execute the clone and refresh the My Posts list."""
+    """Clone a post and refresh the localized list."""
     from database import clone_post, get_post
     query = update.callback_query
     if not query or not query.from_user:
         return MY_POSTS
+    language = await resolve_user_language(context, query.from_user.id)
     post_id = (query.data or "").replace(CB_MPP_CLONE_YES, "")
     try:
         post = await get_post(post_id)
         if post and (post.get("recurrence") or {}).get("type") == "pool":
-            await query.answer(
-                "This legacy Media Pool schedule is retired. Create a new schedule with Schedule New Post.",
-                show_alert=True,
-            )
+            await query.answer(mp_tr(language, "legacy_retired"), show_alert=True)
             return MY_POSTS
         new_id = await clone_post(post_id)
-    except Exception as exc:
-        logger.exception("Clone post %s failed: %s", post_id, exc)
-        await query.answer(f"Error: {exc}", show_alert=True)
+    except Exception:
+        logger.exception("Clone post %s failed.", post_id)
+        await query.answer(mp_tr(language, "action_failed"), show_alert=True)
         return MY_POSTS
-    await query.answer(mp_tr(await resolve_user_language(context, query.from_user.id), "cloned_notice", suffix=new_id[-6:]))
-    user_id: int = query.from_user.id
+    await query.answer(mp_tr(language, "cloned_notice", suffix=new_id[-6:]))
     page = context.user_data.get("_mp_page", 0)
-    return await _render_my_posts(query, user_id, page, context)
-
-
-# ---------------------------------------------------------------------------
-# ConversationHandler factory
-# ---------------------------------------------------------------------------
+    return await _render_my_posts(query, query.from_user.id, page, context)
 
 def build_base_conversation() -> ConversationHandler:
     """
