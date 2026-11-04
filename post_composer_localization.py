@@ -128,3 +128,28 @@ def translate_post_composer(language: str | None, key: str, **values: object) ->
         return template.format(**values)
     except (KeyError, ValueError):
         return template
+
+_PIN_LABEL_ROWS = {
+    "en": {"unpin_after_label": "Unpin after {value}"},
+    "my": {"unpin_after_label": "{value} ပြီးလျှင် Unpin လုပ်ရန်"},
+    "zh": {"unpin_after_label": "{value} 后取消置顶"},
+    "es": {"unpin_after_label": "Desanclar después de {value}"},
+    "hi": {"unpin_after_label": "{value} के बाद अनपिन करें"},
+    "ar": {"unpin_after_label": "إلغاء التثبيت بعد {value}"},
+    "pt": {"unpin_after_label": "Desafixar após {value}"},
+    "fr": {"unpin_after_label": "Désépingler après {value}"},
+    "ru": {"unpin_after_label": "Открепить через {value}"},
+    "bn": {"unpin_after_label": "{value} পরে আনপিন করুন"},
+    "id": {"unpin_after_label": "Lepas sematan setelah {value}"},
+    "ja": {"unpin_after_label": "{value}後にピン留めを解除"},
+    "ko": {"unpin_after_label": "{value} 후 고정 해제"},
+    "th": {"unpin_after_label": "ยกเลิกปักหมุดหลังจาก {value}"},
+    "vi": {"unpin_after_label": "Bỏ ghim sau {value}"},
+    "tr": {"unpin_after_label": "{value} sonra sabitlemeyi kaldır"},
+    "de": {"unpin_after_label": "Nach {value} lösen"},
+    "it": {"unpin_after_label": "Rimuovi il pin dopo {value}"},
+    "ur": {"unpin_after_label": "{value} کے بعد اَن پن کریں"},
+    "sw": {"unpin_after_label": "Ondoa pini baada ya {value}"},
+}
+for locale, values in _PIN_LABEL_ROWS.items():
+    CATALOG[locale].update(values)
