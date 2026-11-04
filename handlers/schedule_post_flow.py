@@ -220,8 +220,8 @@ def _home_text(w: dict, notice: str | None = None) -> str:
         f"⚙️ *{_t(w, 'section_rules')}* — {rules}",
         f"🔘 *{_t(w, 'section_buttons')}* — {len(w.get('inline_buttons') or [])}/10",
         "",
-        f"{_t(w, 'required')}: {_t(w, 'section_content')}, {_t(w, 'section_destination')} {tr(language, 'and') if language != 'en' else 'and'} {_t(w, 'section_schedule')}.",
-        f"{_t(w, 'optional')}: {_t(w, 'section_rules')} {tr(language, 'and') if language != 'en' else 'and'} {_t(w, 'section_buttons')}.",
+        f"{_t(w, 'required')}: {_t(w, 'section_content')}, {_t(w, 'section_destination')} {'·'} {_t(w, 'section_schedule')}.",
+        f"{_t(w, 'optional')}: {_t(w, 'section_rules')} {'·'} {_t(w, 'section_buttons')}.",
     ])
     return "\n".join(lines)
 
@@ -672,7 +672,7 @@ async def cb_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _answer(query)
     w = context.user_data.get("schedule_post")
     if not isinstance(w, dict):
-        await _answer(query, "This setup is no longer active. Start a new post.", alert=True)
+        await _answer(query, _flow(_w(context), "setup_inactive"), alert=True)
         return ConversationHandler.END
     return await _home(context, w)
 
@@ -686,7 +686,7 @@ async def cb_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         text += "Your current content is saved. Send a new message to replace it.\n\n"
     text += "Send one text or one supported media message. Captions are included automatically.\nSupported: photo, video, document, audio, animation and voice."
     await _answer(query)
-    await _show(context, w, text, _nav())
+    await _show(context, w, text, _nav(language=_lang(_w(context))))
     return CONTENT
 
 
@@ -709,7 +709,7 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     elif msg.text and msg.text.strip():
         content_text = msg.text
     else:
-        await msg.reply_text("This message type cannot be scheduled. Send text, photo, video, document, audio, animation or voice.")
+        await msg.reply_text(_t(_w(context), "content_unsupported"))
         return CONTENT
     w["content_text"], w["media_file_id"], w["media_type"] = content_text, file_id, media_type
     return await _home(context, w, "Content updated.")
@@ -722,7 +722,7 @@ async def cb_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _answer(query)
     await _show(context, _w(context),
         "📍 *Choose a Destination*\n\nSelect a saved group or channel. Administrator access and bot posting permissions are verified now and again before saving.",
-        _destination_keyboard(groups, 0, username))
+        _destination_keyboard(groups, 0, username, _lang(_w(context))))
     return DESTINATION
 
 
@@ -733,7 +733,7 @@ async def cb_destination_page(update: Update, context: ContextTypes.DEFAULT_TYPE
     groups = await list_groups_for_user(query.from_user.id if query.from_user else None)
     username = (await query.get_bot().get_me()).username
     await _answer(query)
-    await _show(context, _w(context), "📍 *Choose a Destination*", _destination_keyboard(groups, page, username))
+    await _show(context, _w(context), "📍 *Choose a Destination*", _destination_keyboard(groups, page, username, _lang(_w(context))))
     return DESTINATION
 
 
@@ -742,7 +742,7 @@ async def cb_choose_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         chat_id = int((query.data or "").replace(CB_CHAT, "", 1))
     except ValueError:
-        await _answer(query, "Invalid destination.", alert=True)
+        await _answer(query, _flow(_w(context), "invalid_chat_id"), alert=True)
         return DESTINATION
     user_id = query.from_user.id if query.from_user else None
     try:
@@ -752,14 +752,14 @@ async def cb_choose_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return DESTINATION
     w = _w(context)
     w["chat_id"], w["chat_title"] = chat_id, target.title or str(chat_id)
-    await _answer(query, "Destination verified.")
-    return await _home(context, w, "Destination updated.")
+    await _answer(query, _t(w, "destination_verified"))
+    return await _home(context, w, _t(w, "destination_updated"))
 
 
 async def cb_manual_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _answer(query)
-    await _show(context, _w(context), "✏️ *Enter Chat ID*\n\nSend the numeric group or channel ID, including the minus sign.\nExample: -1001234567890.", _nav(CB_DESTINATION))
+    await _show(context, _w(context), "✏️ *Enter Chat ID*\n\nSend the numeric group or channel ID, including the minus sign.\nExample: -1001234567890.", _nav(CB_DESTINATION, _lang(_w(context))))
     return MANUAL_DESTINATION
 
 
@@ -768,10 +768,10 @@ async def recv_manual_destination(update: Update, context: ContextTypes.DEFAULT_
     try:
         chat_id = int((msg.text or "").strip())
     except ValueError:
-        await msg.reply_text("Enter a numeric group or channel ID, for example -1001234567890.")
+        await msg.reply_text(_flow(_w(context), "invalid_chat_id"))
         return MANUAL_DESTINATION
     if chat_id >= 0:
-        await msg.reply_text("Group and channel IDs must be negative. Check the ID and try again.")
+        await msg.reply_text(_flow(_w(context), "negative_chat_id"))
         return MANUAL_DESTINATION
     try:
         target = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
@@ -796,7 +796,7 @@ async def cb_mode_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w["recurrence_type"], w["max_runs"] = "once", 1
     for key in ("interval_value", "interval_unit", "days_of_week"):
         w.pop(key, None)
-    await _answer(query, "One-time selected.")
+    await _answer(query, _t(w, "mode_once"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
@@ -810,14 +810,14 @@ async def cb_mode_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     w.pop("interval_value", None)
     w.pop("interval_unit", None)
     await _answer(query)
-    await _show(context, w, "🔁 *Repeat at an Interval*\n\nEnter a whole number from 1 to 525,600. You will choose minutes, hours or days next.", _nav(CB_SCHEDULE))
+    await _show(context, w, "🔁 *Repeat at an Interval*\n\nEnter a whole number from 1 to 525,600. You will choose minutes, hours or days next.", _nav(CB_SCHEDULE, _lang(_w(context))))
     return INTERVAL_VALUE
 
 
 async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not 1 <= int(raw) <= 525600:
-        await update.message.reply_text("Enter a whole number from 1 to 525,600 (for example, 6).")
+        await update.message.reply_text(_flow(_w(context), "interval_invalid"))
         return INTERVAL_VALUE
     w = _w(context)
     w["interval_value"] = int(raw)
@@ -840,7 +840,7 @@ async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     value = _w(context).get("interval_value")
     limits = {"minutes": 525600, "hours": 8760, "days": 365}
     if unit not in limits or not isinstance(value, int) or not 1 <= value <= limits[unit]:
-        await _answer(query, "That interval is outside the supported range.", alert=True)
+        await _answer(query, _flow(_w(context), "interval_invalid"), alert=True)
         return INTERVAL_UNIT
     w = _w(context)
     w["interval_unit"] = unit
@@ -858,7 +858,7 @@ async def cb_mode_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     w.pop("interval_unit", None)
     selected = w.setdefault("days_of_week", set())
     await _answer(query)
-    await _show(context, w, "📆 *Choose Publishing Days*\n\nSelect every weekday on which this post should be published.", _days_keyboard(selected))
+    await _show(context, w, "📆 *Choose Publishing Days*\n\nSelect every weekday on which this post should be published.", _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
 
 
@@ -866,13 +866,13 @@ async def cb_day_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     query = update.callback_query
     raw = (query.data or "").replace(CB_DAY, "", 1)
     if not raw.isdigit() or int(raw) not in range(7):
-        await _answer(query, "Choose a valid day.", alert=True)
+        await _answer(query, _flow(_w(context), "day_required"), alert=True)
         return WEEKDAYS
     day, w = int(raw), _w(context)
     selected = w.setdefault("days_of_week", set())
     selected.symmetric_difference_update({day})
     await _answer(query, f"{DAYS[day]} updated.")
-    await _show(context, w, "📆 *Choose Publishing Days*", _days_keyboard(selected))
+    await _show(context, w, "📆 *Choose Publishing Days*", _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
 
 
@@ -880,9 +880,9 @@ async def cb_days_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     query = update.callback_query
     w = _w(context)
     if not w.get("days_of_week"):
-        await _answer(query, "Select at least one weekday.", alert=True)
+        await _answer(query, _flow(_w(context), "day_required"), alert=True)
         return WEEKDAYS
-    await _answer(query, "Publishing days saved.")
+    await _answer(query, _flow(_w(context), "done"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
@@ -890,7 +890,7 @@ async def cb_days_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def cb_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _answer(query)
-    await _show(context, _w(context), "🌍 *Choose a Timezone*\n\nThe first publish time is interpreted in this timezone.", _timezone_keyboard(0))
+    await _show(context, _w(context), "🌍 *Choose a Timezone*\n\nThe first publish time is interpreted in this timezone.", _timezone_keyboard(0, _lang(_w(context))))
     return TIMEZONE
 
 
@@ -899,7 +899,7 @@ async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     raw = (query.data or "").replace(CB_TZ_PAGE, "", 1)
     page = int(raw) if raw.isdigit() else 0
     await _answer(query)
-    await _show(context, _w(context), "🌍 *Choose a Timezone*", _timezone_keyboard(page))
+    await _show(context, _w(context), "🌍 *Choose a Timezone*", _timezone_keyboard(page, _lang(_w(context))))
     return TIMEZONE
 
 
@@ -909,7 +909,7 @@ async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         pytz.timezone(zone)
     except pytz.exceptions.UnknownTimeZoneError:
-        await _answer(query, "Unknown timezone.", alert=True)
+        await _answer(query, _flow(_w(context), "timezone_invalid"), alert=True)
         return TIMEZONE
     w = _w(context)
     w["timezone"] = zone
@@ -922,7 +922,7 @@ async def cb_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     query, w = update.callback_query, _w(context)
     zone = w.get("timezone", "UTC")
     await _answer(query)
-    await _show(context, w, f"🗓 *Set First Publish*\n\nTimezone: {escape_markdown(zone, version=1)}\n\nSend HH:MM for the next occurrence or DD/MM/YYYY HH:MM for an exact date.\nExamples: 14:30 or 25/12/2027 09:00.", _nav(CB_SCHEDULE))
+    await _show(context, w, f"🗓 *Set First Publish*\n\nTimezone: {escape_markdown(zone, version=1)}\n\nSend HH:MM for the next occurrence or DD/MM/YYYY HH:MM for an exact date.\nExamples: 14:30 or 25/12/2027 09:00.", _nav(CB_SCHEDULE, _lang(_w(context))))
     return FIRST_RUN
 
 
@@ -958,10 +958,10 @@ async def cb_limit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     value, w = (query.data or "").replace(CB_LIMIT, "", 1), _w(context)
     if value == "custom":
         await _answer(query)
-        await _show(context, w, "Enter a whole number from 1 to 100,000.", _nav(CB_SCHEDULE))
+        await _show(context, w, _flow(_w(context), "count_invalid"), _nav(CB_SCHEDULE, _lang(_w(context))))
         return RUN_LIMIT
     if not value.isdecimal() or not 1 <= int(value) <= 100000:
-        await _answer(query, "Choose a valid delivery limit.", alert=True)
+        await _answer(query, _flow(_w(context), "count_invalid"), alert=True)
         return RUN_LIMIT
     w["max_runs"] = int(value)
     await _answer(query, f"Limit set to {value}.")
@@ -980,7 +980,7 @@ async def cb_limit_unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def recv_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not 1 <= int(raw) <= 100000:
-        await update.message.reply_text("Enter a whole number from 1 to 100,000.")
+        await update.message.reply_text(_flow(_w(context), "count_invalid"))
         return RUN_LIMIT
     w = _w(context)
     w["max_runs"] = int(raw)
@@ -1004,7 +1004,7 @@ async def cb_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     await _answer(query)
-    await _show(context, w, "🕒 *Posting Window*\n\nEnter a start and end time in 24-hour format, separated by a hyphen.\nExample: 09:00-21:00. Overnight windows such as 22:00-06:00 are supported.", _nav(CB_OPTIONS))
+    await _show(context, w, "🕒 *Posting Window*\n\nEnter a start and end time in 24-hour format, separated by a hyphen.\nExample: 09:00-21:00. Overnight windows such as 22:00-06:00 are supported.", _nav(CB_OPTIONS, _lang(_w(context))))
     return POSTING_WINDOW
 
 
@@ -1033,7 +1033,7 @@ async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     w["self_destruct"] = False
     w.pop("sd_secs", None)
     await _answer(query)
-    await _show(context, w, "🗑 *Auto-Delete*\n\nSend a duration such as 5 minutes, 30m, 2 hours or 12h. Minimum: 5 minutes; maximum: 365 days.", _nav(CB_OPTIONS))
+    await _show(context, w, "🗑 *Auto-Delete*\n\nSend a duration such as 5 minutes, 30m, 2 hours or 12h. Minimum: 5 minutes; maximum: 365 days.", _nav(CB_OPTIONS, _lang(_w(context))))
     return AUTO_DELETE
 
 
@@ -1067,7 +1067,7 @@ async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     w.pop("ad_hours", None)
     w.pop("ad_duration_label", None)
     await _answer(query)
-    await _show(context, w, "💣 *Self-Destruct*\n\nSend the number of seconds after publishing. Enter a whole number from 1 to 31,536,000.", _nav(CB_OPTIONS))
+    await _show(context, w, "💣 *Self-Destruct*\n\nSend the number of seconds after publishing. Enter a whole number from 1 to 31,536,000.", _nav(CB_OPTIONS, _lang(_w(context))))
     return SELF_DESTRUCT
 
 
@@ -1109,7 +1109,7 @@ async def cb_pin_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _show(
         context, w,
         "📌 *Set Auto-Unpin Time*\n\nEnter the number of hours the post should remain pinned. Use a number greater than 0 and no more than 87,600.",
-        _nav(CB_OPTIONS),
+        _nav(CB_OPTIONS, _lang(_w(context))),
     )
     return AUTO_PIN
 
@@ -1159,7 +1159,7 @@ async def cb_pin_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cb_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     await _answer(query)
-    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(w.get("inline_buttons") or [])))
+    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(w.get("inline_buttons") or []), _lang(w)))
     return BUTTONS
 
 
@@ -1167,7 +1167,7 @@ async def cb_button_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     query, w = update.callback_query, _w(context)
     remaining = 10 - len(w.get("inline_buttons") or [])
     await _answer(query)
-    await _show(context, w, f"🔘 *Add Post Buttons*\n\nSend up to {remaining} button(s), one per line.\nFormat: Button label | https://example.com\nTelegram username example: Join Channel | @mychannel.", _nav(CB_BUTTONS))
+    await _show(context, w, f"🔘 *Add Post Buttons*\n\nSend up to {remaining} button(s), one per line.\nFormat: Button label | https://example.com\nTelegram username example: Join Channel | @mychannel.", _nav(CB_BUTTONS, _lang(_w(context))))
     return BUTTON_ENTRY
 
 
@@ -1189,7 +1189,7 @@ async def cb_button_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         buttons.pop()
     w["inline_buttons"] = buttons
     await _answer(query, "Last button removed.")
-    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(buttons)))
+    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(buttons), _lang(w)))
     return BUTTONS
 
 
@@ -1197,7 +1197,7 @@ async def cb_button_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query, w = update.callback_query, _w(context)
     w["inline_buttons"] = []
     await _answer(query, "All buttons removed.")
-    await _show(context, w, _buttons_text(w), _buttons_keyboard(0))
+    await _show(context, w, _buttons_text(w), _buttons_keyboard(0, _lang(w)))
     return BUTTONS
 
 
@@ -1205,7 +1205,7 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     errors = _validate(w)
     if errors:
-        await _answer(query, "Complete the required settings first.", alert=True)
+        await _answer(query, _flow(_w(context), "validation_generic"), alert=True)
         detail = "\n".join("• " + escape_markdown(error, version=1) for error in errors)
         await _show(context, w, "⚠️ *A few details need attention*\n\n" + detail + "\n\nReturn to the workspace and open the relevant section.", InlineKeyboardMarkup([
             [InlineKeyboardButton("Open Workspace", style="primary", callback_data=CB_HOME)],
@@ -1231,30 +1231,30 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     completed = context.user_data.get("_completed_post_composers", {})
     message_key = str(message_id) if message_id is not None else None
     if message_key and isinstance(completed, dict) and message_key in completed:
-        await _answer(query, "This post has already been scheduled.", alert=True)
+        await _answer(query, _flow(_w(context), "already_saved"), alert=True)
         return ConversationHandler.END
     w = context.user_data.get("schedule_post")
     if not isinstance(w, dict):
-        await _answer(query, "This setup is no longer active. Start a new post.", alert=True)
+        await _answer(query, _flow(_w(context), "setup_inactive"), alert=True)
         return ConversationHandler.END
     if w.get("_save_uncertain"):
-        await _answer(query, "The save result is uncertain. Check My Posts before trying again.", alert=True)
+        await _answer(query, _flow(_w(context), "save_failed"), alert=True)
         return REVIEW
     if w.get("_saving"):
-        await _answer(query, "Your post is already being saved.")
+        await _answer(query, _flow(_w(context), "already_saving"))
         return REVIEW
     errors = _validate(w)
     if errors:
-        await _answer(query, "Review the incomplete settings.", alert=True)
+        await _answer(query, _flow(_w(context), "validation_generic"), alert=True)
         return await _home(context, w, "; ".join(errors))
     user_id = query.from_user.id if query.from_user else None
     if user_id is None:
-        await _answer(query, "Unable to identify your account.", alert=True)
+        await _answer(query, _flow(_w(context), "user_missing"), alert=True)
         return REVIEW
 
     # Set the lock before any awaited permission or database operation.
     w["_saving"] = True
-    await _answer(query, "Saving post…")
+    await _answer(query, _flow(_w(context), "saving"))
     try:
         await ensure_chat_access(context.bot, w["chat_id"], user_id)
     except ChatAccessError as exc:
@@ -1268,7 +1268,7 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     except Exception:
         w.pop("_saving", None)
         logger.exception("Destination revalidation failed for user_id=%s", user_id)
-        await _show(context, w, "⚠️ I couldn't verify destination access right now. Your setup is still available. Check permissions and try again.", _nav())
+        await _show(context, w, "⚠️ I couldn't verify destination access right now. Your setup is still available. Check permissions and try again.", _nav(language=_lang(_w(context))))
         return HOME
 
     try:
