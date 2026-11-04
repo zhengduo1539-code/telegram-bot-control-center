@@ -1108,7 +1108,7 @@ _BUTTON_ROWS = {
         "⬅️ Back to Content",
         "⏭ Skip",
         "➕ Add Button",
-        "1️⃣ One-Time Post — 1 Send",
+        "✅ One-Time Post — 1 Send",
         "∞ Unlimited",
         "📌 Keep Pinned (No Auto-Unpin)",
         "🕑 Posting Window",
