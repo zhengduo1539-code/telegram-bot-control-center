@@ -58,6 +58,31 @@ def translate_system(language: str | None, key: str) -> str:
     locale = normalize_language(language)
     return CATALOG[locale].get(key, key)
 
+_REPLY_KEYBOARD_ROWS = {
+    "en": {"open_link": "🔗 Open this link:", "unsupported_action": "⚠️ This action is not supported here. Please send /start to refresh the menu.", "menu_expired": "⚠️ This menu has expired. Please send /start.", "action_failed": "⚠️ I couldn't process that action. Please try again or send /start."},
+    "my": {"open_link": "🔗 ဤ Link ကို ဖွင့်ပါ။", "unsupported_action": "⚠️ ဤလုပ်ဆောင်ချက်ကို မထောက်ပံ့ပါ။ Menu အသစ်ရရန် /start ပေးပို့ပါ။", "menu_expired": "⚠️ ဤ Menu သည် သက်တမ်းကုန်သွားပါပြီ။ /start ပေးပို့ပါ။", "action_failed": "⚠️ ဤလုပ်ဆောင်ချက်ကို မလုပ်ဆောင်နိုင်ပါ။ ထပ်ကြိုးစားပါ သို့မဟုတ် /start ပေးပို့ပါ။"},
+    "zh": {"open_link": "🔗 打开此链接：", "unsupported_action": "⚠️ 此处不支持该操作。请发送 /start 刷新菜单。", "menu_expired": "⚠️ 此菜单已过期。请发送 /start。", "action_failed": "⚠️ 无法处理此操作。请重试或发送 /start。"},
+    "es": {"open_link": "🔗 Abre este enlace:", "unsupported_action": "⚠️ Esta acción no es compatible aquí. Envía /start para actualizar el menú.", "menu_expired": "⚠️ Este menú ha caducado. Envía /start.", "action_failed": "⚠️ No se pudo procesar la acción. Inténtalo de nuevo o envía /start."},
+    "hi": {"open_link": "🔗 यह लिंक खोलें:", "unsupported_action": "⚠️ यह कार्रवाई यहाँ समर्थित नहीं है। मेनू रीफ़्रेश करने के लिए /start भेजें।", "menu_expired": "⚠️ यह मेनू समाप्त हो गया है। /start भेजें।", "action_failed": "⚠️ कार्रवाई पूरी नहीं हो सकी। फिर कोशिश करें या /start भेजें।"},
+    "ar": {"open_link": "🔗 افتح هذا الرابط:", "unsupported_action": "⚠️ هذا الإجراء غير مدعوم هنا. أرسل /start لتحديث القائمة.", "menu_expired": "⚠️ انتهت صلاحية هذه القائمة. أرسل /start.", "action_failed": "⚠️ تعذّر تنفيذ الإجراء. حاول مجدداً أو أرسل /start."},
+    "pt": {"open_link": "🔗 Abra este link:", "unsupported_action": "⚠️ Esta ação não é compatível aqui. Envie /start para atualizar o menu.", "menu_expired": "⚠️ Este menu expirou. Envie /start.", "action_failed": "⚠️ Não foi possível processar a ação. Tente novamente ou envie /start."},
+    "fr": {"open_link": "🔗 Ouvrir ce lien :", "unsupported_action": "⚠️ Cette action n’est pas prise en charge ici. Envoyez /start pour actualiser le menu.", "menu_expired": "⚠️ Ce menu a expiré. Envoyez /start.", "action_failed": "⚠️ Impossible de traiter cette action. Réessayez ou envoyez /start."},
+    "ru": {"open_link": "🔗 Откройте эту ссылку:", "unsupported_action": "⚠️ Это действие здесь не поддерживается. Отправьте /start, чтобы обновить меню.", "menu_expired": "⚠️ Срок действия меню истёк. Отправьте /start.", "action_failed": "⚠️ Не удалось выполнить действие. Попробуйте ещё раз или отправьте /start."},
+    "bn": {"open_link": "🔗 এই লিংকটি খুলুন:", "unsupported_action": "⚠️ এই কাজটি এখানে সমর্থিত নয়। মেনু নতুন করে পেতে /start পাঠান।", "menu_expired": "⚠️ এই মেনুর মেয়াদ শেষ হয়েছে। /start পাঠান।", "action_failed": "⚠️ কাজটি করা যায়নি। আবার চেষ্টা করুন অথবা /start পাঠান।"},
+    "id": {"open_link": "🔗 Buka tautan ini:", "unsupported_action": "⚠️ Tindakan ini tidak didukung di sini. Kirim /start untuk memperbarui menu.", "menu_expired": "⚠️ Menu ini sudah kedaluwarsa. Kirim /start.", "action_failed": "⚠️ Tindakan tidak dapat diproses. Coba lagi atau kirim /start."},
+    "ja": {"open_link": "🔗 このリンクを開く：", "unsupported_action": "⚠️ この操作はここではサポートされていません。メニューを更新するには /start を送信してください。", "menu_expired": "⚠️ このメニューは期限切れです。/start を送信してください。", "action_failed": "⚠️ 操作を処理できませんでした。再試行するか /start を送信してください。"},
+    "ko": {"open_link": "🔗 이 링크 열기:", "unsupported_action": "⚠️ 이 작업은 여기서 지원되지 않습니다. 메뉴를 새로고침하려면 /start를 보내세요.", "menu_expired": "⚠️ 이 메뉴는 만료되었습니다. /start를 보내세요.", "action_failed": "⚠️ 작업을 처리하지 못했습니다. 다시 시도하거나 /start를 보내세요."},
+    "th": {"open_link": "🔗 เปิดลิงก์นี้:", "unsupported_action": "⚠️ ไม่รองรับการทำงานนี้ที่นี่ โปรดส่ง /start เพื่อรีเฟรชเมนู", "menu_expired": "⚠️ เมนูนี้หมดอายุแล้ว โปรดส่ง /start", "action_failed": "⚠️ ไม่สามารถดำเนินการได้ โปรดลองอีกครั้งหรือส่ง /start"},
+    "vi": {"open_link": "🔗 Mở liên kết này:", "unsupported_action": "⚠️ Thao tác này không được hỗ trợ tại đây. Gửi /start để làm mới menu.", "menu_expired": "⚠️ Menu này đã hết hạn. Vui lòng gửi /start.", "action_failed": "⚠️ Không thể xử lý thao tác. Hãy thử lại hoặc gửi /start."},
+    "tr": {"open_link": "🔗 Bu bağlantıyı aç:", "unsupported_action": "⚠️ Bu işlem burada desteklenmiyor. Menüyü yenilemek için /start gönderin.", "menu_expired": "⚠️ Bu menünün süresi doldu. /start gönderin.", "action_failed": "⚠️ İşlem gerçekleştirilemedi. Tekrar deneyin veya /start gönderin."},
+    "de": {"open_link": "🔗 Diesen Link öffnen:", "unsupported_action": "⚠️ Diese Aktion wird hier nicht unterstützt. Sende /start, um das Menü zu aktualisieren.", "menu_expired": "⚠️ Dieses Menü ist abgelaufen. Sende /start.", "action_failed": "⚠️ Die Aktion konnte nicht verarbeitet werden. Versuche es erneut oder sende /start."},
+    "it": {"open_link": "🔗 Apri questo link:", "unsupported_action": "⚠️ Questa azione non è supportata qui. Invia /start per aggiornare il menu.", "menu_expired": "⚠️ Questo menu è scaduto. Invia /start.", "action_failed": "⚠️ Impossibile elaborare l'azione. Riprova o invia /start."},
+    "ur": {"open_link": "🔗 یہ لنک کھولیں:", "unsupported_action": "⚠️ یہ کارروائی یہاں معاون نہیں۔ مینو تازہ کرنے کے لیے /start بھیجیں۔", "menu_expired": "⚠️ اس مینو کی مدت ختم ہو گئی ہے۔ /start بھیجیں۔", "action_failed": "⚠️ کارروائی مکمل نہیں ہو سکی۔ دوبارہ کوشش کریں یا /start بھیجیں۔"},
+    "sw": {"open_link": "🔗 Fungua kiungo hiki:", "unsupported_action": "⚠️ Kitendo hiki hakiungwi mkono hapa. Tuma /start ili kusasisha menyu.", "menu_expired": "⚠️ Menyu hii imekwisha muda wake. Tuma /start.", "action_failed": "⚠️ Kitendo hakikuweza kuchakatwa. Tafadhali jaribu tena au tuma /start."},
+}
+for _locale, _extra in _REPLY_KEYBOARD_ROWS.items():
+    CATALOG[_locale].update(_extra)
+
 def command_descriptions(language: str | None):
     locale = normalize_language(language)
     values = CATALOG[locale]
