@@ -1996,19 +1996,26 @@ async def cb_back_max_runs(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await _edit(query, prompt, _max_runs_keyboard(one_time=one_time))
     return WIZARD_MAX_RUNS
 async def cb_back_tw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Go back to the Advanced Options screen (from TW_START or lifecycle detail)."""
+    """Return to Advanced Options from a posting-window or lifecycle detail."""
     query = update.callback_query
     w = _w(context)
-    await _edit(query,
-        "▰▰▰▰▰▰▰▱ 7/8\nChat › Content › Recurrence › Timezone › 1st Run › Max Runs › *Advanced* › Summary\n⚙️ *Step 7/8 — Advanced Options*\n\n"
-        "Toggle optional features on/off, then tap *➡️ Next*:",
-        _advanced_keyboard(w.get("time_window_enabled", False),
-                           w.get("auto_delete", False), w.get("self_destruct", False),
-                           w.get("auto_pin", False)),
+    await _edit(
+        query,
+        "▰▰▰▰▰▰▰▱ 7/8\n"
+        "*Step 7/8 — Advanced Options*\n\n"
+        "Choose any optional settings. Everything is OFF unless you enable it.\n\n"
+        "🕑 *Posting Window:* Publish only during your selected local hours; posts wait outside the window.\n"
+        "🗑 *Auto-Delete:* Remove a post after a duration (minimum 5 minutes).\n"
+        "💣 *Self-Destruct:* Remove a post after a number of seconds. This cannot be combined with Auto-Delete.\n"
+        "📌 *Auto-Pin:* Pin each post after publishing, with an optional automatic unpin.",
+        _advanced_keyboard(
+            w.get("time_window_enabled", False),
+            w.get("auto_delete", False),
+            w.get("self_destruct", False),
+            w.get("auto_pin", False),
+        ),
     )
     return WIZARD_TIME_WINDOW
-
-
 async def cb_back_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await _edit(query,
@@ -2020,44 +2027,42 @@ async def cb_back_tw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cb_back_lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Back from Summary or lifecycle detail → return to Advanced Options screen."""
+    """Return to Advanced Options from the final review or a lifecycle detail."""
     query = update.callback_query
     w = _w(context)
-    await _edit(query,
-        "▰▰▰▰▰▰▰▱ 7/8\nChat › Content › Recurrence › Timezone › 1st Run › Max Runs › *Advanced* › Summary\n⚙️ *Step 7/8 — Advanced Options*\n\n"
-        "Toggle optional features on/off, then tap *➡️ Next*:",
-        _advanced_keyboard(w.get("time_window_enabled", False),
-                           w.get("auto_delete", False), w.get("self_destruct", False),
-                           w.get("auto_pin", False)),
+    await _edit(
+        query,
+        "▰▰▰▰▰▰▰▱ 7/8\n"
+        "*Step 7/8 — Advanced Options*\n\n"
+        "Choose any optional settings. Everything is OFF unless you enable it.\n\n"
+        "🕑 *Posting Window:* Publish only during your selected local hours; posts wait outside the window.\n"
+        "🗑 *Auto-Delete:* Remove a post after a duration (minimum 5 minutes).\n"
+        "💣 *Self-Destruct:* Remove a post after a number of seconds. This cannot be combined with Auto-Delete.\n"
+        "📌 *Auto-Pin:* Pin each post after publishing, with an optional automatic unpin.",
+        _advanced_keyboard(
+            w.get("time_window_enabled", False),
+            w.get("auto_delete", False),
+            w.get("self_destruct", False),
+            w.get("auto_pin", False),
+        ),
     )
     return WIZARD_TIME_WINDOW
-
-
-# ---------------------------------------------------------------------------
-# Cancel (duplicated locally for convenience)
-# ---------------------------------------------------------------------------
-
 async def cb_cancel_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer("Cancelled.")
     _clear(context)
     chat_id = query.message.chat_id
     user_id = query.from_user.id if query.from_user else None
+    language = await resolve_user_language(context, user_id)
     await chat_cleanup.cleanup(context, chat_id, keep_message_id=query.message.message_id)
     await replace_with_main_menu_message(
         query,
         context,
         "❌ *Cancelled.* Back to Main Menu.",
         user_id,
-        "en",
+        language,
     )
     return ConversationHandler.END
-
-
-# ---------------------------------------------------------------------------
-# ConversationHandler factory
-# ---------------------------------------------------------------------------
-
 def build_schedule_wizard() -> ConversationHandler:
     dow_pattern  = r"^dow:[0-6]$"
     tz_pattern   = r"^tz:(?!page:).+"
