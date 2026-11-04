@@ -114,6 +114,55 @@ def _parse_auto_delete_duration(raw: str, language: str = "en") -> float | None:
         return None
     return minutes / 60
 
+# ---------------------------------------------------------------------------
+# Wizard state constants
+# ---------------------------------------------------------------------------
+(
+    WIZARD_CHAT_ID,
+    WIZARD_CONTENT,
+    WIZARD_RECURRENCE,
+    WIZARD_INTERVAL_VALUE,
+    WIZARD_INTERVAL_UNIT,
+    WIZARD_DOW_SELECT,
+    WIZARD_FIRST_RUN,
+    WIZARD_TIMEZONE,
+    WIZARD_MAX_RUNS,
+    WIZARD_TIME_WINDOW,
+    WIZARD_TW_START,
+    WIZARD_TW_END,
+    WIZARD_LIFECYCLE,
+    WIZARD_AD_HOURS,
+    WIZARD_SD_SECS,
+    WIZARD_AP_HOURS,
+    WIZARD_SUMMARY,
+    WIZARD_INLINE_BTNS,
+) = range(10, 28)
+
+WIZARD_INTRO = 29
+
+# Callback-data constants (all within Telegram's callback-data limit).
+CB_SCHEDULE_NEW = "action:schedule_new"
+CB_WIZARD_CONTINUE = "wizard:continue"
+CB_REC_ONCE = "rec:once"
+CB_REC_INTERVAL = "rec:interval"
+CB_REC_DOW = "rec:dow"
+CB_IU_MINUTES = "iu:minutes"
+CB_IU_HOURS = "iu:hours"
+CB_IU_DAYS = "iu:days"
+CB_DOW_NEXT = "dow:next"
+CB_TW_ON = "tw:on"
+CB_TW_OFF = "tw:off"
+CB_LC_NEXT = "lc:next"
+CB_CONFIRM_POST = "confirm:post"
+CB_IB_SKIP = "ib:skip"
+CB_IB_ADD = "ib:add"
+CB_IB_DONE = "ib:done"
+CB_BACK_INLINE_BTNS = "back:inline_btns"
+CB_BACK_CHAT = "back:chat"
+CB_CONTENT_KEEP = "content:keep"
+CB_AP_FOREVER = "ap:forever"
+
+
 def _dow_cb(day: int) -> str:
     return f"dow:{day}"
 
