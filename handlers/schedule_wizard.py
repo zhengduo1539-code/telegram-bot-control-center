@@ -217,19 +217,20 @@ def _chat_list_keyboard(
         title = (g.get("title") or f"Chat {g['chat_id']}")[:35]
         rows.append([InlineKeyboardButton(
             f"{icon} {title}",
+            style="primary",
             callback_data=f"{CB_CHAT_PICK_PREFIX}{g['chat_id']}",
         )])
 
     # Pagination
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page - 1}"))
+        nav.append(InlineKeyboardButton("⬅️ Prev", style="primary", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page - 1}"))
     if end < total:
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page + 1}"))
+        nav.append(InlineKeyboardButton("Next ➡️", style="primary", callback_data=f"{CB_CHAT_PAGE_PREFIX}{page + 1}"))
     if nav:
         rows.append(nav)
 
-    rows.append([InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)])
+    rows.append([InlineKeyboardButton(tr(language, "manual_chat_id"), style="success", callback_data=CB_MANUAL_CHAT_ID)])
     rows.append([InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)])
     return InlineKeyboardMarkup(rows)
 
@@ -238,9 +239,10 @@ def _no_groups_keyboard(bot_username: str, language: str = "en") -> InlineKeyboa
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "➕ Add Bot to a Group",
+            style="primary",
             url=f"https://t.me/{bot_username}?startgroup=start",
         )],
-        [InlineKeyboardButton(tr(language, "manual_chat_id"), callback_data=CB_MANUAL_CHAT_ID)],
+        [InlineKeyboardButton(tr(language, "manual_chat_id"), style="success", callback_data=CB_MANUAL_CHAT_ID)],
         [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
@@ -248,7 +250,7 @@ def _no_groups_keyboard(bot_username: str, language: str = "en") -> InlineKeyboa
 def _first_run_keyboard(back_data: str) -> InlineKeyboardMarkup:
     """First-run step keyboard — includes a 💡 Smart Suggest button."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💡 Suggest Best Time", callback_data=CB_SMART_SUGGEST)],
+        [InlineKeyboardButton("💡 Suggest Best Time", style="primary", callback_data=CB_SMART_SUGGEST)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=back_data),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
@@ -258,9 +260,9 @@ def _first_run_keyboard(back_data: str) -> InlineKeyboardMarkup:
 
 def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(tr(language, "recurrence_interval"), callback_data=CB_REC_INTERVAL)],
-        [InlineKeyboardButton(tr(language, "recurrence_days"), callback_data=CB_REC_DOW)],
-        [InlineKeyboardButton(tr(language, "recurrence_once"), callback_data=CB_REC_ONCE)],
+        [InlineKeyboardButton(tr(language, "recurrence_interval"), style="primary", callback_data=CB_REC_INTERVAL)],
+        [InlineKeyboardButton(tr(language, "recurrence_days"), style="primary", callback_data=CB_REC_DOW)],
+        [InlineKeyboardButton(tr(language, "recurrence_once"), style="primary", callback_data=CB_REC_ONCE)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_MAIN_MENU),
             InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
@@ -271,9 +273,9 @@ def _recurrence_keyboard(language: str = "en") -> InlineKeyboardMarkup:
 def _interval_unit_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⏱ Minutes", callback_data=CB_IU_MINUTES),
-            InlineKeyboardButton("🕐 Hours",   callback_data=CB_IU_HOURS),
-            InlineKeyboardButton("📅 Days",    callback_data=CB_IU_DAYS),
+            InlineKeyboardButton("⏱ Minutes", style="primary", callback_data=CB_IU_MINUTES),
+            InlineKeyboardButton("🕐 Hours",   style="primary", callback_data=CB_IU_HOURS),
+            InlineKeyboardButton("📅 Days",    style="primary", callback_data=CB_IU_DAYS),
         ],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_INTERVAL_V),
@@ -289,6 +291,7 @@ def _dow_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
     days_row1 = [
         InlineKeyboardButton(
             f"{'✅' if d in selected else '☐'} {DOW_LABELS[d]}",
+            style="success" if d in selected else "primary",
             callback_data=_dow_cb(d),
         )
         for d in range(4)
@@ -296,6 +299,7 @@ def _dow_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
     days_row2 = [
         InlineKeyboardButton(
             f"{'✅' if d in selected else '☐'} {DOW_LABELS[d]}",
+            style="success" if d in selected else "primary",
             callback_data=_dow_cb(d),
         )
         for d in range(4, 7)
@@ -315,14 +319,14 @@ def _timezone_keyboard(page: int = 0, language: str = "en") -> InlineKeyboardMar
     end   = start + TZ_PAGE_SIZE
     page_tzs = TIMEZONES[start:end]
     rows = [
-        [InlineKeyboardButton(label, callback_data=f"tz:{tz_name}")]
+        [InlineKeyboardButton(label, style="primary", callback_data=f"tz:{tz_name}")]
         for tz_name, label in page_tzs
     ]
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton(tr(language, "previous"), callback_data=f"{CB_TZ_PAGE}{page - 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "previous"), style="primary", callback_data=f"{CB_TZ_PAGE}{page - 1}"))
     if end < len(TIMEZONES):
-        nav.append(InlineKeyboardButton(tr(language, "next"), callback_data=f"{CB_TZ_PAGE}{page + 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "next"), style="primary", callback_data=f"{CB_TZ_PAGE}{page + 1}"))
     if nav:
         rows.append(nav)
     rows.append([
@@ -337,8 +341,8 @@ def _time_window_keyboard(enabled: bool) -> InlineKeyboardMarkup:
     off_icon = "🔴 OFF ✅" if not enabled else "🔘 OFF"
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(on_icon,  callback_data=CB_TW_ON),
-            InlineKeyboardButton(off_icon, callback_data=CB_TW_OFF),
+            InlineKeyboardButton(on_icon, style="success" if enabled else "primary", callback_data=CB_TW_ON),
+            InlineKeyboardButton(off_icon, style="success" if not enabled else "primary", callback_data=CB_TW_OFF),
         ],
         [
             InlineKeyboardButton("⬅️ Back",    callback_data=CB_BACK_MAX_RUNS),
@@ -352,9 +356,9 @@ def _lifecycle_keyboard(ad: bool, sd: bool, ap: bool) -> InlineKeyboardMarkup:
     def _flag(v: bool) -> str:
         return "✅" if v else "☐"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after X hours",      callback_data=CB_LC_AD)],
-        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after X seconds",  callback_data=CB_LC_SD)],
-        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)", callback_data=CB_LC_AP)],
+        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after X hours", style="success" if ad else "primary", callback_data=CB_LC_AD)],
+        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after X seconds", style="success" if sd else "primary", callback_data=CB_LC_SD)],
+        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)", style="success" if ap else "primary", callback_data=CB_LC_AP)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_TW),
             InlineKeyboardButton("➡️ Next",   style="success", callback_data=CB_LC_NEXT),
@@ -367,15 +371,16 @@ def _advanced_keyboard(tw: bool, ad: bool, sd: bool, ap: bool) -> InlineKeyboard
     """Combined Step 7 keyboard: silent-hours toggle + all lifecycle toggles."""
     tw_btn = InlineKeyboardButton(
         "🟢 Silent Hours: ON ✅" if tw else "🔘 Silent Hours: OFF",
+        style="success" if tw else "primary",
         callback_data=CB_TW_OFF if tw else CB_TW_ON,
     )
     def _flag(v: bool) -> str:
         return "✅" if v else "☐"
     return InlineKeyboardMarkup([
         [tw_btn],
-        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after X hours",       callback_data=CB_LC_AD)],
-        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after X seconds",   callback_data=CB_LC_SD)],
-        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)",  callback_data=CB_LC_AP)],
+        [InlineKeyboardButton(f"{_flag(ad)} Auto-Delete after X hours", style="success" if ad else "primary", callback_data=CB_LC_AD)],
+        [InlineKeyboardButton(f"{_flag(sd)} Self-Destruct after X seconds", style="success" if sd else "primary", callback_data=CB_LC_SD)],
+        [InlineKeyboardButton(f"{_flag(ap)} Auto-Pin (+ unpin after X hrs)", style="success" if ap else "primary", callback_data=CB_LC_AP)],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_MAX_RUNS),
             InlineKeyboardButton("➡️ Next",   style="success", callback_data=CB_LC_NEXT),
@@ -1030,10 +1035,11 @@ async def cb_smart_suggest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         lines.append(f"{medal} *{time_str}* — {_label(r['count'])} ({r['count']} msgs)")
         btn_rows.append([InlineKeyboardButton(
             f"{medal} {time_str}",
+            style="primary",
             callback_data=f"{CB_SMART_PICK_PREFIX}{time_str}",
         )])
 
-    btn_rows.append([InlineKeyboardButton("✏️ Enter custom time", callback_data=CB_BACK_FIRST_RUN)])
+    btn_rows.append([InlineKeyboardButton("✏️ Enter custom time", style="primary", callback_data=CB_BACK_FIRST_RUN)])
 
     await query.edit_message_text(
         "💡 *Suggested Best Times*\n\n"
@@ -1161,10 +1167,10 @@ def _max_runs_keyboard() -> InlineKeyboardMarkup:
     """Quick-tap presets + text-input fallback for max runs."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("5×",           callback_data=f"{CB_MR_PRESET}5"),
-            InlineKeyboardButton("10×",          callback_data=f"{CB_MR_PRESET}10"),
-            InlineKeyboardButton("30×",          callback_data=f"{CB_MR_PRESET}30"),
-            InlineKeyboardButton("∞ Unlimited",  callback_data=f"{CB_MR_PRESET}0"),
+            InlineKeyboardButton("5×",           style="primary", callback_data=f"{CB_MR_PRESET}5"),
+            InlineKeyboardButton("10×",          style="primary", callback_data=f"{CB_MR_PRESET}10"),
+            InlineKeyboardButton("30×",          style="primary", callback_data=f"{CB_MR_PRESET}30"),
+            InlineKeyboardButton("∞ Unlimited",  style="primary", callback_data=f"{CB_MR_PRESET}0"),
         ],
         [
             InlineKeyboardButton("⬅️ Back",   callback_data=CB_BACK_FIRST_RUN),
@@ -1619,7 +1625,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "Use *My Posts* to manage it, or start another task below.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏠 Main Menu", callback_data=CB_MAIN_MENU)],
+            [InlineKeyboardButton("🏠 Main Menu", style="primary", callback_data=CB_MAIN_MENU)],
         ]),
     )
     return ConversationHandler.END
