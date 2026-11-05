@@ -19,13 +19,15 @@ from localization import (
     normalize_language,
     translate,
 )
+from language_ui_localization import translate_language_ui as lut
 
 logger = logging.getLogger(__name__)
 
 
 async def resolve_user_language(context: ContextTypes.DEFAULT_TYPE, user_id: int | None) -> str:
     """Load a user's saved locale once per update/session, defaulting safely to English."""
-    cached = context.user_data.get("language")
+    user_data = getattr(context, "user_data", None)
+    cached = user_data.get("language") if isinstance(user_data, dict) else None
     if cached in LANGUAGES:
         return cached
     if user_id is None:
@@ -35,7 +37,8 @@ async def resolve_user_language(context: ContextTypes.DEFAULT_TYPE, user_id: int
     except Exception:
         logger.exception("Could not load language preference for user_id=%s", user_id)
         language = DEFAULT_LANGUAGE
-    context.user_data["language"] = language
+    if isinstance(user_data, dict):
+        user_data["language"] = language
     return language
 
 
@@ -53,15 +56,15 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id if update.effective_user else None
 
     if chat is not None and chat.type != ChatType.PRIVATE:
+        language = await resolve_user_language(context, user_id)
         try:
             bot_user = await context.bot.get_me()
             private_url = f"https://t.me/{bot_user.username}" if bot_user.username else None
         except Exception:
             logger.exception("Could not create private language-settings link.")
             private_url = None
-
         if private_url:
-            open_label = "📩 Open Bot in Private Chat"
+            open_label = translate(language, "open_private")
             keyboard = ReplyKeyboardMarkup(
                 [[KeyboardButton(open_label, style="primary")]],
                 resize_keyboard=True,
@@ -69,9 +72,8 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 is_persistent=True,
             )
             sent = await message.reply_text(
-                "🌐 Language settings are available in the bot's private chat. "
-                "Open the bot privately and send /lang.\n\n"
-                f"🔗 {private_url}",
+                f"{lut(language, 'private_only')} "
+                f"{lut(language, 'open_private')}\n\n🔗 {private_url}",
                 reply_markup=keyboard,
             )
             register_reply_keyboard_routes(
@@ -81,10 +83,7 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 sent,
             )
         else:
-            await message.reply_text(
-                "🌐 Language settings are available in the bot's private chat. "
-                "Open the bot privately and send /lang."
-            )
+            await message.reply_text(lut(language, "private_only"))
         return
 
     language = await resolve_user_language(context, user_id)
@@ -93,7 +92,7 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await message.reply_text(
         f"{translate(language, 'lang_title')}\n\n"
         f"{translate(language, 'lang_prompt')}\n\n"
-        f"Current language: {current_name}",
+        f"{translate(language, 'language')}: {current_name}",
         reply_markup=language_keyboard(language),
     )
 
@@ -140,7 +139,7 @@ async def handle_language_choice(
         logger.exception("Could not save language preference for user_id=%s", user.id)
         current = await resolve_user_language(context, user.id)
         await message.reply_text(
-            "⚠️ Could not save your language setting. Please try again.",
+            lut(current, 'save_failed'),
             reply_markup=ReplyKeyboardRemove(),
         )
         context.user_data.pop("awaiting_language_choice", None)

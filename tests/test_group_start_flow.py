@@ -147,7 +147,7 @@ def test_private_start_validates_and_remembers_deep_linked_group():
             state = await cmd_start(update, context)
 
         assert state == MAIN_MENU
-        access.assert_awaited_once_with(bot, chat_id, 123456789)
+        access.assert_awaited_once_with(bot, chat_id, 123456789, "en")
         assert context.user_data["launch_chat"] == {
             "chat_id": chat_id,
             "title": "Publisher Group",
@@ -217,7 +217,7 @@ def test_schedule_wizard_preselects_linked_group_and_skips_picker():
             state = await cb_wizard_continue(update, context)
 
         assert state == WIZARD_CONTENT
-        access.assert_awaited_once_with(context.bot, chat_id, 123456789)
+        access.assert_awaited_once_with(context.bot, chat_id, 123456789, "en")
         assert "launch_chat" not in context.user_data
         assert context.user_data["wizard"]["chat_id"] == chat_id
         assert context.user_data["wizard"]["chat_title"] == "Publisher Group"

@@ -29,6 +29,8 @@ from handlers.base import (
 from handlers.language import resolve_user_language
 from handlers.permissions import ChatAccessError, ensure_chat_access
 from localization import translate as tr
+from post_composer_localization import translate_post_composer as pct
+from schedule_flow_localization import translate_schedule_flow as flow_tr
 from schedule_utils import parse_schedule_datetime, parse_hhmm
 
 logger = logging.getLogger(__name__)
@@ -138,20 +140,37 @@ def _schedule_is_ready(w: dict) -> bool:
     return False
 
 
+def _lang(w: dict) -> str:
+    return str(w.get("language") or "en")
+
+
+def _t(w: dict, key: str, **values: object) -> str:
+    return pct(_lang(w), key, **values)
+
+
+def _flow(w: dict, key: str, **values: object) -> str:
+    return flow_tr(_lang(w), key, **values)
+
+
+def _weekdays(w: dict) -> list[str]:
+    labels = re.split(r"\s*[,،、]\s*|၊\s*", _flow(w, "weekdays"))
+    return labels if len(labels) == 7 else list(DAYS)
+
+
 def _home_keyboard(w: dict) -> InlineKeyboardMarkup:
     content = bool(w.get("content_text") or w.get("media_file_id"))
     destination = isinstance(w.get("chat_id"), int) and w.get("chat_id", 0) < 0
     scheduled = _schedule_is_ready(w)
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(("✅" if content else "📝") + " Content", style="success" if content else "primary", callback_data=CB_CONTENT)],
-        [InlineKeyboardButton(("✅" if destination else "📍") + " Destination", style="success" if destination else "primary", callback_data=CB_DESTINATION)],
-        [InlineKeyboardButton(("✅" if scheduled else "🕒") + " Publish Schedule", style="success" if scheduled else "primary", callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton(("✅ " if content else "📝 ") + _t(w, "section_content"), style="success" if content else "primary", callback_data=CB_CONTENT)],
+        [InlineKeyboardButton(("✅ " if destination else "📍 ") + _t(w, "section_destination"), style="success" if destination else "primary", callback_data=CB_DESTINATION)],
+        [InlineKeyboardButton(("✅ " if scheduled else "🕒 ") + _t(w, "section_schedule"), style="success" if scheduled else "primary", callback_data=CB_SCHEDULE)],
         [
-            InlineKeyboardButton("⚙️ Delivery Rules", style="primary", callback_data=CB_OPTIONS),
-            InlineKeyboardButton("🔘 Post Buttons", style="primary", callback_data=CB_BUTTONS),
+            InlineKeyboardButton("⚙️ " + _t(w, "section_rules"), style="primary", callback_data=CB_OPTIONS),
+            InlineKeyboardButton("🔘 " + _t(w, "section_buttons"), style="primary", callback_data=CB_BUTTONS),
         ],
-        [InlineKeyboardButton("👁 Preview", style="success", callback_data=CB_REVIEW)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_t(w, "preview"), style="success", callback_data=CB_REVIEW)],
+        [InlineKeyboardButton(tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
@@ -159,39 +178,50 @@ def _home_text(w: dict, notice: str | None = None) -> str:
     content = bool(w.get("content_text") or w.get("media_file_id"))
     destination = isinstance(w.get("chat_id"), int) and w.get("chat_id", 0) < 0
     scheduled = _schedule_is_ready(w)
+    language = _lang(w)
     mode = w.get("recurrence_type", "once")
     if mode == "interval":
-        repeat = f"Every {w.get('interval_value', '?')} {w.get('interval_unit', '')}".strip()
+        unit_key = f"unit_{w.get('interval_unit')}"
+        repeat = _flow(w, "repeat_interval", value=w.get("interval_value", "?"), unit=_flow(w, unit_key))
     elif mode == "days_of_week":
-        repeat = "Weekly · " + ", ".join(DAYS[d] for d in sorted(w.get("days_of_week") or set()) if d in range(7))
+        days = ", ".join(_weekdays(w)[d] for d in sorted(w.get("days_of_week") or set()) if d in range(7))
+        repeat = _flow(w, "repeat_weekly", days=days)
     else:
-        repeat = "One-time"
+        repeat = _flow(w, "repeat_once")
     timezone_name = str(w.get("timezone") or "UTC")
     first = w.get("first_run")
     try:
-        first_text = first.astimezone(pytz.timezone(timezone_name)).strftime("%d %b %Y, %H:%M") if scheduled else "Not set"
+        first_text = first.astimezone(pytz.timezone(timezone_name)).strftime("%Y-%m-%d %H:%M") if scheduled else _flow(w, "review_not_set")
     except Exception:
-        first_text = "Not set"
-    destination_text = escape_markdown(str(w.get("chat_title") or "Not selected"), version=1)
-    content_type = "Media + caption" if w.get("media_file_id") and w.get("content_text") else ("Media" if w.get("media_file_id") else "Text")
-    rules = "Customized" if any((w.get("time_window_enabled"), w.get("auto_delete"), w.get("self_destruct"), w.get("auto_pin"))) else "Default"
+        first_text = _flow(w, "review_not_set")
+    destination_text = escape_markdown(str(w.get("chat_title") or _t(w, "not_selected")), version=1)
+    content_type = (
+        _t(w, "media_caption") if w.get("media_file_id") and w.get("content_text")
+        else (_t(w, "media_only") if w.get("media_file_id") else _t(w, "text_only"))
+    )
+    rules = _t(w, "customized") if any((
+        w.get("time_window_enabled"), w.get("auto_delete"),
+        w.get("self_destruct"), w.get("auto_pin")
+    )) else _t(w, "standard")
+    ready = _t(w, "ready")
+    needs = _t(w, "needs_setup")
     lines = [
-        "📣 *Create a scheduled post*",
-        "Set up each section in any order. Your post is saved only after Review and Confirm.",
+        f"*{_t(w, 'workspace_title')}*",
+        _t(w, "workspace_intro"),
         "",
     ]
     if notice:
         lines.extend([f"ℹ️ {notice}", ""])
     lines.extend([
-        f"📝 *Content* — {'Ready · ' + content_type if content else 'Needs setup'}",
-        f"📍 *Destination* — {'Ready · ' + destination_text if destination else 'Needs setup'}",
-        f"🕒 *Schedule* — {'Ready' if scheduled else 'Needs setup'}",
+        f"📝 *{_t(w, 'section_content')}* — {ready + ' · ' + content_type if content else needs}",
+        f"📍 *{_t(w, 'section_destination')}* — {ready + ' · ' + destination_text if destination else needs}",
+        f"🕒 *{_t(w, 'section_schedule')}* — {ready if scheduled else needs}",
         f"   {escape_markdown(repeat, version=1)} · {escape_markdown(first_text, version=1)} · {escape_markdown(timezone_name, version=1)}",
-        f"⚙️ *Delivery Rules* — {rules}",
-        f"🔘 *Post Buttons* — {len(w.get('inline_buttons') or [])}/10",
+        f"⚙️ *{_t(w, 'section_rules')}* — {rules}",
+        f"🔘 *{_t(w, 'section_buttons')}* — {len(w.get('inline_buttons') or [])}/10",
         "",
-        "Required: Content, Destination and Publish Schedule.",
-        "Optional: Delivery Rules and Post Buttons.",
+        f"{_t(w, 'required')}: {_t(w, 'section_content')}, {_t(w, 'section_destination')} {'·'} {_t(w, 'section_schedule')}.",
+        f"{_t(w, 'optional')}: {_t(w, 'section_rules')} {'·'} {_t(w, 'section_buttons')}.",
     ])
     return "\n".join(lines)
 
@@ -201,14 +231,15 @@ async def _home(context, w: dict, notice: str | None = None) -> int:
     return HOME
 
 
-def _nav(back: str = CB_HOME) -> InlineKeyboardMarkup:
+def _nav(back: str = CB_HOME, language: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅️ Workspace", callback_data=back),
-        InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL),
+        InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=back),
+        InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL),
     ]])
 
 
-def _destination_keyboard(groups: list[dict], page: int, username: str) -> InlineKeyboardMarkup:
+def _destination_keyboard(groups: list[dict], page: int, username: str, language: str = "en") -> InlineKeyboardMarkup:
+    w = {"language": language}
     start = page * CHAT_PAGE_SIZE
     selected = groups[start:start + CHAT_PAGE_SIZE]
     icons = {"channel": "📢", "group": "👥", "supergroup": "👥"}
@@ -218,117 +249,122 @@ def _destination_keyboard(groups: list[dict], page: int, username: str) -> Inlin
     )] for g in selected]
     nav = []
     if page:
-        nav.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"{CB_CHAT_PAGE}{page - 1}"))
+        nav.append(InlineKeyboardButton("⬅️ " + tr(language, "previous"), callback_data=f"{CB_CHAT_PAGE}{page - 1}"))
     if start + len(selected) < len(groups):
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"{CB_CHAT_PAGE}{page + 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "next") + " ➡️", callback_data=f"{CB_CHAT_PAGE}{page + 1}"))
     if nav:
         rows.append(nav)
     if not groups:
-        rows.insert(0, [InlineKeyboardButton("➕ Add Bot to a Group", style="primary", url=f"https://t.me/{username}?startgroup=true")])
+        rows.insert(0, [InlineKeyboardButton(_flow(w, "add_group"), style="primary", url=f"https://t.me/{username}?startgroup=true")])
     rows.extend([
-        [InlineKeyboardButton("✏️ Enter Chat ID", style="primary", callback_data=CB_MANUAL)],
-        [InlineKeyboardButton("⬅️ Workspace", callback_data=CB_HOME)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(tr(language, "manual_chat_id"), style="primary", callback_data=CB_MANUAL)],
+        [InlineKeyboardButton(_t(w, "review_open_workspace"), callback_data=CB_HOME)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     return InlineKeyboardMarkup(rows)
 
 
 def _schedule_text(w: dict) -> str:
     mode = w.get("recurrence_type", "once")
+    language = _lang(w)
     if mode == "interval":
-        repeat = f"Every {w.get('interval_value', '?')} {w.get('interval_unit', '')}".strip()
+        repeat = _flow(w, "repeat_interval", value=w.get("interval_value", "?"), unit=_flow(w, f"unit_{w.get('interval_unit')}"))
     elif mode == "days_of_week":
-        repeat = "Weekly on " + ", ".join(DAYS[d] for d in sorted(w.get("days_of_week") or set()) if d in range(7))
+        days = ", ".join(_weekdays(w)[d] for d in sorted(w.get("days_of_week") or set()) if d in range(7))
+        repeat = _flow(w, "repeat_weekly", days=days)
     else:
-        repeat = "One-time"
+        repeat = _flow(w, "repeat_once")
     zone_name = str(w.get("timezone") or "UTC")
     first = w.get("first_run")
     try:
-        first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%a, %d %b %Y · %H:%M") if isinstance(first, datetime) else "Not configured"
+        first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%Y-%m-%d · %H:%M") if isinstance(first, datetime) else _flow(w, "review_not_set")
     except Exception:
-        first_text = "Not configured"
-    limit = "1 send" if mode == "once" else ("Unlimited" if w.get("max_runs") is None else f"{w.get('max_runs')} sends")
+        first_text = _flow(w, "review_not_set")
+    limit = _flow(w, "one_send") if mode == "once" else (
+        _flow(w, "unlimited") if w.get("max_runs") is None else _flow(w, "sends", value=w.get("max_runs"))
+    )
     return (
-        "🕒 *Publish Schedule*\n\n"
-        f"*Pattern:* {escape_markdown(repeat, version=1)}\n"
-        f"*First publish:* {escape_markdown(first_text, version=1)}\n"
-        f"*Timezone:* {escape_markdown(zone_name, version=1)}\n"
-        f"*Delivery limit:* {limit}\n\n"
-        "Set the repeat pattern, timezone and first publish time here. "
-        "The time you enter is interpreted in the selected timezone."
+        f"🕒 *{pct(language, 'schedule_title')}*\n\n"
+        f"*{tr(language, 'recurrence_prompt').splitlines()[0].replace('🔁 ', '')}:* {escape_markdown(repeat, version=1)}\n"
+        f"*{pct(language, 'first_publish')}:* {escape_markdown(first_text, version=1)}\n"
+        f"*{pct(language, 'timezone')}:* {escape_markdown(zone_name, version=1)}\n"
+        f"*{pct(language, 'delivery_limit')}:* {limit}\n\n"
+        f"{tr(language, 'recurrence_prompt').splitlines()[-1] if len(tr(language, 'recurrence_prompt').splitlines()) > 1 else ''}"
     )
 
 
 def _schedule_keyboard(w: dict) -> InlineKeyboardMarkup:
+    language = _lang(w)
     mode = w.get("recurrence_type", "once")
     rows = [
         [
-            InlineKeyboardButton("One-time", style="success" if mode == "once" else "primary", callback_data=CB_MODE_ONCE),
-            InlineKeyboardButton("Interval", style="success" if mode == "interval" else "primary", callback_data=CB_MODE_INTERVAL),
-            InlineKeyboardButton("Weekly", style="success" if mode == "days_of_week" else "primary", callback_data=CB_MODE_WEEKLY),
+            InlineKeyboardButton(_t(w, "mode_once"), style="success" if mode == "once" else "primary", callback_data=CB_MODE_ONCE),
+            InlineKeyboardButton(_t(w, "mode_interval"), style="success" if mode == "interval" else "primary", callback_data=CB_MODE_INTERVAL),
+            InlineKeyboardButton(_t(w, "mode_weekly"), style="success" if mode == "days_of_week" else "primary", callback_data=CB_MODE_WEEKLY),
         ],
-        [InlineKeyboardButton("🗓 Set First Publish", style="primary", callback_data=CB_FIRST_RUN)],
-        [InlineKeyboardButton("🌍 Timezone", style="primary", callback_data=CB_TIMEZONE)],
+        [InlineKeyboardButton(_t(w, "first_publish"), style="primary", callback_data=CB_FIRST_RUN)],
+        [InlineKeyboardButton(_t(w, "timezone"), style="primary", callback_data=CB_TIMEZONE)],
     ]
     if mode != "once":
-        rows.append([InlineKeyboardButton("🔢 Delivery Limit", style="primary", callback_data=CB_RUN_LIMIT)])
+        rows.append([InlineKeyboardButton(_t(w, "delivery_limit"), style="primary", callback_data=CB_RUN_LIMIT)])
     rows.extend([
-        [InlineKeyboardButton("✅ Done", style="success", callback_data=CB_HOME)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_t(w, "done"), style="success", callback_data=CB_HOME)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     return InlineKeyboardMarkup(rows)
 
 
-def _timezone_keyboard(page: int) -> InlineKeyboardMarkup:
+def _timezone_keyboard(page: int, language: str = "en") -> InlineKeyboardMarkup:
     start = page * TZ_PAGE_SIZE
     subset = TIMEZONES[start:start + TZ_PAGE_SIZE]
-    rows = [[InlineKeyboardButton(label, style="primary", callback_data=f"{CB_TZ}{name}")] for name, label in subset]
+    rows = [[InlineKeyboardButton(name.replace("_", " "), style="primary", callback_data=f"{CB_TZ}{name}")] for name, _label in subset]
     nav = []
     if page:
-        nav.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"{CB_TZ_PAGE}{page - 1}"))
+        nav.append(InlineKeyboardButton("⬅️ " + tr(language, "previous"), callback_data=f"{CB_TZ_PAGE}{page - 1}"))
     if start + len(subset) < len(TIMEZONES):
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"{CB_TZ_PAGE}{page + 1}"))
+        nav.append(InlineKeyboardButton(tr(language, "next") + " ➡️", callback_data=f"{CB_TZ_PAGE}{page + 1}"))
     if nav:
         rows.append(nav)
     rows.extend([
-        [InlineKeyboardButton("⬅️ Schedule", callback_data=CB_SCHEDULE)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     return InlineKeyboardMarkup(rows)
 
 
-def _days_keyboard(selected: set[int]) -> InlineKeyboardMarkup:
+def _days_keyboard(selected: set[int], language: str = "en") -> InlineKeyboardMarkup:
+    labels = _weekdays({"language": language})
     rows = [
-        [InlineKeyboardButton(f"{'✅' if d in selected else '○'} {DAYS[d]}", style="success" if d in selected else "primary", callback_data=f"{CB_DAY}{d}") for d in range(4)],
-        [InlineKeyboardButton(f"{'✅' if d in selected else '○'} {DAYS[d]}", style="success" if d in selected else "primary", callback_data=f"{CB_DAY}{d}") for d in range(4, 7)],
-        [InlineKeyboardButton("✅ Apply Days", style="success", callback_data=CB_DAYS_DONE)],
-        [InlineKeyboardButton("⬅️ Schedule", callback_data=CB_SCHEDULE)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(f"{'✅' if d in selected else '○'} {labels[d]}", style="success" if d in selected else "primary", callback_data=f"{CB_DAY}{d}") for d in range(4)],
+        [InlineKeyboardButton(f"{'✅' if d in selected else '○'} {labels[d]}", style="success" if d in selected else "primary", callback_data=f"{CB_DAY}{d}") for d in range(4, 7)],
+        [InlineKeyboardButton(_flow({"language": language}, "wizard_next"), style="success", callback_data=CB_DAYS_DONE)],
+        [InlineKeyboardButton("⬅️ " + _t({"language": language}, "schedule_title"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ]
     return InlineKeyboardMarkup(rows)
 
 
 def _pin_label(w: dict) -> str:
     if not w.get("auto_pin"):
-        return "Off"
+        return _flow(w, "review_off")
     if w.get("ap_hours") is None:
-        return "Keep pinned until manually unpinned"
-    duration = w.get("ap_duration_label") or f"{w.get('ap_hours')} hours"
-    return f"Unpin after {duration}"
+        return _t(w, "keep_pinned")
+    duration = w.get("ap_duration_label")
+    return _t(w, "unpin_after_label", value=duration) if duration else _flow(w, "unpin_after", value=w.get("ap_hours"))
 
 
 def _options_text(w: dict) -> str:
-    window = f"{w.get('tw_start', '?')}–{w.get('tw_end', '?')}" if w.get("time_window_enabled") else "Off"
-    auto_delete = str(w.get("ad_duration_label") or f"{w.get('ad_hours')} hours") if w.get("auto_delete") else "Off"
-    self_destruct = f"{w.get('sd_secs')} seconds" if w.get("self_destruct") else "Off"
+    window = f"{w.get('tw_start', '?')}–{w.get('tw_end', '?')}" if w.get("time_window_enabled") else _flow(w, "review_off")
+    auto_delete = str(w.get("ad_duration_label") or _flow(w, "delete_after", value=w.get("ad_hours"))) if w.get("auto_delete") else _flow(w, "review_off")
+    self_destruct = _flow(w, "destruct_after", value=w.get("sd_secs")) if w.get("self_destruct") else _flow(w, "review_off")
     pin = _pin_label(w)
     return (
-        "⚙️ *Delivery Rules*\n\n"
-        f"*Posting Window:* {escape_markdown(window, version=1)}\n"
-        f"*Auto-Delete:* {escape_markdown(auto_delete, version=1)}\n"
-        f"*Self-Destruct:* {escape_markdown(self_destruct, version=1)}\n"
-        f"*Auto-Pin:* {escape_markdown(pin, version=1)}\n\n"
-        "All rules are optional. Leave them off to use normal Telegram delivery."
+        f"⚙️ *{_t(w, 'options_title')}*\n\n"
+        f"*{_t(w, 'posting_window')}:* {escape_markdown(window, version=1)}\n"
+        f"*{_t(w, 'auto_delete')}:* {escape_markdown(auto_delete, version=1)}\n"
+        f"*{_t(w, 'self_destruct')}:* {escape_markdown(self_destruct, version=1)}\n"
+        f"*{_t(w, 'auto_pin')}:* {escape_markdown(pin, version=1)}\n\n"
+        f"{_t(w, 'options_intro')}"
     )
 
 
@@ -336,18 +372,19 @@ def _options_keyboard(w: dict) -> InlineKeyboardMarkup:
     def label(active: bool, title: str) -> str:
         return f"{'✅' if active else '○'} {title}"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(label(bool(w.get("time_window_enabled")), "Posting Window"), style="success" if w.get("time_window_enabled") else "primary", callback_data=CB_WINDOW)],
-        [InlineKeyboardButton(label(bool(w.get("auto_delete")), "Auto-Delete"), style="success" if w.get("auto_delete") else "primary", callback_data=CB_DELETE)],
-        [InlineKeyboardButton(label(bool(w.get("self_destruct")), "Self-Destruct"), style="success" if w.get("self_destruct") else "primary", callback_data=CB_DESTRUCT)],
-        [InlineKeyboardButton(label(bool(w.get("auto_pin")), "Auto-Pin"), style="success" if w.get("auto_pin") else "primary", callback_data=CB_PIN)],
-        [InlineKeyboardButton("✅ Done", style="success", callback_data=CB_HOME)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(label(bool(w.get("time_window_enabled")), _t(w, "posting_window")), style="success" if w.get("time_window_enabled") else "primary", callback_data=CB_WINDOW)],
+        [InlineKeyboardButton(label(bool(w.get("auto_delete")), _t(w, "auto_delete")), style="success" if w.get("auto_delete") else "primary", callback_data=CB_DELETE)],
+        [InlineKeyboardButton(label(bool(w.get("self_destruct")), _t(w, "self_destruct")), style="success" if w.get("self_destruct") else "primary", callback_data=CB_DESTRUCT)],
+        [InlineKeyboardButton(label(bool(w.get("auto_pin")), _t(w, "auto_pin")), style="success" if w.get("auto_pin") else "primary", callback_data=CB_PIN)],
+        [InlineKeyboardButton(_t(w, "done"), style="success", callback_data=CB_HOME)],
+        [InlineKeyboardButton(tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
 
 
 def _buttons_text(w: dict) -> str:
     buttons = w.get("inline_buttons") or []
-    lines = ["🔘 *Post Buttons*", f"Configured: *{len(buttons)}/10*", ""]
+    language = _lang(w)
+    lines = [f"🔘 *{_t(w, 'buttons_title')}*", _t(w, "buttons_count", count=len(buttons)), ""]
     if buttons:
         for i, row in enumerate(buttons, 1):
             for item in row:
@@ -356,28 +393,24 @@ def _buttons_text(w: dict) -> str:
                     f"{escape_markdown(str(item.get('url') or ''), version=1)}"
                 )
     else:
-        lines.append("No buttons added.")
-    lines.extend([
-        "",
-        "Add several buttons in one message, one per line:",
-        "Button label | https://example.com",
-        "Telegram usernames such as @mychannel are also accepted.",
-    ])
+        lines.append(_t(w, "buttons_empty"))
+    lines.extend(["", _t(w, "buttons_instructions")])
     return "\n".join(lines)
 
 
-def _buttons_keyboard(count: int) -> InlineKeyboardMarkup:
+def _buttons_keyboard(count: int, language: str = "en") -> InlineKeyboardMarkup:
+    w = {"language": language}
     rows = []
     if count < 10:
-        rows.append([InlineKeyboardButton("➕ Add Buttons", style="primary", callback_data=CB_BUTTON_ADD)])
+        rows.append([InlineKeyboardButton(_t(w, "add_buttons"), style="primary", callback_data=CB_BUTTON_ADD)])
     if count:
         rows.append([
-            InlineKeyboardButton("↩️ Remove Last", style="primary", callback_data=CB_BUTTON_REMOVE),
-            InlineKeyboardButton("🗑 Clear All", style="danger", callback_data=CB_BUTTON_CLEAR),
+            InlineKeyboardButton(_t(w, "remove_last"), style="primary", callback_data=CB_BUTTON_REMOVE),
+            InlineKeyboardButton(_t(w, "clear_buttons"), style="danger", callback_data=CB_BUTTON_CLEAR),
         ])
     rows.extend([
-        [InlineKeyboardButton("✅ Done", style="success", callback_data=CB_HOME)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_t(w, "done"), style="success", callback_data=CB_HOME)],
+        [InlineKeyboardButton(tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -385,47 +418,122 @@ def _buttons_keyboard(count: int) -> InlineKeyboardMarkup:
 def _preview_text(w: dict) -> str:
     mode = w.get("recurrence_type", "once")
     if mode == "interval":
-        repeat = f"Every {w.get('interval_value')} {w.get('interval_unit')}"
+        repeat = _flow(w, "repeat_interval", value=w.get("interval_value"), unit=_flow(w, f"unit_{w.get('interval_unit')}"))
     elif mode == "days_of_week":
-        repeat = "Weekly on " + ", ".join(DAYS[d] for d in sorted(w.get("days_of_week") or set()))
+        days = ", ".join(_weekdays(w)[d] for d in sorted(w.get("days_of_week") or set()) if d in range(7))
+        repeat = _flow(w, "repeat_weekly", days=days)
     else:
-        repeat = "One-time"
+        repeat = _flow(w, "repeat_once")
     zone_name = str(w.get("timezone") or "UTC")
     first = w.get("first_run")
-    first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%A, %d %b %Y at %H:%M") if isinstance(first, datetime) else "Not configured"
-    limit = "1 send" if mode == "once" else ("Unlimited" if w.get("max_runs") is None else f"{w.get('max_runs')} sends")
+    first_text = first.astimezone(pytz.timezone(zone_name)).strftime("%Y-%m-%d %H:%M") if isinstance(first, datetime) else _flow(w, "review_not_set")
+    limit = _flow(w, "one_send") if mode == "once" else (
+        _flow(w, "unlimited") if w.get("max_runs") is None else _flow(w, "sends", value=w.get("max_runs"))
+    )
     raw = str(w.get("content_text") or "").strip()
     preview = escape_markdown(" ".join(raw.split())[:180], version=1)
     if w.get("media_type"):
-        preview = f"[{str(w['media_type']).title()}] {preview}".strip()
+        media_label = _flow(w, "review_media")
+        preview = f"[{media_label}] {preview}".strip()
     if raw and len(raw) > 180:
         preview += "…"
     if not preview:
-        preview = "Media attachment" if w.get("media_file_id") else "Missing"
-    destination = escape_markdown(str(w.get("chat_title") or "Not selected"), version=1)
+        preview = _flow(w, "review_media") if w.get("media_file_id") else _flow(w, "review_not_set")
+    destination = escape_markdown(str(w.get("chat_title") or _t(w, "not_selected")), version=1)
     chat_id = escape_markdown(str(w.get("chat_id") or "—"), version=1)
-    window = f"{w.get('tw_start')}–{w.get('tw_end')}" if w.get("time_window_enabled") else "Off"
-    delete = str(w.get("ad_duration_label") or f"{w.get('ad_hours')} hours") if w.get("auto_delete") else "Off"
-    destruct = f"{w.get('sd_secs')} seconds" if w.get("self_destruct") else "Off"
+    window = f"{w.get('tw_start')}–{w.get('tw_end')}" if w.get("time_window_enabled") else _flow(w, "review_off")
+    delete = str(w.get("ad_duration_label") or _flow(w, "delete_after", value=w.get("ad_hours"))) if w.get("auto_delete") else _flow(w, "review_off")
+    destruct = _flow(w, "destruct_after", value=w.get("sd_secs")) if w.get("self_destruct") else _flow(w, "review_off")
     pin = _pin_label(w)
     button_lines = [
         f"• {escape_markdown(str(item.get('text') or ''), version=1)} → {escape_markdown(str(item.get('url') or ''), version=1)}"
         for row in w.get("inline_buttons") or [] for item in row
     ]
-    return (
-        "👁 *Post Preview*\n\n"
-        f"*Destination:* {destination} ({chat_id})\n"
-        f"*Content:* {preview}\n"
-        f"*Publish:* {escape_markdown(first_text, version=1)} ({escape_markdown(zone_name, version=1)})\n"
-        f"*Repeat:* {escape_markdown(repeat, version=1)}\n"
-        f"*Limit:* {limit}\n"
-        f"*Posting Window:* {escape_markdown(window, version=1)}\n"
-        f"*Auto-Delete:* {escape_markdown(delete, version=1)}\n"
-        f"*Self-Destruct:* {escape_markdown(destruct, version=1)}\n"
-        f"*Auto-Pin:* {escape_markdown(pin, version=1)}\n"
-        "*Buttons:*\n" + ("\n".join(button_lines) if button_lines else "None") +
-        "\n\nNothing is scheduled until you confirm."
-    )
+    values = {
+        "destination": destination, "chat_id": chat_id, "content": preview,
+        "repeat": escape_markdown(repeat, version=1), "first_post": escape_markdown(first_text, version=1),
+        "timezone": escape_markdown(zone_name, version=1), "limit": limit,
+        "window": escape_markdown(window, version=1), "auto_delete": escape_markdown(delete, version=1),
+        "self_destruct": escape_markdown(destruct, version=1), "auto_pin": escape_markdown(pin, version=1),
+        "buttons": "\n".join(button_lines) if button_lines else _flow(w, "review_not_set"),
+    }
+    return _flow(w, "review_template", **values)
+
+
+def _validate(w: dict) -> list[str]:
+    language = _lang(w)
+    errors = []
+    chat_id = w.get("chat_id")
+    if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id >= 0:
+        errors.append(tr(language, "choose_group"))
+    if not (str(w.get("content_text") or "").strip() or w.get("media_file_id")):
+        errors.append(tr(language, "schedule_content_prompt"))
+    if w.get("media_type") and not w.get("media_file_id"):
+        errors.append(_flow(w, "content_rules"))
+    if w.get("media_file_id") and w.get("media_type") not in {"photo", "video", "document", "audio", "animation", "voice"}:
+        errors.append(_t(w, "content_unsupported"))
+    try:
+        pytz.timezone(w.get("timezone") or "UTC")
+    except (pytz.exceptions.UnknownTimeZoneError, TypeError):
+        errors.append(_flow(w, "timezone_invalid"))
+    first = w.get("first_run")
+    if not isinstance(first, datetime) or first.tzinfo is None or first.utcoffset() is None or first.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+        errors.append(_flow(w, "invalid_first_time"))
+    mode = w.get("recurrence_type")
+    if mode not in {"once", "interval", "days_of_week"}:
+        errors.append(tr(language, "recurrence_prompt"))
+    elif mode == "interval":
+        value, unit = w.get("interval_value"), w.get("interval_unit")
+        bounds = {"minutes": 525600, "hours": 8760, "days": 365}
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1 or unit not in bounds or value > bounds.get(unit, 0):
+            errors.append(_flow(w, "interval_invalid"))
+    elif mode == "days_of_week":
+        days = w.get("days_of_week")
+        if not isinstance(days, (set, list, tuple)) or not days or any(not isinstance(d, int) or isinstance(d, bool) or d not in range(7) for d in days):
+            errors.append(_flow(w, "day_required"))
+    if mode == "once":
+        w["max_runs"] = 1
+    else:
+        limit = w.get("max_runs")
+        if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100000):
+            errors.append(_flow(w, "count_invalid"))
+    if w.get("time_window_enabled"):
+        start, end = parse_hhmm(w.get("tw_start") or ""), parse_hhmm(w.get("tw_end") or "")
+        if not start or not end or start == end:
+            errors.append(_flow(w, "window_invalid"))
+    if w.get("auto_delete") and w.get("self_destruct"):
+        errors.append(_flow(w, "validation_generic"))
+    if w.get("auto_delete"):
+        value = w.get("ad_hours")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            errors.append(_flow(w, "delete_invalid"))
+    if w.get("self_destruct"):
+        value = w.get("sd_secs")
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 31536000:
+            errors.append(_flow(w, "destruct_invalid"))
+    if w.get("auto_pin"):
+        value = w.get("ap_hours", "missing")
+        if value == "missing" or (value is not None and (
+            not isinstance(value, (int, float)) or isinstance(value, bool) or
+            not math.isfinite(value) or not 0 < value <= 87600
+        )):
+            errors.append(_flow(w, "pin_invalid"))
+    buttons = w.get("inline_buttons") or []
+    if len(buttons) > 10:
+        errors.append(_flow(w, "button_limit"))
+    for row in buttons:
+        if not isinstance(row, list):
+            errors.append(_flow(w, "button_label_invalid"))
+            break
+        for item in row:
+            if not isinstance(item, dict):
+                errors.append(_flow(w, "button_label_invalid"))
+                break
+            label, url = str(item.get("text") or "").strip(), str(item.get("url") or "").strip()
+            if not label or len(label) > 64 or not url.startswith(("http://", "https://", "tg://")) or " " in url:
+                errors.append(_flow(w, "button_link_invalid"))
+                break
+    return errors
 
 
 def _validate(w: dict) -> list[str]:
@@ -551,7 +659,7 @@ async def enter_schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE
     if isinstance(linked, dict):
         try:
             target_id = int(linked.get("chat_id"))
-            target = await ensure_chat_access(context.bot, target_id, user_id)
+            target = await ensure_chat_access(context.bot, target_id, user_id, language)
             w["chat_id"], w["chat_title"] = target_id, target.title or str(target_id)
         except (TypeError, ValueError, ChatAccessError):
             notice = "The linked group could not be verified. Choose a destination."
@@ -564,7 +672,7 @@ async def cb_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _answer(query)
     w = context.user_data.get("schedule_post")
     if not isinstance(w, dict):
-        await _answer(query, "This setup is no longer active. Start a new post.", alert=True)
+        await _answer(query, _flow(_w(context), "setup_inactive"), alert=True)
         return ConversationHandler.END
     return await _home(context, w)
 
@@ -572,15 +680,13 @@ async def cb_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def cb_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     w = _w(context)
-    existing = bool(w.get("content_text") or w.get("media_file_id"))
-    text = "📝 *Post Content*\n\n"
-    if existing:
-        text += "Your current content is saved. Send a new message to replace it.\n\n"
-    text += "Send one text or one supported media message. Captions are included automatically.\nSupported: photo, video, document, audio, animation and voice."
+    text = f"📝 *{_t(w, 'content_title')}*\n\n"
+    if w.get("content_text") or w.get("media_file_id"):
+        text += f"{_t(w, 'content_existing')}\n\n"
+    text += f"{_t(w, 'content_prompt')}\n\n{_t(w, 'content_supported')}"
     await _answer(query)
-    await _show(context, w, text, _nav())
+    await _show(context, w, text, _nav(language=_lang(w)))
     return CONTENT
-
 
 async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg: Message = update.message
@@ -601,79 +707,74 @@ async def recv_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     elif msg.text and msg.text.strip():
         content_text = msg.text
     else:
-        await msg.reply_text("This message type cannot be scheduled. Send text, photo, video, document, audio, animation or voice.")
+        await msg.reply_text(_t(w, "content_unsupported"))
         return CONTENT
     w["content_text"], w["media_file_id"], w["media_type"] = content_text, file_id, media_type
-    return await _home(context, w, "Content updated.")
-
+    return await _home(context, w, _t(w, "content_updated"))
 
 async def cb_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     groups = await list_groups_for_user(query.from_user.id if query.from_user else None)
     username = (await query.get_bot().get_me()).username
     await _answer(query)
-    await _show(context, _w(context),
-        "📍 *Choose a Destination*\n\nSelect a saved group or channel. Administrator access and bot posting permissions are verified now and again before saving.",
-        _destination_keyboard(groups, 0, username))
+    await _show(context, w, f"📍 *{_t(w, 'destination_title')}*\n\n{_t(w, 'destination_prompt')}", _destination_keyboard(groups, 0, username, _lang(w)))
     return DESTINATION
-
 
 async def cb_destination_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     raw = (query.data or "").replace(CB_CHAT_PAGE, "", 1)
     page = int(raw) if raw.isdigit() else 0
     groups = await list_groups_for_user(query.from_user.id if query.from_user else None)
     username = (await query.get_bot().get_me()).username
     await _answer(query)
-    await _show(context, _w(context), "📍 *Choose a Destination*", _destination_keyboard(groups, page, username))
+    await _show(context, w, f"📍 *{_t(w, 'destination_title')}*", _destination_keyboard(groups, page, username, _lang(w)))
     return DESTINATION
-
 
 async def cb_choose_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     try:
         chat_id = int((query.data or "").replace(CB_CHAT, "", 1))
     except ValueError:
-        await _answer(query, "Invalid destination.", alert=True)
+        await _answer(query, _flow(w, "invalid_chat_id"), alert=True)
         return DESTINATION
     user_id = query.from_user.id if query.from_user else None
     try:
-        target = await ensure_chat_access(query.get_bot(), chat_id, user_id)
-    except ChatAccessError as exc:
-        await _answer(query, str(exc), alert=True)
+        target = await ensure_chat_access(query.get_bot(), chat_id, user_id, _lang(w))
+    except ChatAccessError:
+        await _answer(query, _flow(w, "access_failed"), alert=True)
         return DESTINATION
-    w = _w(context)
     w["chat_id"], w["chat_title"] = chat_id, target.title or str(chat_id)
-    await _answer(query, "Destination verified.")
-    return await _home(context, w, "Destination updated.")
-
+    await _answer(query, _t(w, "destination_verified"))
+    return await _home(context, w, _t(w, "destination_updated"))
 
 async def cb_manual_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     await _answer(query)
-    await _show(context, _w(context), "✏️ *Enter Chat ID*\n\nSend the numeric group or channel ID, including the minus sign.\nExample: -1001234567890.", _nav(CB_DESTINATION))
+    await _show(context, w, f"✏️ *{_t(w, 'enter_chat_id')}*\n\n{_t(w, 'enter_chat_id_prompt')}", _nav(CB_DESTINATION, _lang(w)))
     return MANUAL_DESTINATION
-
 
 async def recv_manual_destination(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg = update.message
+    w = _w(context)
     try:
         chat_id = int((msg.text or "").strip())
     except ValueError:
-        await msg.reply_text("Enter a numeric group or channel ID, for example -1001234567890.")
+        await msg.reply_text(_flow(w, "invalid_chat_id"))
         return MANUAL_DESTINATION
     if chat_id >= 0:
-        await msg.reply_text("Group and channel IDs must be negative. Check the ID and try again.")
+        await msg.reply_text(_flow(w, "negative_chat_id"))
         return MANUAL_DESTINATION
     try:
-        target = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
-    except ChatAccessError as exc:
-        await msg.reply_text(str(exc))
+        target = await ensure_chat_access(context.bot, chat_id, update.effective_user.id, _lang(w))
+    except ChatAccessError:
+        await msg.reply_text(_flow(w, "access_failed"))
         return MANUAL_DESTINATION
-    w = _w(context)
     w["chat_id"], w["chat_title"] = chat_id, target.title or str(chat_id)
-    return await _home(context, w, "Destination updated and verified.")
-
+    return await _home(context, w, _t(w, "destination_updated"))
 
 async def cb_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -688,10 +789,9 @@ async def cb_mode_once(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     w["recurrence_type"], w["max_runs"] = "once", 1
     for key in ("interval_value", "interval_unit", "days_of_week"):
         w.pop(key, None)
-    await _answer(query, "One-time selected.")
+    await _answer(query, _flow(w, "repeat_once"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
-
 
 async def cb_mode_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -702,44 +802,41 @@ async def cb_mode_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     w.pop("interval_value", None)
     w.pop("interval_unit", None)
     await _answer(query)
-    await _show(context, w, "🔁 *Repeat at an Interval*\n\nEnter a whole number from 1 to 525,600. You will choose minutes, hours or days next.", _nav(CB_SCHEDULE))
+    await _show(context, w, _flow(w, "interval_value_prompt"), _nav(CB_SCHEDULE, _lang(w)))
     return INTERVAL_VALUE
-
 
 async def recv_interval_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
-    if not raw.isdecimal() or not 1 <= int(raw) <= 525600:
-        await update.message.reply_text("Enter a whole number from 1 to 525,600 (for example, 6).")
-        return INTERVAL_VALUE
     w = _w(context)
+    if not raw.isdecimal() or not 1 <= int(raw) <= 525600:
+        await update.message.reply_text(_flow(w, "interval_invalid"))
+        return INTERVAL_VALUE
     w["interval_value"] = int(raw)
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Minutes", style="primary", callback_data=CB_UNIT + "minutes"),
-            InlineKeyboardButton("Hours", style="primary", callback_data=CB_UNIT + "hours"),
-            InlineKeyboardButton("Days", style="primary", callback_data=CB_UNIT + "days"),
+            InlineKeyboardButton(_flow(w, "unit_minutes"), style="primary", callback_data=CB_UNIT + "minutes"),
+            InlineKeyboardButton(_flow(w, "unit_hours"), style="primary", callback_data=CB_UNIT + "hours"),
+            InlineKeyboardButton(_flow(w, "unit_days"), style="primary", callback_data=CB_UNIT + "days"),
         ],
-        [InlineKeyboardButton("⬅️ Schedule", callback_data=CB_SCHEDULE)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton("⬅️ " + tr(_lang(w), "back"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
-    await _show(context, w, f"🔁 *Repeat every {raw} …*\n\nChoose the interval unit.", keyboard)
+    await _show(context, w, f"{_flow(w, 'interval_unit_prompt')}\n\n{_flow(w, 'interval_confirm', value=raw, unit='…')}", keyboard)
     return INTERVAL_UNIT
-
 
 async def cb_interval_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     unit = (query.data or "").replace(CB_UNIT, "", 1)
-    value = _w(context).get("interval_value")
+    value = w.get("interval_value")
     limits = {"minutes": 525600, "hours": 8760, "days": 365}
     if unit not in limits or not isinstance(value, int) or not 1 <= value <= limits[unit]:
-        await _answer(query, "That interval is outside the supported range.", alert=True)
+        await _answer(query, _flow(w, "unit_invalid"), alert=True)
         return INTERVAL_UNIT
-    w = _w(context)
     w["interval_unit"] = unit
-    await _answer(query, f"Repeat every {value} {unit}.")
+    await _answer(query, _flow(w, "interval_confirm", value=value, unit=_flow(w, f"unit_{unit}")))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
-
 
 async def cb_mode_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -750,134 +847,126 @@ async def cb_mode_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     w.pop("interval_unit", None)
     selected = w.setdefault("days_of_week", set())
     await _answer(query)
-    await _show(context, w, "📆 *Choose Publishing Days*\n\nSelect every weekday on which this post should be published.", _days_keyboard(selected))
+    await _show(context, w, _flow(w, "days_prompt"), _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
-
 
 async def cb_day_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     raw = (query.data or "").replace(CB_DAY, "", 1)
     if not raw.isdigit() or int(raw) not in range(7):
-        await _answer(query, "Choose a valid day.", alert=True)
+        await _answer(query, _flow(w, "day_required"), alert=True)
         return WEEKDAYS
-    day, w = int(raw), _w(context)
+    day = int(raw)
     selected = w.setdefault("days_of_week", set())
     selected.symmetric_difference_update({day})
-    await _answer(query, f"{DAYS[day]} updated.")
-    await _show(context, w, "📆 *Choose Publishing Days*", _days_keyboard(selected))
+    await _answer(query, _flow(w, "done"))
+    await _show(context, w, _flow(w, "days_prompt"), _days_keyboard(selected, _lang(w)))
     return WEEKDAYS
-
 
 async def cb_days_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     w = _w(context)
     if not w.get("days_of_week"):
-        await _answer(query, "Select at least one weekday.", alert=True)
+        await _answer(query, _flow(w, "day_required"), alert=True)
         return WEEKDAYS
-    await _answer(query, "Publishing days saved.")
+    await _answer(query, _flow(w, "done"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
-
 async def cb_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     await _answer(query)
-    await _show(context, _w(context), "🌍 *Choose a Timezone*\n\nThe first publish time is interpreted in this timezone.", _timezone_keyboard(0))
+    await _show(context, w, tr(_lang(w), "timezone_prompt"), _timezone_keyboard(0, _lang(w)))
     return TIMEZONE
-
 
 async def cb_timezone_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     raw = (query.data or "").replace(CB_TZ_PAGE, "", 1)
     page = int(raw) if raw.isdigit() else 0
     await _answer(query)
-    await _show(context, _w(context), "🌍 *Choose a Timezone*", _timezone_keyboard(page))
+    await _show(context, w, tr(_lang(w), "timezone_prompt"), _timezone_keyboard(page, _lang(w)))
     return TIMEZONE
-
 
 async def cb_timezone_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    w = _w(context)
     zone = (query.data or "").replace(CB_TZ, "", 1)
     try:
         pytz.timezone(zone)
     except pytz.exceptions.UnknownTimeZoneError:
-        await _answer(query, "Unknown timezone.", alert=True)
+        await _answer(query, _flow(w, "timezone_invalid"), alert=True)
         return TIMEZONE
-    w = _w(context)
     w["timezone"] = zone
-    await _answer(query, f"Timezone set to {zone}.")
+    await _answer(query, f"{_t(w, 'timezone')}: {zone}")
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
-
 
 async def cb_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     zone = w.get("timezone", "UTC")
     await _answer(query)
-    await _show(context, w, f"🗓 *Set First Publish*\n\nTimezone: {escape_markdown(zone, version=1)}\n\nSend HH:MM for the next occurrence or DD/MM/YYYY HH:MM for an exact date.\nExamples: 14:30 or 25/12/2027 09:00.", _nav(CB_SCHEDULE))
+    await _show(context, w, f"{tr(_lang(w), 'first_run_prompt')}\n\n🌍 {escape_markdown(zone, version=1)}", _nav(CB_SCHEDULE, _lang(w)))
     return FIRST_RUN
 
-
 async def recv_first_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw, w = (update.message.text or "").strip(), _w(context)
+    w = _w(context)
+    raw = (update.message.text or "").strip()
     parsed = parse_schedule_datetime(raw, w.get("timezone", "UTC"))
     if parsed is None:
-        await update.message.reply_text("That time is invalid or is not in the future. Enter HH:MM or DD/MM/YYYY HH:MM in the selected timezone.")
+        await update.message.reply_text(_flow(w, "invalid_first_time"))
         return FIRST_RUN
     w["first_run"], w["first_run_raw"] = parsed, raw
-    return await _home(context, w, "Publish time updated.")
-
+    return await _home(context, w, _t(w, "time_updated"))
 
 async def cb_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Unlimited", style="success" if w.get("max_runs") is None else "primary", callback_data=CB_LIMIT_UNLIMITED),
-            InlineKeyboardButton("10 sends", style="success" if w.get("max_runs") == 10 else "primary", callback_data=CB_LIMIT + "10"),
-            InlineKeyboardButton("30 sends", style="success" if w.get("max_runs") == 30 else "primary", callback_data=CB_LIMIT + "30"),
+            InlineKeyboardButton(_flow(w, "unlimited"), style="success" if w.get("max_runs") is None else "primary", callback_data=CB_LIMIT_UNLIMITED),
+            InlineKeyboardButton(_flow(w, "sends", value=10), style="success" if w.get("max_runs") == 10 else "primary", callback_data=CB_LIMIT + "10"),
+            InlineKeyboardButton(_flow(w, "sends", value=30), style="success" if w.get("max_runs") == 30 else "primary", callback_data=CB_LIMIT + "30"),
         ],
-        [InlineKeyboardButton("Custom Amount", style="primary", callback_data=CB_LIMIT + "custom")],
-        [InlineKeyboardButton("⬅️ Schedule", callback_data=CB_SCHEDULE)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_t(w, "custom_amount"), style="primary", callback_data=CB_LIMIT + "custom")],
+        [InlineKeyboardButton("⬅️ " + tr(_lang(w), "back"), callback_data=CB_SCHEDULE)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
-    await _show(context, w, "🔢 *Delivery Limit*\n\nChoose how many times this recurring post may be sent. Unlimited is the default.", keyboard)
+    await _show(context, w, tr(_lang(w), "max_runs_prompt"), keyboard)
     return RUN_LIMIT
 
-
 async def cb_limit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    value, w = (query.data or "").replace(CB_LIMIT, "", 1), _w(context)
+    query, w = update.callback_query, _w(context)
+    value = (query.data or "").replace(CB_LIMIT, "", 1)
     if value == "custom":
         await _answer(query)
-        await _show(context, w, "Enter a whole number from 1 to 100,000.", _nav(CB_SCHEDULE))
+        await _show(context, w, _flow(w, "count_invalid"), _nav(CB_SCHEDULE, _lang(w)))
         return RUN_LIMIT
     if not value.isdecimal() or not 1 <= int(value) <= 100000:
-        await _answer(query, "Choose a valid delivery limit.", alert=True)
+        await _answer(query, _flow(w, "count_invalid"), alert=True)
         return RUN_LIMIT
     w["max_runs"] = int(value)
-    await _answer(query, f"Limit set to {value}.")
+    await _answer(query, _flow(w, "delivery_confirm", value=value))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
-
 
 async def cb_limit_unlimited(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     w["max_runs"] = None
-    await _answer(query, "Unlimited selected.")
+    await _answer(query, _flow(w, "unlimited"))
     await _show(context, w, _schedule_text(w), _schedule_keyboard(w))
     return SCHEDULE
 
-
 async def recv_run_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    w = _w(context)
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not 1 <= int(raw) <= 100000:
-        await update.message.reply_text("Enter a whole number from 1 to 100,000.")
+        await update.message.reply_text(_flow(w, "count_invalid"))
         return RUN_LIMIT
-    w = _w(context)
     w["max_runs"] = int(raw)
-    return await _home(context, w, "Delivery limit updated.")
-
+    return await _home(context, w, _flow(w, "delivery_confirm", value=w.get("max_runs")))
 
 async def cb_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -892,13 +981,12 @@ async def cb_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w["time_window_enabled"] = False
         w.pop("tw_start", None)
         w.pop("tw_end", None)
-        await _answer(query, "Posting Window disabled.")
+        await _answer(query, _flow(w, "window_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     await _answer(query)
-    await _show(context, w, "🕒 *Posting Window*\n\nEnter a start and end time in 24-hour format, separated by a hyphen.\nExample: 09:00-21:00. Overnight windows such as 22:00-06:00 are supported.", _nav(CB_OPTIONS))
+    await _show(context, w, f"{_t(w, 'window_title')}\n\n{_t(w, 'window_prompt')}", _nav(CB_OPTIONS, _lang(w)))
     return POSTING_WINDOW
-
 
 async def recv_posting_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
@@ -906,12 +994,11 @@ async def recv_posting_window(update: Update, context: ContextTypes.DEFAULT_TYPE
     start = parse_hhmm(match.group(1)) if match else None
     end = parse_hhmm(match.group(2)) if match else None
     if not start or not end or start == end:
-        await update.message.reply_text("Enter two different valid times, for example 09:00-21:00.")
+        await update.message.reply_text(_flow(_w(context), "window_invalid"))
         return POSTING_WINDOW
     w = _w(context)
     w.update(time_window_enabled=True, tw_start=start, tw_end=end)
-    return await _home(context, w, "Posting Window updated.")
-
+    return await _home(context, w, _t(w, "window_updated"))
 
 async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
@@ -919,32 +1006,26 @@ async def cb_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w["auto_delete"] = False
         w.pop("ad_hours", None)
         w.pop("ad_duration_label", None)
-        await _answer(query, "Auto-Delete disabled.")
+        await _answer(query, _flow(w, "review_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     w["self_destruct"] = False
     w.pop("sd_secs", None)
     await _answer(query)
-    await _show(context, w, "🗑 *Auto-Delete*\n\nSend a duration such as 5 minutes, 30m, 2 hours or 12h. Minimum: 5 minutes; maximum: 365 days.", _nav(CB_OPTIONS))
+    await _show(context, w, _flow(w, "delete_prompt"), _nav(CB_OPTIONS, _lang(w)))
     return AUTO_DELETE
 
-
 async def recv_auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw = (update.message.text or "").strip()
-    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw, re.I)
-    if not match:
-        await update.message.reply_text("Use a duration such as 5 minutes, 30m, 2 hours or 12h.")
-        return AUTO_DELETE
-    amount, unit = int(match.group(1)), match.group(2).lower()
-    minutes = amount if unit in {"m", "min", "mins", "minute", "minutes"} else amount * 60
-    if not 5 <= minutes <= 525600:
-        await update.message.reply_text("Auto-Delete must be between 5 minutes and 365 days.")
-        return AUTO_DELETE
     w = _w(context)
-    w.update(auto_delete=True, self_destruct=False, ad_hours=minutes / 60)
+    raw = (update.message.text or "").strip()
+    value = _duration_to_hours(raw, max_minutes=525600, language=_lang(w))
+    if value is None:
+        await update.message.reply_text(_flow(w, "delete_invalid"))
+        return AUTO_DELETE
+    w.update(auto_delete=True, self_destruct=False, ad_hours=value)
     w.pop("sd_secs", None)
-    w["ad_duration_label"] = f"{minutes} minutes" if minutes < 60 else f"{minutes // 60} hours"
-    return await _home(context, w, "Auto-Delete updated.")
+    w["ad_duration_label"] = _duration_label(value, _lang(w))
+    return await _home(context, w, _flow(w, "delete_saved", value=w["ad_duration_label"]))
 
 
 async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -952,27 +1033,26 @@ async def cb_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if w.get("self_destruct"):
         w["self_destruct"] = False
         w.pop("sd_secs", None)
-        await _answer(query, "Self-Destruct disabled.")
+        await _answer(query, _flow(w, "review_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     w["auto_delete"] = False
     w.pop("ad_hours", None)
     w.pop("ad_duration_label", None)
     await _answer(query)
-    await _show(context, w, "💣 *Self-Destruct*\n\nSend the number of seconds after publishing. Enter a whole number from 1 to 31,536,000.", _nav(CB_OPTIONS))
+    await _show(context, w, _flow(w, "destruct_prompt"), _nav(CB_OPTIONS, _lang(w)))
     return SELF_DESTRUCT
-
 
 async def recv_self_destruct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw = (update.message.text or "").strip()
     if not raw.isdecimal() or not 1 <= int(raw) <= 31536000:
-        await update.message.reply_text("Enter a whole number from 1 to 31,536,000 seconds.")
+        await update.message.reply_text(_flow(_w(context), "destruct_invalid"))
         return SELF_DESTRUCT
     w = _w(context)
     w.update(self_destruct=True, auto_delete=False, sd_secs=int(raw))
     w.pop("ad_hours", None)
     w.pop("ad_duration_label", None)
-    return await _home(context, w, "Self-Destruct updated.")
+    return await _home(context, w, _flow(w, "destruct_saved", value=w.get("sd_secs")))
 
 
 async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -981,97 +1061,110 @@ async def cb_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         w["auto_pin"] = False
         w.pop("ap_hours", None)
         w.pop("ap_duration_label", None)
-        await _answer(query, "Auto-Pin disabled.")
+        await _answer(query, _flow(w, "review_off"))
         await _show(context, w, _options_text(w), _options_keyboard(w))
         return OPTIONS
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Keep Pinned", style="success", callback_data=CB_PIN_FOREVER)],
-        [InlineKeyboardButton("Set Unpin Time", style="primary", callback_data=CB_PIN_DURATION)],
-        [InlineKeyboardButton("⬅️ Delivery Rules", callback_data=CB_OPTIONS)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_t(w, "keep_pinned"), style="success", callback_data=CB_PIN_FOREVER)],
+        [InlineKeyboardButton(_t(w, "first_publish"), style="primary", callback_data=CB_PIN_DURATION)],
+        [InlineKeyboardButton("⬅️ " + _t(w, "options_title"), callback_data=CB_OPTIONS)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
-    await _show(context, w, "📌 *Auto-Pin*\n\nChoose a duration or keep the post pinned until someone manually unpins it.", keyboard)
+    await _show(context, w, _flow(w, "pin_prompt"), keyboard)
     return AUTO_PIN
-
 
 async def cb_pin_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     await _answer(query)
-    await _show(
-        context, w,
-        "📌 *Set Auto-Unpin Time*\n\nEnter the number of hours the post should remain pinned. Use a number greater than 0 and no more than 87,600.",
-        _nav(CB_OPTIONS),
-    )
+    await _show(context, w, _flow(w, "pin_prompt"), _nav(CB_OPTIONS, _lang(w)))
     return AUTO_PIN
 
+_DURATION_UNITS = {
+    "en": {"minutes": {"minute", "minutes", "min", "mins", "m"}, "hours": {"hour", "hours", "hr", "hrs", "h"}},
+    "my": {"minutes": {"မိနစ်"}, "hours": {"နာရီ"}},
+    "zh": {"minutes": {"分钟", "分鐘", "分"}, "hours": {"小时", "小時", "时", "時"}},
+    "es": {"minutes": {"minuto", "minutos", "min"}, "hours": {"hora", "horas"}},
+    "hi": {"minutes": {"मिनट", "मिनटों"}, "hours": {"घंटा", "घंटे", "घंटों"}},
+    "ar": {"minutes": {"دقيقة", "دقائق", "دقيقه"}, "hours": {"ساعة", "ساعات"}},
+    "pt": {"minutes": {"minuto", "minutos", "min"}, "hours": {"hora", "horas"}},
+    "fr": {"minutes": {"minute", "minutes", "min"}, "hours": {"heure", "heures"}},
+    "ru": {"minutes": {"минута", "минуты", "минут", "мин"}, "hours": {"час", "часа", "часов"}},
+    "bn": {"minutes": {"মিনিট"}, "hours": {"ঘণ্টা", "ঘন্টা"}},
+    "id": {"minutes": {"menit"}, "hours": {"jam"}},
+    "ja": {"minutes": {"分", "分間"}, "hours": {"時間", "時"}},
+    "ko": {"minutes": {"분"}, "hours": {"시간"}},
+    "th": {"minutes": {"นาที"}, "hours": {"ชั่วโมง"}},
+    "vi": {"minutes": {"phút"}, "hours": {"giờ"}},
+    "tr": {"minutes": {"dakika", "dk"}, "hours": {"saat"}},
+    "de": {"minutes": {"minute", "minuten", "min"}, "hours": {"stunde", "stunden", "std"}},
+    "it": {"minutes": {"minuto", "minuti", "min"}, "hours": {"ora", "ore"}},
+    "ur": {"minutes": {"منٹ"}, "hours": {"گھنٹہ", "گھنٹے", "گھنٹوں"}},
+    "sw": {"minutes": {"dakika"}, "hours": {"saa", "masaa"}},
+}
 
-def _duration_to_hours(raw: str, *, max_minutes: int) -> float | None:
-    match = re.fullmatch(r"\s*(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*", raw or "", re.I)
+def _duration_to_hours(raw: str, *, max_minutes: int, language: str = 'en') -> float | None:
+    match = re.fullmatch(r"\s*(\d+)\s*(.*?)\s*", raw or "", re.I)
     if not match:
         return None
-    amount, unit = int(match.group(1)), match.group(2).lower()
-    minutes = amount if unit in {"m", "min", "mins", "minute", "minutes"} else amount * 60
+    amount, unit = int(match.group(1)), match.group(2).casefold().strip()
+    aliases = _DURATION_UNITS.get(language, _DURATION_UNITS["en"])
+    english = _DURATION_UNITS["en"]
+    if unit in aliases["minutes"] or unit in english["minutes"]:
+        minutes = amount
+    elif unit in aliases["hours"] or unit in english["hours"]:
+        minutes = amount * 60
+    else:
+        return None
     if not 5 <= minutes <= max_minutes:
         return None
     return minutes / 60
 
-
-def _duration_label(hours: float) -> str:
+def _duration_label(hours: float, language: str = 'en') -> str:
     minutes = round(hours * 60)
-    if minutes < 60:
-        return f"{minutes} minutes"
     if minutes % 60 == 0:
-        count = minutes // 60
-        return f"{count} hour" if count == 1 else f"{count} hours"
-    return f"{minutes} minutes"
-
+        return f"{minutes // 60} {_flow({'language': language}, 'unit_hours')}"
+    return f"{minutes} {_flow({'language': language}, 'unit_minutes')}"
 
 async def recv_auto_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw = (update.message.text or "").strip()
-    value = _duration_to_hours(raw, max_minutes=87600 * 60)
-    if value is None:
-        await update.message.reply_text(
-            "Enter a duration such as 5 minutes, 30m, 2 hours or 12h. "
-            "Minimum: 5 minutes; maximum: 87,600 hours."
-        )
-        return AUTO_PIN
     w = _w(context)
-    w.update(auto_pin=True, ap_hours=value, ap_duration_label=_duration_label(value))
-    return await _home(context, w, "Auto-Pin updated.")
-
+    raw = (update.message.text or "").strip()
+    value = _duration_to_hours(raw, max_minutes=87600 * 60, language=_lang(w))
+    if value is None:
+        await update.message.reply_text(_flow(w, "pin_invalid"))
+        return AUTO_PIN
+    w.update(auto_pin=True, ap_hours=value, ap_duration_label=_duration_label(value, _lang(w)))
+    return await _home(context, w, _t(w, "pin_updated"))
 
 async def cb_pin_forever(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
-    w.update(auto_pin=True, ap_hours=None, ap_duration_label="Keep pinned")
-    await _answer(query, "The post will remain pinned until manually unpinned.")
-    return await _home(context, w, "Auto-Pin updated.")
+    w.update(auto_pin=True, ap_hours=None, ap_duration_label=_t(w, "keep_pinned"))
+    await _answer(query, _t(w, "keep_pinned"))
+    return await _home(context, w, _t(w, "pin_updated"))
 
 
 async def cb_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     await _answer(query)
-    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(w.get("inline_buttons") or [])))
+    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(w.get("inline_buttons") or []), _lang(w)))
     return BUTTONS
 
 
 async def cb_button_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
-    remaining = 10 - len(w.get("inline_buttons") or [])
     await _answer(query)
-    await _show(context, w, f"🔘 *Add Post Buttons*\n\nSend up to {remaining} button(s), one per line.\nFormat: Button label | https://example.com\nTelegram username example: Join Channel | @mychannel.", _nav(CB_BUTTONS))
+    await _show(context, w, f"🔘 *{_t(w, 'buttons_title')}*\n\n{_t(w, 'buttons_instructions')}", _nav(CB_BUTTONS, _lang(w)))
     return BUTTON_ENTRY
-
 
 async def recv_button_batch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     w = _w(context)
     buttons = w.setdefault("inline_buttons", [])
     parsed = _parse_button_batch(update.message.text or "", len(buttons))
     if parsed is None:
-        await update.message.reply_text("I couldn't add those buttons. Use one line per button: Label | URL. Labels must be 1–64 characters, links must be valid, and the total limit is 10.")
+        await update.message.reply_text(_flow(w, "button_link_invalid"))
         return BUTTON_ENTRY
     buttons.extend(parsed)
-    return await _home(context, w, f"Added {len(parsed)} post button(s).")
+    return await _home(context, w, _flow(w, "button_added", count=len(w.get("inline_buttons") or [])))
 
 
 async def cb_button_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1080,16 +1173,16 @@ async def cb_button_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if buttons:
         buttons.pop()
     w["inline_buttons"] = buttons
-    await _answer(query, "Last button removed.")
-    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(buttons)))
+    await _answer(query, _t(w, "buttons_removed"))
+    await _show(context, w, _buttons_text(w), _buttons_keyboard(len(buttons), _lang(w)))
     return BUTTONS
 
 
 async def cb_button_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     w["inline_buttons"] = []
-    await _answer(query, "All buttons removed.")
-    await _show(context, w, _buttons_text(w), _buttons_keyboard(0))
+    await _answer(query, _t(w, "buttons_cleared"))
+    await _show(context, w, _buttons_text(w), _buttons_keyboard(0, _lang(w)))
     return BUTTONS
 
 
@@ -1097,25 +1190,24 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query, w = update.callback_query, _w(context)
     errors = _validate(w)
     if errors:
-        await _answer(query, "Complete the required settings first.", alert=True)
+        await _answer(query, _flow(w, "validation_generic"), alert=True)
         detail = "\n".join("• " + escape_markdown(error, version=1) for error in errors)
-        await _show(context, w, "⚠️ *A few details need attention*\n\n" + detail + "\n\nReturn to the workspace and open the relevant section.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("Open Workspace", style="primary", callback_data=CB_HOME)],
-            [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        await _show(context, w, f"⚠️ *{_flow(w, 'validation_generic')}*\n\n{detail}\n\n{_t(w, 'review_open_workspace')}", InlineKeyboardMarkup([
+            [InlineKeyboardButton(_t(w, "review_open_workspace"), style="primary", callback_data=CB_HOME)],
+            [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
         ]))
         return HOME
     await _answer(query)
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Schedule Post", style="success", callback_data=CB_CONFIRM)],
-        [InlineKeyboardButton("✏️ Content", callback_data=CB_CONTENT), InlineKeyboardButton("📍 Destination", callback_data=CB_DESTINATION)],
-        [InlineKeyboardButton("🕒 Schedule", callback_data=CB_SCHEDULE), InlineKeyboardButton("⚙️ Rules", callback_data=CB_OPTIONS)],
-        [InlineKeyboardButton("🔘 Buttons", callback_data=CB_BUTTONS)],
-        [InlineKeyboardButton("⬅️ Workspace", callback_data=CB_HOME)],
-        [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
+        [InlineKeyboardButton(_t(w, "review_confirm"), style="success", callback_data=CB_CONFIRM)],
+        [InlineKeyboardButton("✏️ " + _t(w, "section_content"), callback_data=CB_CONTENT), InlineKeyboardButton("📍 " + _t(w, "section_destination"), callback_data=CB_DESTINATION)],
+        [InlineKeyboardButton("🕒 " + _t(w, "section_schedule"), callback_data=CB_SCHEDULE), InlineKeyboardButton("⚙️ " + _t(w, "section_rules"), callback_data=CB_OPTIONS)],
+        [InlineKeyboardButton("🔘 " + _t(w, "section_buttons"), callback_data=CB_BUTTONS)],
+        [InlineKeyboardButton("⬅️ " + _t(w, "review_open_workspace"), callback_data=CB_HOME)],
+        [InlineKeyboardButton("❌ " + tr(_lang(w), "cancel"), style="danger", callback_data=CB_CANCEL)],
     ])
     await _show(context, w, _preview_text(w), keyboard)
     return REVIEW
-
 
 async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -1123,44 +1215,49 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     completed = context.user_data.get("_completed_post_composers", {})
     message_key = str(message_id) if message_id is not None else None
     if message_key and isinstance(completed, dict) and message_key in completed:
-        await _answer(query, "This post has already been scheduled.", alert=True)
+        await _answer(query, _flow(_w(context), "already_saved"), alert=True)
         return ConversationHandler.END
     w = context.user_data.get("schedule_post")
     if not isinstance(w, dict):
-        await _answer(query, "This setup is no longer active. Start a new post.", alert=True)
+        language = await resolve_user_language(context, query.from_user.id if query and query.from_user else None)
+        await _answer(query, flow_tr(language, "setup_inactive"), alert=True)
         return ConversationHandler.END
+    language = _lang(w)
     if w.get("_save_uncertain"):
-        await _answer(query, "The save result is uncertain. Check My Posts before trying again.", alert=True)
+        await _answer(query, _flow(w, "save_failed"), alert=True)
         return REVIEW
     if w.get("_saving"):
-        await _answer(query, "Your post is already being saved.")
+        await _answer(query, _flow(w, "already_saving"))
         return REVIEW
     errors = _validate(w)
     if errors:
-        await _answer(query, "Review the incomplete settings.", alert=True)
+        await _answer(query, _flow(w, "validation_generic"), alert=True)
         return await _home(context, w, "; ".join(errors))
-    user_id = query.from_user.id if query.from_user else None
+    user_id = query.from_user.id if query and query.from_user else None
     if user_id is None:
-        await _answer(query, "Unable to identify your account.", alert=True)
+        await _answer(query, _flow(w, "user_missing"), alert=True)
         return REVIEW
 
-    # Set the lock before any awaited permission or database operation.
     w["_saving"] = True
-    await _answer(query, "Saving post…")
+    await _answer(query, _flow(w, "saving"))
     try:
-        await ensure_chat_access(context.bot, w["chat_id"], user_id)
+        await ensure_chat_access(context.bot, w["chat_id"], user_id, language)
     except ChatAccessError as exc:
         w.pop("_saving", None)
-        await _show(context, w, f"⚠️ {escape_markdown(str(exc), version=1)}\n\nChoose another destination or restore the required permissions.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("Choose Destination", style="primary", callback_data=CB_DESTINATION)],
-            [InlineKeyboardButton("⬅️ Workspace", callback_data=CB_HOME)],
-            [InlineKeyboardButton("❌ Cancel", style="danger", callback_data=CB_CANCEL)],
-        ]))
+        await _show(
+            context, w,
+            f"⚠️ {escape_markdown(str(exc), version=1)}",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton(_t(w, "section_destination"), style="primary", callback_data=CB_DESTINATION)],
+                [InlineKeyboardButton("⬅️ " + tr(language, "back"), callback_data=CB_HOME)],
+                [InlineKeyboardButton("❌ " + tr(language, "cancel"), style="danger", callback_data=CB_CANCEL)],
+            ]),
+        )
         return DESTINATION
     except Exception:
         w.pop("_saving", None)
         logger.exception("Destination revalidation failed for user_id=%s", user_id)
-        await _show(context, w, "⚠️ I couldn't verify destination access right now. Your setup is still available. Check permissions and try again.", _nav())
+        await _show(context, w, f"⚠️ {_flow(w, 'access_failed')}", _nav(language=language))
         return HOME
 
     try:
@@ -1188,13 +1285,15 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         post_id = await insert_post(document)
     except Exception:
-        # The database may have committed before the connection failed.
-        # Never expose a blind retry that could create a duplicate record.
         w["_save_uncertain"] = True
         logger.exception("Could not verify scheduled-post save for user_id=%s", user_id)
-        await _show(context, w, "⚠️ *The save result could not be verified.*\n\nTo avoid a duplicate, this setup is locked from retrying. Open *My Posts* and check whether the post appears before creating another one.", InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Main Menu", style="primary", callback_data=CB_MENU)],
-        ]))
+        await _show(
+            context, w,
+            f"⚠️ *{_flow(w, 'save_failed')}*",
+            InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 " + tr(language, "menu_title"), style="primary", callback_data=CB_MENU),
+            ]]),
+        )
         return REVIEW
 
     if message_key:
@@ -1207,19 +1306,20 @@ async def cb_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             completed.pop(next(iter(completed)))
 
     chat_id, ui_message_id = w.get("ui_chat_id"), w.get("ui_message_id")
+    success = (
+        f"✅ *{_t(w, 'success_title')}*\n\n"
+        f"Post ID: {escape_markdown(str(post_id), version=1)}\n\n"
+        f"{_t(w, 'success_body')}"
+    )
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📋 " + tr(language, "menu_title"), style="primary", callback_data=CB_MENU)
+    ]])
     context.user_data.pop("schedule_post", None)
     if chat_id is not None:
         try:
             await chat_cleanup.cleanup(context, chat_id, keep_message_id=ui_message_id)
         except Exception:
             logger.exception("Post %s saved, but composer cleanup failed.", post_id)
-
-    success = (
-        "✅ *Post scheduled successfully*\n\n"
-        f"Post ID: {escape_markdown(str(post_id), version=1)}\n\n"
-        "Your post is now available in *My Posts*, where you can pause, resume or delete it."
-    )
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 Main Menu", style="primary", callback_data=CB_MENU)]])
     screen = {"ui_chat_id": chat_id, "ui_message_id": ui_message_id}
     try:
         await _show(context, screen, success, keyboard)

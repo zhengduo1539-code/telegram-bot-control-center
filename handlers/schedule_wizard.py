@@ -560,7 +560,7 @@ async def cb_wizard_continue(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if isinstance(launch_chat, dict):
         try:
             launch_chat_id = int(launch_chat.get("chat_id"))
-            target_chat = await ensure_chat_access(context.bot, launch_chat_id, user_id)
+            target_chat = await ensure_chat_access(context.bot, launch_chat_id, user_id, language)
         except (TypeError, ValueError, ChatAccessError) as exc:
             logger.info("Deep-linked group is unavailable for user %s: %s", user_id, exc)
             await query.answer(flow_tr(language, "linked_unavailable"), show_alert=True)
@@ -610,7 +610,7 @@ async def cb_chat_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     groups = await list_groups_for_user(user_id) if user_id is not None else []
     titles = {group["chat_id"]: (group.get("title") or str(group["chat_id"])) for group in groups}
     try:
-        target_chat = await ensure_chat_access(query.get_bot(), chat_id, user_id)
+        target_chat = await ensure_chat_access(query.get_bot(), chat_id, user_id, language)
     except ChatAccessError:
         await query.answer(flow_tr(language, "linked_unavailable"), show_alert=True)
         return WIZARD_CHAT_ID
@@ -775,7 +775,7 @@ async def recv_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return WIZARD_CHAT_ID
     try:
-        target_chat = await ensure_chat_access(context.bot, chat_id, update.effective_user.id)
+        target_chat = await ensure_chat_access(context.bot, chat_id, update.effective_user.id, language)
     except ChatAccessError:
         await update.message.reply_text(
             flow_tr(language, "linked_unavailable"),
@@ -2020,7 +2020,7 @@ async def cb_confirm_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.debug("Could not acknowledge Schedule New Post confirmation callback.", exc_info=True)
 
     try:
-        await ensure_chat_access(context.bot, draft["chat_id"], user_id)
+        await ensure_chat_access(context.bot, draft["chat_id"], user_id, language)
     except ChatAccessError:
         draft.pop("_saving", None)
         bot_username = (await query.get_bot().get_me()).username
